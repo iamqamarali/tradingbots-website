@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Logs - Trading Bot Manager</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/logs.css">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="logs-page">
+        <!-- Header -->
+        <header class="logs-header">
+            <div class="header-left">
+                <a href="/" class="back-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                </a>
+                <div class="logo">
+                    <div class="logo-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/>
+                            <line x1="16" y1="17" x2="8" y2="17"/>
+                        </svg>
+                    </div>
+                    <span class="logo-text">Bot <span class="accent">Logs</span></span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="status-info">
+                    <span class="status-item">
+                        <span class="status-label">Total Bots:</span>
+                        <span class="status-value" id="totalBots">0</span>
+                    </span>
+                    <span class="status-item">
+                        <span class="status-label">Running:</span>
+                        <span class="status-value running" id="runningBots">0</span>
+                    </span>
+                    <span class="status-item">
+                        <span class="status-label">Next Clear:</span>
+                        <span class="status-value" id="nextClear">--</span>
+                    </span>
+                </div>
+                <button class="clear-all-btn" id="clearAllBtn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                    Clear All Logs
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="logs-main">
+            <div class="logs-grid" id="logsGrid">
+                <!-- Log panels will be inserted here -->
+                <div class="loading-state">
+                    <div class="spinner"></div>
+                    <p>Loading logs...</p>
+                </div>
+            </div>
+        </main>
+
+        <!-- Auto-refresh indicator -->
+        <div class="refresh-indicator" id="refreshIndicator">
+            <span class="refresh-dot"></span>
+            <span>Auto-refreshing every 3s</span>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="/static/logs.js"></script>
+</body>
+</html>
+
+
+
+

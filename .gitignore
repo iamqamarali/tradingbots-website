@@ -1,0 +1,8 @@
+# Logs
+logs/
+*.log
+
+# Scripts (may contain API keys)
+scripts/
+scripts_metadata.json
+
