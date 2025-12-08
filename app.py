@@ -65,23 +65,17 @@ def load_logs_from_file(script_id, limit=500):
 
 
 def clear_old_logs():
-    """Clear all logs (called daily)."""
+    """Clear all logs older than a day."""
     global last_clear_date
     
     today = datetime.now().date()
     if today > last_clear_date:
-        # Archive yesterday's logs before clearing
-        archive_folder = os.path.join(LOGS_FOLDER, 'archive')
-        os.makedirs(archive_folder, exist_ok=True)
-        
+        # Delete all log files (they're from yesterday or older)
         for filename in os.listdir(LOGS_FOLDER):
             if filename.endswith('.log'):
-                src = os.path.join(LOGS_FOLDER, filename)
-                # Archive with date
-                archive_name = f"{last_clear_date.strftime('%Y-%m-%d')}_{filename}"
-                dst = os.path.join(archive_folder, archive_name)
+                filepath = os.path.join(LOGS_FOLDER, filename)
                 try:
-                    os.rename(src, dst)
+                    os.remove(filepath)
                 except:
                     pass
         
@@ -90,7 +84,7 @@ def clear_old_logs():
             script_logs.clear()
         
         last_clear_date = today
-        print(f"[{datetime.now()}] Daily log cleanup completed")
+        print(f"[{datetime.now()}] Daily log cleanup completed - old logs deleted")
 
 
 def log_cleanup_scheduler():
@@ -144,7 +138,8 @@ def get_all_scripts():
                 'filename': filename,
                 'status': 'running' if is_running else 'stopped',
                 'created': script_info.get('created', 'Unknown'),
-                'description': script_info.get('description', '')
+                'description': script_info.get('description', ''),
+                'auto_restart': script_info.get('auto_restart', False)
             })
     
     return scripts
@@ -182,6 +177,91 @@ def read_output(process, script_id):
             if script_id in running_processes:
                 exit_code = process.poll()
                 write_log_to_file(script_id, f"[SYSTEM] Process ended with exit code: {exit_code}")
+
+
+def start_script_process(script_id):
+    """Start a script process. Returns True if successful, False otherwise."""
+    filename = f"{script_id}.py"
+    filepath = os.path.join(SCRIPTS_FOLDER, filename)
+    
+    if not os.path.exists(filepath):
+        return False
+    
+    with process_lock:
+        # Check if already running
+        if script_id in running_processes:
+            if running_processes[script_id].poll() is None:
+                return True  # Already running
+            else:
+                del running_processes[script_id]
+    
+    try:
+        # Create startup info for Windows to run without console window
+        startupinfo = None
+        creationflags = 0
+        
+        if sys.platform == 'win32':
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+        
+        # Start the process
+        process = subprocess.Popen(
+            [sys.executable, '-u', filepath],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            startupinfo=startupinfo,
+            creationflags=creationflags,
+            cwd=SCRIPTS_FOLDER
+        )
+        
+        with process_lock:
+            running_processes[script_id] = process
+        
+        with logs_lock:
+            script_logs[script_id] = []
+        
+        # Start output reading thread
+        thread = Thread(target=read_output, args=(process, script_id), daemon=True)
+        thread.start()
+        
+        return True
+        
+    except Exception as e:
+        write_log_to_file(script_id, f"[ERROR] Failed to start script: {e}")
+        return False
+
+
+def restart_persistent_scripts():
+    """Restart scripts that were running before or have auto_restart enabled."""
+    metadata = load_metadata()
+    restarted = []
+    
+    for script_id, script_info in metadata.items():
+        # Check if script file exists
+        filepath = os.path.join(SCRIPTS_FOLDER, f"{script_id}.py")
+        if not os.path.exists(filepath):
+            continue
+        
+        # Check if should restart (was_running OR auto_restart)
+        was_running = script_info.get('was_running', False)
+        auto_restart = script_info.get('auto_restart', False)
+        
+        if was_running or auto_restart:
+            if start_script_process(script_id):
+                write_log_to_file(script_id, "[SYSTEM] Script auto-restarted on server startup")
+                restarted.append(script_info.get('name', script_id))
+                # Update was_running state
+                metadata[script_id]['was_running'] = True
+    
+    if restarted:
+        save_metadata(metadata)
+        print(f"  Auto-restarted scripts: {', '.join(restarted)}")
+    
+    return restarted
 
 
 @app.route('/')
@@ -271,7 +351,8 @@ def get_script(script_id):
         'name': script_info.get('name', filename),
         'content': content,
         'description': script_info.get('description', ''),
-        'status': 'running' if is_running else 'stopped'
+        'status': 'running' if is_running else 'stopped',
+        'auto_restart': script_info.get('auto_restart', False)
     })
 
 
@@ -389,6 +470,13 @@ def run_script(script_id):
         # Log start
         write_log_to_file(script_id, "[SYSTEM] Script started")
         
+        # Save was_running state to metadata
+        metadata = load_metadata()
+        if script_id not in metadata:
+            metadata[script_id] = {}
+        metadata[script_id]['was_running'] = True
+        save_metadata(metadata)
+        
         # Start output reading thread (daemon so it doesn't block shutdown)
         thread = Thread(target=read_output, args=(process, script_id), daemon=True)
         thread.start()
@@ -434,14 +522,48 @@ def stop_script(script_id):
         if running_processes[script_id].poll() is not None:
             # Already stopped
             del running_processes[script_id]
+            # Update was_running in metadata
+            metadata = load_metadata()
+            if script_id in metadata:
+                metadata[script_id]['was_running'] = False
+                save_metadata(metadata)
             return jsonify({'success': True, 'status': 'stopped'})
     
     try:
         stop_script_process(script_id)
+        # Update was_running in metadata
+        metadata = load_metadata()
+        if script_id in metadata:
+            metadata[script_id]['was_running'] = False
+            save_metadata(metadata)
         return jsonify({'success': True, 'status': 'stopped'})
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/scripts/<script_id>/auto-restart', methods=['PUT'])
+def toggle_auto_restart(script_id):
+    """Toggle auto-restart setting for a script."""
+    filename = f"{script_id}.py"
+    filepath = os.path.join(SCRIPTS_FOLDER, filename)
+    
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'Script not found'}), 404
+    
+    metadata = load_metadata()
+    if script_id not in metadata:
+        metadata[script_id] = {}
+    
+    # Toggle the auto_restart value
+    current_value = metadata[script_id].get('auto_restart', False)
+    metadata[script_id]['auto_restart'] = not current_value
+    save_metadata(metadata)
+    
+    return jsonify({
+        'success': True,
+        'auto_restart': metadata[script_id]['auto_restart']
+    })
 
 
 @app.route('/api/scripts/<script_id>/logs', methods=['GET'])
@@ -563,4 +685,10 @@ if __name__ == '__main__':
     print(f"  Logs folder: {LOGS_FOLDER}")
     print("  Logs are automatically cleared daily at midnight")
     print("=" * 60)
+    
+    # Restart scripts that were running before or have auto_restart enabled
+    print("  Checking for scripts to auto-restart...")
+    restart_persistent_scripts()
+    print("=" * 60)
+    
     app.run(debug=False, host='0.0.0.0', port=5000, threaded=True)

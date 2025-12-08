@@ -20,6 +20,7 @@ const elements = {
     stopBtn: document.getElementById('stopBtn'),
     saveBtn: document.getElementById('saveBtn'),
     deleteBtn: document.getElementById('deleteBtn'),
+    autoRestartCheckbox: document.getElementById('autoRestartCheckbox'),
     codeEditor: document.getElementById('codeEditor'),
     lineNumbers: document.getElementById('lineNumbers'),
     lineCount: document.getElementById('lineCount'),
@@ -69,6 +70,7 @@ function setupEventListeners() {
     elements.stopBtn.addEventListener('click', stopCurrentScript);
     elements.saveBtn.addEventListener('click', saveCurrentScript);
     elements.deleteBtn.addEventListener('click', deleteCurrentScript);
+    elements.autoRestartCheckbox.addEventListener('change', toggleAutoRestart);
     
     // Editor
     elements.codeEditor.addEventListener('input', updateLineNumbers);
@@ -154,6 +156,9 @@ async function selectScript(scriptId) {
         
         elements.currentScriptName.textContent = currentScript.name;
         updateScriptStatus();
+        
+        // Update auto-restart checkbox
+        elements.autoRestartCheckbox.checked = currentScript.auto_restart || false;
         
         elements.codeEditor.value = currentScript.content;
         updateLineNumbers();
@@ -297,6 +302,42 @@ async function deleteCurrentScript() {
         }
     } catch (error) {
         showToast('Failed to delete bot', 'error');
+    }
+}
+
+// Toggle auto-restart setting
+async function toggleAutoRestart() {
+    if (!currentScript) return;
+    
+    try {
+        const response = await fetch(`/api/scripts/${currentScript.id}/auto-restart`, {
+            method: 'PUT'
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            currentScript.auto_restart = data.auto_restart;
+            
+            // Update in local scripts list
+            const script = scripts.find(s => s.id === currentScript.id);
+            if (script) {
+                script.auto_restart = data.auto_restart;
+            }
+            
+            showToast(
+                data.auto_restart ? 'Auto-restart enabled' : 'Auto-restart disabled',
+                'success'
+            );
+        } else {
+            // Revert checkbox on error
+            elements.autoRestartCheckbox.checked = currentScript.auto_restart || false;
+            showToast(data.error || 'Failed to update setting', 'error');
+        }
+    } catch (error) {
+        // Revert checkbox on error
+        elements.autoRestartCheckbox.checked = currentScript.auto_restart || false;
+        showToast('Failed to update setting', 'error');
     }
 }
 
