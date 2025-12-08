@@ -95,6 +95,30 @@ function setupEventListeners() {
             if (currentScript) saveCurrentScript();
         }
     });
+    
+    // Mobile menu
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    const mobileOverlay = document.getElementById('mobileOverlay');
+    const sidebar = document.querySelector('.sidebar');
+    
+    if (mobileMenuBtn) {
+        mobileMenuBtn.addEventListener('click', () => {
+            sidebar.classList.add('open');
+            mobileOverlay.classList.add('active');
+        });
+    }
+    
+    if (mobileOverlay) {
+        mobileOverlay.addEventListener('click', closeMobileMenu);
+    }
+}
+
+// Close mobile menu
+function closeMobileMenu() {
+    const sidebar = document.querySelector('.sidebar');
+    const mobileOverlay = document.getElementById('mobileOverlay');
+    if (sidebar) sidebar.classList.remove('open');
+    if (mobileOverlay) mobileOverlay.classList.remove('active');
 }
 
 // Load all scripts from the server
@@ -178,6 +202,11 @@ async function selectScript(scriptId) {
             startLogsPolling();
         } else {
             stopLogsPolling();
+        }
+        
+        // Close mobile menu if open
+        if (window.innerWidth <= 768) {
+            closeMobileMenu();
         }
         
     } catch (error) {
