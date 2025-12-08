@@ -753,15 +753,34 @@ body {
     font-family: var(--font-mono);
     font-size: 0.8rem;
     line-height: 1.8;
+    scroll-behavior: smooth;
 }
 
 .log-line {
     color: var(--text-secondary);
     padding: 2px 0;
+    transition: background var(--transition-fast);
 }
 
 .log-line:hover {
     background: var(--bg-hover);
+}
+
+/* New log entry animation */
+.log-line-new {
+    animation: logFadeIn 0.4s ease-out;
+    background: rgba(0, 212, 170, 0.08);
+}
+
+@keyframes logFadeIn {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
 }
 
 .log-placeholder {

@@ -7,6 +7,7 @@
 let currentScript = null;
 let scripts = [];
 let logsInterval = null;
+let displayedLogCount = 0;
 
 // DOM Elements
 const elements = {
@@ -148,6 +149,7 @@ async function selectScript(scriptId) {
         if (!response.ok) throw new Error('Script not found');
         
         currentScript = await response.json();
+        displayedLogCount = 0;  // Reset log count for new script
         
         // Update UI
         elements.welcomeScreen.style.display = 'none';
@@ -496,15 +498,16 @@ function switchTab(tabName) {
     elements.logsPanel.classList.toggle('active', tabName === 'logs');
     
     if (tabName === 'logs' && currentScript) {
-        fetchLogs();
+        fetchLogs(true);  // Force refresh when switching to logs tab
     }
 }
 
 // Start polling for logs
 function startLogsPolling() {
-    fetchLogs();
+    displayedLogCount = 0;  // Reset when starting fresh
+    fetchLogs(true);  // Force full refresh on start
     if (logsInterval) clearInterval(logsInterval);
-    logsInterval = setInterval(fetchLogs, 2000);
+    logsInterval = setInterval(fetchLogs, 10000);  // Poll every 10 seconds
 }
 
 // Stop polling for logs
@@ -515,8 +518,15 @@ function stopLogsPolling() {
     }
 }
 
+// Check if user is scrolled near the bottom
+function isNearBottom() {
+    const threshold = 100;  // pixels from bottom
+    const { scrollTop, scrollHeight, clientHeight } = elements.logsContent;
+    return scrollHeight - scrollTop - clientHeight < threshold;
+}
+
 // Fetch logs from the server
-async function fetchLogs() {
+async function fetchLogs(forceFullRefresh = false) {
     if (!currentScript) return;
     
     try {
@@ -524,22 +534,53 @@ async function fetchLogs() {
         const data = await response.json();
         
         if (data.logs && data.logs.length > 0) {
-            elements.logsContent.innerHTML = data.logs.map(log => 
-                `<div class="log-line">${escapeHtml(log)}</div>`
-            ).join('');
+            const wasNearBottom = isNearBottom();
             
-            // Auto-scroll to bottom
-            elements.logsContent.scrollTop = elements.logsContent.scrollHeight;
+            // Check if we need full refresh or just append
+            if (forceFullRefresh || displayedLogCount === 0 || data.logs.length < displayedLogCount) {
+                // Full refresh needed (first load, cleared logs, or reset)
+                elements.logsContent.innerHTML = data.logs.map(log => 
+                    `<div class="log-line">${escapeHtml(log)}</div>`
+                ).join('');
+                displayedLogCount = data.logs.length;
+                
+                // Scroll to bottom on initial load
+                elements.logsContent.scrollTop = elements.logsContent.scrollHeight;
+            } else if (data.logs.length > displayedLogCount) {
+                // Append only new logs
+                const newLogs = data.logs.slice(displayedLogCount);
+                
+                newLogs.forEach(log => {
+                    const logLine = document.createElement('div');
+                    logLine.className = 'log-line log-line-new';
+                    logLine.innerHTML = escapeHtml(log);
+                    elements.logsContent.appendChild(logLine);
+                    
+                    // Remove animation class after animation completes
+                    setTimeout(() => logLine.classList.remove('log-line-new'), 500);
+                });
+                
+                displayedLogCount = data.logs.length;
+                
+                // Only auto-scroll if user was already near bottom
+                if (wasNearBottom) {
+                    elements.logsContent.scrollTop = elements.logsContent.scrollHeight;
+                }
+            }
         } else {
-            elements.logsContent.innerHTML = `
-                <div class="log-placeholder">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                        <circle cx="12" cy="12" r="10"/>
-                        <polyline points="12 6 12 12 16 14"/>
-                    </svg>
-                    <p>No logs yet. Run the script to see output.</p>
-                </div>
-            `;
+            // No logs - show placeholder
+            if (displayedLogCount > 0 || elements.logsContent.querySelector('.log-placeholder') === null) {
+                displayedLogCount = 0;
+                elements.logsContent.innerHTML = `
+                    <div class="log-placeholder">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                        <p>No logs yet. Run the script to see output.</p>
+                    </div>
+                `;
+            }
         }
     } catch (error) {
         console.error('Failed to fetch logs:', error);
