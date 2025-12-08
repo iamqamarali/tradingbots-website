@@ -675,6 +675,12 @@ def cleanup_on_exit():
 atexit.register(cleanup_on_exit)
 
 
+# Restart scripts on module load (works with gunicorn/production)
+# This runs when the module is imported, not just when run directly
+print("[STARTUP] Checking for scripts to auto-restart...")
+restart_persistent_scripts()
+
+
 if __name__ == '__main__':
     print("=" * 60)
     print("  Trading Bot Script Manager")
@@ -684,11 +690,6 @@ if __name__ == '__main__':
     print(f"  Scripts folder: {SCRIPTS_FOLDER}")
     print(f"  Logs folder: {LOGS_FOLDER}")
     print("  Logs are automatically cleared daily at midnight")
-    print("=" * 60)
-    
-    # Restart scripts that were running before or have auto_restart enabled
-    print("  Checking for scripts to auto-restart...")
-    restart_persistent_scripts()
     print("=" * 60)
     
     app.run(debug=False, host='0.0.0.0', port=5000, threaded=True)
