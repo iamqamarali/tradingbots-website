@@ -978,11 +978,9 @@ def api_sync_account_trades(account_id):
         except Exception as e:
             print(f"Warning: Could not fetch positions: {e}")
 
-        # Also add popular USDT and USDC pairs
-        priority_symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT',
-                          'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'DOTUSDT', 'LINKUSDT',
-                          'MATICUSDT', 'LTCUSDT', 'ATOMUSDT', 'UNIUSDT', 'APTUSDT',
-                          'BTCUSDC', 'ETHUSDC', 'SOLUSDC', 'BNBUSDC', 'XRPUSDC']
+        # Check BTC, ETH, SOL, DOGE pairs (USDT and USDC)
+        priority_symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT',
+                          'BTCUSDC', 'ETHUSDC', 'SOLUSDC', 'DOGEUSDC']
         symbols_to_sync.update(priority_symbols)
 
         print(f"Will sync {len(symbols_to_sync)} symbols: {symbols_to_sync}")
