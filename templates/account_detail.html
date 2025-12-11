@@ -114,10 +114,10 @@
                             <tr>
                                 <th>Symbol</th>
                                 <th>Side</th>
-                                <th>Size</th>
+                                <th>Size ($)</th>
                                 <th>Entry Price</th>
                                 <th>Mark Price</th>
-                                <th>PnL</th>
+                                <th>Unrealized PnL</th>
                                 <th>Leverage</th>
                             </tr>
                         </thead>
@@ -152,13 +152,22 @@
                     </svg>
                     Synced Trades
                 </h2>
-                <button class="refresh-btn" id="refreshTradesBtn">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="23 4 23 10 17 10"/>
-                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-                    </svg>
-                    Refresh
-                </button>
+                <div class="section-actions">
+                    <button class="refresh-btn" id="refreshTradesBtn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10"/>
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                        </svg>
+                        Refresh
+                    </button>
+                    <button class="action-btn sync-btn" id="syncTradesBtn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10"/>
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                        </svg>
+                        <span>Sync Trades</span>
+                    </button>
+                </div>
             </div>
             
             <div class="trades-container">
@@ -169,9 +178,10 @@
                                 <th>Time</th>
                                 <th>Symbol</th>
                                 <th>Side</th>
-                                <th>Quantity</th>
+                                <th>Size</th>
                                 <th>Price</th>
                                 <th>PnL</th>
+                                <th>Fee</th>
                             </tr>
                         </thead>
                         <tbody id="tradesBody">

@@ -355,10 +355,14 @@ function initDetailPage() {
 }
 
 function setupDetailPageEventListeners() {
-    // Sync button
+    // Sync buttons (header and trades section)
     const syncBtn = document.getElementById('syncBtn');
+    const syncTradesBtn = document.getElementById('syncTradesBtn');
     if (syncBtn) {
         syncBtn.addEventListener('click', syncTrades);
+    }
+    if (syncTradesBtn) {
+        syncTradesBtn.addEventListener('click', syncTrades);
     }
     
     // Close All button
@@ -481,12 +485,15 @@ async function loadPositions() {
         
         if (response.ok && positions.length > 0) {
             if (table) table.style.display = 'table';
-            
-            tbody.innerHTML = positions.map(pos => `
+
+            tbody.innerHTML = positions.map(pos => {
+                // Calculate position size in $
+                const sizeInDollars = pos.quantity * pos.mark_price;
+                return `
                 <tr>
                     <td class="symbol">${pos.symbol}</td>
                     <td><span class="side ${pos.side.toLowerCase()}">${pos.side}</span></td>
-                    <td>${pos.quantity}</td>
+                    <td>$${sizeInDollars.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td>$${pos.entry_price.toFixed(4)}</td>
                     <td>$${pos.mark_price.toFixed(4)}</td>
                     <td class="${pos.unrealized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}">
@@ -494,7 +501,7 @@ async function loadPositions() {
                     </td>
                     <td><span class="leverage-badge">${pos.leverage}x</span></td>
                 </tr>
-            `).join('');
+            `}).join('');
         } else {
             if (empty) empty.style.display = 'flex';
         }
@@ -525,9 +532,9 @@ async function loadTrades() {
         
         if (trades.length > 0) {
             if (table) table.style.display = 'table';
-            
+
             tbody.innerHTML = trades.map(trade => {
-                const tradeTime = trade.trade_time 
+                const tradeTime = trade.trade_time
                     ? new Date(trade.trade_time).toLocaleString('en-US', {
                         month: 'short',
                         day: 'numeric',
@@ -535,17 +542,22 @@ async function loadTrades() {
                         minute: '2-digit'
                     })
                     : 'Unknown';
-                
+
+                // Calculate trade size in $
+                const sizeInDollars = trade.quantity * trade.price;
+                const fee = trade.commission || 0;
+
                 return `
                     <tr>
                         <td>${tradeTime}</td>
                         <td class="symbol">${trade.symbol}</td>
                         <td><span class="side ${trade.side.toLowerCase()}">${trade.side}</span></td>
-                        <td>${trade.quantity}</td>
+                        <td>$${sizeInDollars.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         <td>$${trade.price.toFixed(4)}</td>
                         <td class="${trade.realized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}">
                             ${trade.realized_pnl >= 0 ? '+' : ''}$${trade.realized_pnl.toFixed(2)}
                         </td>
+                        <td class="fee">$${fee.toFixed(4)}</td>
                     </tr>
                 `;
             }).join('');
