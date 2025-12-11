@@ -695,12 +695,6 @@ def account_detail_page(account_id):
     return render_template('account_detail.html', account_id=account_id)
 
 
-@app.route('/bots')
-def bots_page():
-    """Render the bots page."""
-    return render_template('bots.html')
-
-
 # ==================== ACCOUNTS API ====================
 
 @app.route('/api/accounts', methods=['GET'])
@@ -924,6 +918,62 @@ def api_close_all_positions(account_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/accounts/<int:account_id>/close-position', methods=['POST'])
+def api_close_position(account_id):
+    """Close a specific position (full or partial)."""
+    if not BINANCE_AVAILABLE:
+        return jsonify({'error': 'Binance API not available'}), 500
+
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    data = request.get_json()
+    symbol = data.get('symbol')
+    side = data.get('side')  # Current position side (LONG/SHORT)
+    quantity = float(data.get('quantity', 0))
+
+    if not symbol or not side or quantity <= 0:
+        return jsonify({'error': 'Invalid parameters'}), 400
+
+    try:
+        client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
+        if account['is_testnet']:
+            client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+
+        # To close a position, place opposite order
+        # If LONG (bought), we SELL to close
+        # If SHORT (sold), we BUY to close
+        close_side = 'SELL' if side == 'LONG' else 'BUY'
+
+        print(f"Closing position: {symbol} {side} qty={quantity} -> {close_side}")
+
+        order = client.futures_create_order(
+            symbol=symbol,
+            side=close_side,
+            type='MARKET',
+            quantity=quantity,
+            reduceOnly='true'
+        )
+
+        return jsonify({
+            'success': True,
+            'order': {
+                'orderId': order['orderId'],
+                'symbol': order['symbol'],
+                'side': order['side'],
+                'quantity': order['origQty'],
+                'status': order['status']
+            }
+        })
+    except BinanceAPIException as e:
+        print(f"BinanceAPIException closing position: {e}")
+        return jsonify({'error': f'Binance error: {e.message}'}), 500
+    except Exception as e:
+        print(f"Exception closing position: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/accounts/<int:account_id>/sync', methods=['POST'])
 def api_sync_account_trades(account_id):
     """Sync ALL historical trades from Binance."""
@@ -1052,85 +1102,6 @@ def api_sync_account_trades(account_id):
         return jsonify({'error': str(e)}), 500
 
 
-# ==================== BOTS API ====================
-
-@app.route('/api/bots', methods=['GET'])
-def api_get_bots():
-    """Get all bots."""
-    bots = db.get_all_bots()
-    return jsonify(bots)
-
-
-@app.route('/api/bots/<int:bot_id>', methods=['GET'])
-def api_get_bot(bot_id):
-    """Get a specific bot."""
-    bot = db.get_bot(bot_id)
-    if bot:
-        return jsonify(bot)
-    return jsonify({'error': 'Bot not found'}), 404
-
-
-@app.route('/api/bots/<int:bot_id>', methods=['PUT'])
-def api_update_bot(bot_id):
-    """Update a bot (e.g., link to account)."""
-    data = request.json
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-    
-    bot = db.get_bot(bot_id)
-    if not bot:
-        return jsonify({'error': 'Bot not found'}), 404
-    
-    account_id = data.get('account_id')
-    
-    # Validate account exists if provided
-    if account_id is not None and account_id != '':
-        account = db.get_account(int(account_id))
-        if not account:
-            return jsonify({'error': 'Account not found'}), 404
-    
-    if db.update_bot(bot_id, account_id=account_id if account_id else None):
-        return jsonify({'success': True})
-    return jsonify({'error': 'Failed to update bot'}), 500
-
-
-@app.route('/api/bots/<int:bot_id>', methods=['DELETE'])
-def api_delete_bot(bot_id):
-    """Delete a bot and the script file if it exists."""
-    bot = db.get_bot(bot_id)
-    if not bot:
-        return jsonify({'error': 'Bot not found'}), 404
-    
-    script_id = bot.get('script_id')
-    
-    if not db.delete_bot(bot_id):
-        return jsonify({'error': 'Failed to delete bot'}), 500
-    
-    # Also delete the script file if it exists
-    if script_id:
-        filename = f"{script_id}.py"
-        filepath = os.path.join(SCRIPTS_FOLDER, filename)
-        
-        if os.path.exists(filepath):
-            stop_script_process(script_id)
-            os.remove(filepath)
-            
-            log_file = get_log_file_path(script_id)
-            if os.path.exists(log_file):
-                os.remove(log_file)
-            
-            metadata = load_metadata()
-            if script_id in metadata:
-                del metadata[script_id]
-                save_metadata(metadata)
-            
-            with logs_lock:
-                if script_id in script_logs:
-                    del script_logs[script_id]
-    
-    return jsonify({'success': True})
-
-
 # ==================== TRADES API ====================
 
 @app.route('/api/trades', methods=['GET'])
@@ -1199,7 +1170,6 @@ if __name__ == '__main__':
     print("  Dashboard: http://localhost:5000")
     print("  Accounts: http://localhost:5000/accounts")
     print("  Logs Page: http://localhost:5000/logs")
-    print("  Bots Page: http://localhost:5000/bots")
     print("  Trades Page: http://localhost:5000/trades")
     print("=" * 60)
     print(f"  Scripts folder: {SCRIPTS_FOLDER}")

@@ -352,6 +352,7 @@ function initDetailPage() {
     loadTrades();
     loadStats();
     setupDetailPageEventListeners();
+    setupClosePositionModal();
 }
 
 function setupDetailPageEventListeners() {
@@ -500,8 +501,22 @@ async function loadPositions() {
                         ${pos.unrealized_pnl >= 0 ? '+' : ''}$${pos.unrealized_pnl.toFixed(2)}
                     </td>
                     <td><span class="leverage-badge">${pos.leverage}x</span></td>
+                    <td>
+                        <button class="close-position-btn"
+                            data-symbol="${pos.symbol}"
+                            data-side="${pos.side}"
+                            data-quantity="${pos.quantity}"
+                            data-pnl="${pos.unrealized_pnl}">
+                            Close
+                        </button>
+                    </td>
                 </tr>
             `}).join('');
+
+            // Add event listeners for close buttons
+            tbody.querySelectorAll('.close-position-btn').forEach(btn => {
+                btn.addEventListener('click', () => openClosePositionModal(btn.dataset));
+            });
         } else {
             if (empty) empty.style.display = 'flex';
         }
@@ -692,6 +707,158 @@ async function closeAllPositions() {
     } catch (error) {
         console.error('Error closing positions:', error);
         showToast('Failed to close positions', 'error');
+    } finally {
+        btnText.style.display = 'inline';
+        btnLoading.style.display = 'none';
+        confirmBtn.disabled = false;
+    }
+}
+
+// ==================== CLOSE POSITION ====================
+
+let currentPosition = null;
+
+function openClosePositionModal(posData) {
+    currentPosition = {
+        symbol: posData.symbol,
+        side: posData.side,
+        quantity: parseFloat(posData.quantity),
+        pnl: parseFloat(posData.pnl)
+    };
+
+    // Update modal content
+    document.getElementById('closePositionSymbol').textContent = currentPosition.symbol;
+    const sideEl = document.getElementById('closePositionSide');
+    sideEl.textContent = currentPosition.side;
+    sideEl.className = `position-side ${currentPosition.side.toLowerCase()}`;
+    document.getElementById('closePositionSize').textContent = currentPosition.quantity;
+    const pnlEl = document.getElementById('closePositionPnl');
+    pnlEl.textContent = `${currentPosition.pnl >= 0 ? '+' : ''}$${currentPosition.pnl.toFixed(2)}`;
+    pnlEl.className = currentPosition.pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+
+    // Reset slider to 100%
+    document.getElementById('closePercentSlider').value = 100;
+    document.getElementById('closePercentValue').textContent = '100';
+    updateCloseQuantity(100);
+
+    // Reset percentage buttons
+    document.querySelectorAll('.pct-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelector('.pct-btn[data-pct="100"]').classList.add('active');
+
+    // Show modal
+    document.getElementById('closePositionModal').classList.add('active');
+}
+
+function updateCloseQuantity(percent) {
+    if (!currentPosition) return;
+    const qty = (currentPosition.quantity * percent / 100).toFixed(6);
+    document.getElementById('closeQuantityValue').textContent = qty;
+}
+
+function setupClosePositionModal() {
+    const modal = document.getElementById('closePositionModal');
+    const closeBtn = document.getElementById('closePositionModalBtn');
+    const cancelBtn = document.getElementById('cancelClosePositionBtn');
+    const confirmBtn = document.getElementById('confirmClosePositionBtn');
+    const slider = document.getElementById('closePercentSlider');
+    const pctBtns = document.querySelectorAll('.pct-btn');
+
+    // Close modal handlers
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            modal.classList.remove('active');
+            currentPosition = null;
+        });
+    }
+
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+            modal.classList.remove('active');
+            currentPosition = null;
+        });
+    }
+
+    // Close on overlay click
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.classList.remove('active');
+                currentPosition = null;
+            }
+        });
+    }
+
+    // Slider change
+    if (slider) {
+        slider.addEventListener('input', (e) => {
+            const val = e.target.value;
+            document.getElementById('closePercentValue').textContent = val;
+            updateCloseQuantity(val);
+
+            // Update active button
+            pctBtns.forEach(btn => btn.classList.remove('active'));
+            const matchingBtn = document.querySelector(`.pct-btn[data-pct="${val}"]`);
+            if (matchingBtn) matchingBtn.classList.add('active');
+        });
+    }
+
+    // Percentage buttons
+    pctBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const pct = btn.dataset.pct;
+            slider.value = pct;
+            document.getElementById('closePercentValue').textContent = pct;
+            updateCloseQuantity(pct);
+
+            pctBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        });
+    });
+
+    // Confirm close
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', closePosition);
+    }
+}
+
+async function closePosition() {
+    if (!currentPosition) return;
+
+    const confirmBtn = document.getElementById('confirmClosePositionBtn');
+    const btnText = confirmBtn.querySelector('.btn-text');
+    const btnLoading = confirmBtn.querySelector('.btn-loading');
+    const percent = parseInt(document.getElementById('closePercentSlider').value);
+    const quantityToClose = (currentPosition.quantity * percent / 100);
+
+    btnText.style.display = 'none';
+    btnLoading.style.display = 'flex';
+    confirmBtn.disabled = true;
+
+    try {
+        const response = await fetch(`/api/accounts/${ACCOUNT_ID}/close-position`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol: currentPosition.symbol,
+                side: currentPosition.side,
+                quantity: quantityToClose
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showToast(`Closed ${percent}% of ${currentPosition.symbol} position`, 'success');
+            document.getElementById('closePositionModal').classList.remove('active');
+            currentPosition = null;
+            loadPositions();
+            loadBalance();
+        } else {
+            showToast(data.error || 'Failed to close position', 'error');
+        }
+    } catch (error) {
+        console.error('Error closing position:', error);
+        showToast('Failed to close position', 'error');
     } finally {
         btnText.style.display = 'inline';
         btnLoading.style.display = 'none';

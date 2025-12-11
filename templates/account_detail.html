@@ -31,7 +31,6 @@
                 <a href="/" class="nav-link">Dashboard</a>
                 <a href="/logs" class="nav-link">Logs</a>
                 <a href="/accounts" class="nav-link active">Accounts</a>
-                <a href="/bots" class="nav-link">Bots</a>
             </div>
             <div class="header-actions">
                 <button class="action-btn sync-btn" id="syncBtn">
@@ -119,6 +118,7 @@
                                 <th>Mark Price</th>
                                 <th>Unrealized PnL</th>
                                 <th>Leverage</th>
+                                <th>Action</th>
                             </tr>
                         </thead>
                         <tbody id="positionsBody">
@@ -234,6 +234,64 @@
                 <button class="btn-secondary" id="cancelCloseAllBtn">Cancel</button>
                 <button class="btn-danger" id="confirmCloseAllBtn">
                     <span class="btn-text">Close All Positions</span>
+                    <span class="btn-loading" style="display: none;">
+                        <div class="btn-spinner"></div>
+                        Closing...
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Close Position Modal -->
+    <div class="modal-overlay" id="closePositionModal">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3>Close Position</h3>
+                <button class="modal-close" id="closePositionModalBtn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="position-info">
+                    <span class="position-symbol" id="closePositionSymbol">BTCUSDT</span>
+                    <span class="position-side" id="closePositionSide">LONG</span>
+                </div>
+                <div class="position-details">
+                    <div class="detail-row">
+                        <span>Current Size:</span>
+                        <span id="closePositionSize">0.00</span>
+                    </div>
+                    <div class="detail-row">
+                        <span>Unrealized PnL:</span>
+                        <span id="closePositionPnl">$0.00</span>
+                    </div>
+                </div>
+                <div class="close-amount-section">
+                    <label>Close Amount</label>
+                    <div class="percentage-buttons">
+                        <button class="pct-btn" data-pct="25">25%</button>
+                        <button class="pct-btn" data-pct="50">50%</button>
+                        <button class="pct-btn" data-pct="75">75%</button>
+                        <button class="pct-btn active" data-pct="100">100%</button>
+                    </div>
+                    <div class="slider-container">
+                        <input type="range" id="closePercentSlider" min="1" max="100" value="100" class="percentage-slider">
+                        <div class="slider-value"><span id="closePercentValue">100</span>%</div>
+                    </div>
+                    <div class="close-quantity">
+                        <span>Quantity to close:</span>
+                        <span id="closeQuantityValue">0.00</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelClosePositionBtn">Cancel</button>
+                <button class="btn-danger" id="confirmClosePositionBtn">
+                    <span class="btn-text">Close Position</span>
                     <span class="btn-loading" style="display: none;">
                         <div class="btn-spinner"></div>
                         Closing...
