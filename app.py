@@ -951,10 +951,10 @@ def api_sync_account_trades(account_id):
         else:
             print(f"Using mainnet URL: {client.FUTURES_URL}")
 
-        # Get ALL trades - go back 2 years to capture full history
+        # Get trades from last 7 days
         end_time = int(datetime.now().timestamp() * 1000)
-        start_time = int((datetime.now() - timedelta(days=730)).timestamp() * 1000)
-        print(f"Time range: {start_time} to {end_time} (last 2 years)")
+        start_time = int((datetime.now() - timedelta(days=7)).timestamp() * 1000)
+        print(f"Time range: last 7 days")
 
         # Get all symbols with positions or recent activity
         print("Fetching exchange info...")
@@ -1005,16 +1005,13 @@ def api_sync_account_trades(account_id):
                 for trade in trades:
                     total_checked += 1
 
-                    # Determine side
-                    side = trade['side']  # BUY or SELL
-
-                    # Insert trade (will skip if already exists)
+                    # Insert trade (will skip if already exists based on exchange_trade_id)
                     inserted = db.insert_trade(
                         account_id=account_id,
                         exchange_trade_id=trade['id'],
                         order_id=trade['orderId'],
                         symbol=trade['symbol'],
-                        side=side,
+                        side=trade['side'],
                         quantity=float(trade['qty']),
                         price=float(trade['price']),
                         realized_pnl=float(trade['realizedPnl']),
@@ -1025,7 +1022,6 @@ def api_sync_account_trades(account_id):
 
                     if inserted:
                         new_trades += 1
-                        print(f"  Inserted new trade: {trade['id']} - {symbol} {side}")
 
             except BinanceAPIException as e:
                 if 'Invalid symbol' not in str(e):
