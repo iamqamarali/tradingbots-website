@@ -566,35 +566,48 @@ async function loadStats() {
 }
 
 async function syncTrades() {
+    console.log('=== syncTrades() called ===');
+    console.log('ACCOUNT_ID:', ACCOUNT_ID);
+
     const syncBtn = document.getElementById('syncBtn');
     const syncModal = document.getElementById('syncModal');
     const syncProgress = document.getElementById('syncProgress');
     const syncStatus = document.getElementById('syncStatus');
-    
+
+    console.log('syncBtn:', syncBtn);
+    console.log('syncModal:', syncModal);
+
     syncBtn.classList.add('syncing');
     syncModal.classList.add('active');
     syncProgress.style.width = '30%';
     syncStatus.textContent = 'Fetching trades from Binance...';
-    
+
     try {
         // Simulate progress
         setTimeout(() => {
             syncProgress.style.width = '60%';
             syncStatus.textContent = 'Processing trades...';
         }, 1000);
-        
-        const response = await fetch(`/api/accounts/${ACCOUNT_ID}/sync`, {
+
+        const url = `/api/accounts/${ACCOUNT_ID}/sync`;
+        console.log('Fetching URL:', url);
+
+        const response = await fetch(url, {
             method: 'POST'
         });
-        
+
+        console.log('Response status:', response.status);
+        console.log('Response ok:', response.ok);
+
         const data = await response.json();
-        
+        console.log('Response data:', data);
+
         syncProgress.style.width = '100%';
-        
+
         if (response.ok) {
             syncStatus.textContent = `Done! Added ${data.new_trades} new trades.`;
             showToast(`Synced ${data.new_trades} new trades`, 'success');
-            
+
             // Reload data
             setTimeout(() => {
                 syncModal.classList.remove('active');
@@ -602,11 +615,13 @@ async function syncTrades() {
                 loadStats();
             }, 1500);
         } else {
+            console.error('Sync failed with error:', data.error);
             syncModal.classList.remove('active');
             showToast(data.error || 'Sync failed', 'error');
         }
     } catch (error) {
         console.error('Error syncing trades:', error);
+        console.error('Error stack:', error.stack);
         syncModal.classList.remove('active');
         showToast('Failed to sync trades', 'error');
     } finally {

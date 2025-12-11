@@ -734,7 +734,7 @@ def api_create_account():
         try:
             client = BinanceClient(api_key, api_secret, testnet=is_testnet)
             if is_testnet:
-                client.FUTURES_URL = 'https://testnet.binancefuture.com'
+                client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
             # Test connection
             client.futures_account_balance()
         except BinanceAPIException as e:
@@ -774,60 +774,86 @@ def api_delete_account(account_id):
 @app.route('/api/accounts/<int:account_id>/balance', methods=['GET'])
 def api_get_account_balance(account_id):
     """Get account balance from Binance."""
+    print(f"=== GET BALANCE for account_id: {account_id} ===")
+
     if not BINANCE_AVAILABLE:
+        print("ERROR: Binance API not available")
         return jsonify({'error': 'Binance API not available'}), 500
-    
+
     account = db.get_account(account_id)
     if not account:
+        print(f"ERROR: Account {account_id} not found")
         return jsonify({'error': 'Account not found'}), 404
-    
+
+    print(f"Account: {account['name']}, is_testnet: {account['is_testnet']}")
+
     try:
         client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
         if account['is_testnet']:
-            client.FUTURES_URL = 'https://testnet.binancefuture.com'
-        
+            client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+            print(f"Using testnet URL: {client.FUTURES_URL}")
+
+        print("Fetching futures account balance...")
         balances = client.futures_account_balance()
+        print(f"Got {len(balances)} balance entries")
+
         usdt_balance = 0
         for bal in balances:
             if bal['asset'] == 'USDT':
                 usdt_balance = float(bal['balance'])
+                print(f"USDT balance found: {usdt_balance}")
                 break
-        
+
         return jsonify({
             'balance': round(usdt_balance, 2),
             'asset': 'USDT'
         })
     except BinanceAPIException as e:
+        print(f"BinanceAPIException: {e}")
         return jsonify({'error': f'Binance error: {e.message}'}), 500
     except Exception as e:
+        print(f"Exception: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/accounts/<int:account_id>/positions', methods=['GET'])
 def api_get_account_positions(account_id):
     """Get open positions from Binance."""
+    print(f"=== GET POSITIONS for account_id: {account_id} ===")
+
     if not BINANCE_AVAILABLE:
+        print("ERROR: Binance API not available")
         return jsonify({'error': 'Binance API not available'}), 500
-    
+
     account = db.get_account(account_id)
     if not account:
+        print(f"ERROR: Account {account_id} not found")
         return jsonify({'error': 'Account not found'}), 404
-    
+
+    print(f"Account: {account['name']}, is_testnet: {account['is_testnet']}")
+
     try:
         client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
         if account['is_testnet']:
-            client.FUTURES_URL = 'https://testnet.binancefuture.com'
-        
+            client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+            print(f"Using testnet URL: {client.FUTURES_URL}")
+
+        print("Fetching futures position information...")
         positions = client.futures_position_information()
+        print(f"Got {len(positions)} position entries")
+
         open_positions = []
-        
+
         for pos in positions:
             amt = float(pos['positionAmt'])
             if amt != 0:
                 entry_price = float(pos['entryPrice'])
                 mark_price = float(pos['markPrice'])
                 unrealized_pnl = float(pos['unRealizedProfit'])
-                
+
+                print(f"  Open position: {pos['symbol']} amt={amt} pnl={unrealized_pnl}")
                 open_positions.append({
                     'symbol': pos['symbol'],
                     'side': 'LONG' if amt > 0 else 'SHORT',
@@ -837,11 +863,16 @@ def api_get_account_positions(account_id):
                     'unrealized_pnl': round(unrealized_pnl, 2),
                     'leverage': int(pos['leverage'])
                 })
-        
+
+        print(f"Returning {len(open_positions)} open positions")
         return jsonify(open_positions)
     except BinanceAPIException as e:
+        print(f"BinanceAPIException: {e}")
         return jsonify({'error': f'Binance error: {e.message}'}), 500
     except Exception as e:
+        print(f"Exception: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
@@ -858,7 +889,7 @@ def api_close_all_positions(account_id):
     try:
         client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
         if account['is_testnet']:
-            client.FUTURES_URL = 'https://testnet.binancefuture.com'
+            client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
         
         positions = client.futures_position_information()
         closed = []
@@ -896,52 +927,86 @@ def api_close_all_positions(account_id):
 @app.route('/api/accounts/<int:account_id>/sync', methods=['POST'])
 def api_sync_account_trades(account_id):
     """Sync trades from Binance for the last 7 days."""
+    print(f"=== SYNC TRADES CALLED for account_id: {account_id} ===")
+
     if not BINANCE_AVAILABLE:
+        print("ERROR: Binance API not available")
         return jsonify({'error': 'Binance API not available'}), 500
-    
+
     account = db.get_account(account_id)
     if not account:
+        print(f"ERROR: Account {account_id} not found")
         return jsonify({'error': 'Account not found'}), 404
-    
+
+    print(f"Account found: {account['name']}, is_testnet: {account['is_testnet']}")
+    print(f"API Key (first 10 chars): {account['api_key'][:10]}...")
+
     try:
+        print("Creating Binance client...")
         client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
         if account['is_testnet']:
-            client.FUTURES_URL = 'https://testnet.binancefuture.com'
-        
+            # Correct testnet futures URL
+            client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+            print(f"Using testnet URL: {client.FUTURES_URL}")
+        else:
+            print(f"Using mainnet URL: {client.FUTURES_URL}")
+
         # Get trades from last 7 days
         end_time = int(datetime.now().timestamp() * 1000)
         start_time = int((datetime.now() - timedelta(days=7)).timestamp() * 1000)
-        
+        print(f"Time range: {start_time} to {end_time}")
+
         # Get all symbols with positions or recent activity
+        print("Fetching exchange info...")
         exchange_info = client.futures_exchange_info()
-        symbols = [s['symbol'] for s in exchange_info['symbols'] if s['status'] == 'TRADING']
-        
+        all_symbols = [s['symbol'] for s in exchange_info['symbols'] if s['status'] == 'TRADING']
+        print(f"Found {len(all_symbols)} trading symbols on exchange")
+
         new_trades = 0
         total_checked = 0
-        
-        # Only sync popular USDT pairs to avoid rate limits
-        priority_symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 
+
+        # Get symbols from current positions
+        print("Fetching current positions to find active symbols...")
+        symbols_to_sync = set()
+        try:
+            positions = client.futures_position_information()
+            for pos in positions:
+                amt = float(pos['positionAmt'])
+                if amt != 0:
+                    symbols_to_sync.add(pos['symbol'])
+                    print(f"  Found open position in {pos['symbol']}")
+        except Exception as e:
+            print(f"Warning: Could not fetch positions: {e}")
+
+        # Also add popular USDT pairs
+        priority_symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT',
                           'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'DOTUSDT', 'LINKUSDT',
                           'MATICUSDT', 'LTCUSDT', 'ATOMUSDT', 'UNIUSDT', 'APTUSDT']
-        
-        for symbol in priority_symbols:
-            if symbol not in symbols:
+        symbols_to_sync.update(priority_symbols)
+
+        print(f"Will sync {len(symbols_to_sync)} symbols: {symbols_to_sync}")
+
+        for symbol in symbols_to_sync:
+            if symbol not in all_symbols:
+                print(f"Skipping {symbol} - not in exchange symbols")
                 continue
-            
+
             try:
+                print(f"Fetching trades for {symbol}...")
                 trades = client.futures_account_trades(
                     symbol=symbol,
                     startTime=start_time,
                     endTime=end_time,
                     limit=1000
                 )
-                
+                print(f"  Found {len(trades)} trades for {symbol}")
+
                 for trade in trades:
                     total_checked += 1
-                    
+
                     # Determine side
                     side = trade['side']  # BUY or SELL
-                    
+
                     # Insert trade (will skip if already exists)
                     inserted = db.insert_trade(
                         account_id=account_id,
@@ -956,16 +1021,18 @@ def api_sync_account_trades(account_id):
                         commission_asset=trade['commissionAsset'],
                         trade_time=datetime.fromtimestamp(trade['time'] / 1000).isoformat()
                     )
-                    
+
                     if inserted:
                         new_trades += 1
-                
+                        print(f"  Inserted new trade: {trade['id']} - {symbol} {side}")
+
             except BinanceAPIException as e:
                 if 'Invalid symbol' not in str(e):
-                    print(f"Error syncing {symbol}: {e}")
+                    print(f"BinanceAPIException syncing {symbol}: {e}")
             except Exception as e:
-                print(f"Error syncing {symbol}: {e}")
-        
+                print(f"Exception syncing {symbol}: {e}")
+
+        print(f"=== SYNC COMPLETE: {new_trades} new trades, {total_checked} total checked ===")
         return jsonify({
             'success': True,
             'new_trades': new_trades,
@@ -973,8 +1040,12 @@ def api_sync_account_trades(account_id):
             'message': f'Synced {new_trades} new trades'
         })
     except BinanceAPIException as e:
+        print(f"BinanceAPIException: {e}")
         return jsonify({'error': f'Binance error: {e.message}'}), 500
     except Exception as e:
+        print(f"Exception: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
