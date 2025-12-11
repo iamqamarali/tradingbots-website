@@ -926,7 +926,7 @@ def api_close_all_positions(account_id):
 
 @app.route('/api/accounts/<int:account_id>/sync', methods=['POST'])
 def api_sync_account_trades(account_id):
-    """Sync trades from Binance for the last 7 days."""
+    """Sync ALL historical trades from Binance."""
     print(f"=== SYNC TRADES CALLED for account_id: {account_id} ===")
 
     if not BINANCE_AVAILABLE:
@@ -951,10 +951,10 @@ def api_sync_account_trades(account_id):
         else:
             print(f"Using mainnet URL: {client.FUTURES_URL}")
 
-        # Get trades from last 7 days
+        # Get ALL trades - go back 2 years to capture full history
         end_time = int(datetime.now().timestamp() * 1000)
-        start_time = int((datetime.now() - timedelta(days=7)).timestamp() * 1000)
-        print(f"Time range: {start_time} to {end_time}")
+        start_time = int((datetime.now() - timedelta(days=730)).timestamp() * 1000)
+        print(f"Time range: {start_time} to {end_time} (last 2 years)")
 
         # Get all symbols with positions or recent activity
         print("Fetching exchange info...")
@@ -978,10 +978,11 @@ def api_sync_account_trades(account_id):
         except Exception as e:
             print(f"Warning: Could not fetch positions: {e}")
 
-        # Also add popular USDT pairs
+        # Also add popular USDT and USDC pairs
         priority_symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT',
                           'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'DOTUSDT', 'LINKUSDT',
-                          'MATICUSDT', 'LTCUSDT', 'ATOMUSDT', 'UNIUSDT', 'APTUSDT']
+                          'MATICUSDT', 'LTCUSDT', 'ATOMUSDT', 'UNIUSDT', 'APTUSDT',
+                          'BTCUSDC', 'ETHUSDC', 'SOLUSDC', 'BNBUSDC', 'XRPUSDC']
         symbols_to_sync.update(priority_symbols)
 
         print(f"Will sync {len(symbols_to_sync)} symbols: {symbols_to_sync}")
@@ -1032,12 +1033,20 @@ def api_sync_account_trades(account_id):
             except Exception as e:
                 print(f"Exception syncing {symbol}: {e}")
 
+        # Update account stats in database
+        print("Updating account stats...")
+        db.update_account_stats(account_id)
+
+        # Get updated stats to return
+        stats = db.get_trade_stats(account_id)
+
         print(f"=== SYNC COMPLETE: {new_trades} new trades, {total_checked} total checked ===")
         return jsonify({
             'success': True,
             'new_trades': new_trades,
             'total_checked': total_checked,
-            'message': f'Synced {new_trades} new trades'
+            'message': f'Synced {new_trades} new trades',
+            'stats': stats
         })
     except BinanceAPIException as e:
         print(f"BinanceAPIException: {e}")

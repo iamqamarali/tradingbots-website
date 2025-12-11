@@ -187,15 +187,26 @@ function renderAccounts() {
 function createAccountCard(account) {
     const pnlClass = account.total_pnl >= 0 ? 'positive' : 'negative';
     const pnlPrefix = account.total_pnl >= 0 ? '+' : '';
-    
-    const createdDate = account.created_at 
-        ? new Date(account.created_at).toLocaleDateString('en-US', { 
-            month: 'short', 
-            day: 'numeric', 
-            year: 'numeric' 
+    const winRate = account.win_rate || 0;
+    const winRateClass = winRate >= 50 ? 'positive' : (winRate > 0 ? 'negative' : '');
+
+    const createdDate = account.created_at
+        ? new Date(account.created_at).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
         })
         : 'Unknown';
-    
+
+    const lastSync = account.last_sync_time
+        ? new Date(account.last_sync_time).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        })
+        : 'Never';
+
     return `
         <div class="account-card" data-account-id="${account.id}">
             <div class="account-card-header">
@@ -207,8 +218,8 @@ function createAccountCard(account) {
                     <span class="account-api-key">${account.api_key}</span>
                 </div>
                 <div class="account-actions">
-                    <button class="account-action-btn delete delete-account-btn" 
-                            data-account-id="${account.id}" 
+                    <button class="account-action-btn delete delete-account-btn"
+                            data-account-id="${account.id}"
                             data-account-name="${escapeHtml(account.name)}"
                             title="Delete Account">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -224,6 +235,10 @@ function createAccountCard(account) {
                     <span class="account-stat-label">Trades</span>
                 </div>
                 <div class="account-stat">
+                    <span class="account-stat-value ${winRateClass}">${winRate.toFixed(1)}%</span>
+                    <span class="account-stat-label">Win Rate</span>
+                </div>
+                <div class="account-stat">
                     <span class="account-stat-value ${pnlClass}">${pnlPrefix}$${(account.total_pnl || 0).toFixed(2)}</span>
                     <span class="account-stat-label">PnL</span>
                 </div>
@@ -233,7 +248,7 @@ function createAccountCard(account) {
                 </div>
             </div>
             <div class="account-card-footer">
-                <span class="account-date">Added ${createdDate}</span>
+                <span class="account-date">Synced: ${lastSync}</span>
                 <button class="view-account-btn">
                     View Details
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

@@ -39,9 +39,29 @@ def init_db():
                 api_key TEXT NOT NULL,
                 api_secret TEXT NOT NULL,
                 is_testnet INTEGER DEFAULT 0,
+                total_trades INTEGER DEFAULT 0,
+                total_pnl REAL DEFAULT 0,
+                total_commission REAL DEFAULT 0,
+                winning_trades INTEGER DEFAULT 0,
+                losing_trades INTEGER DEFAULT 0,
+                last_sync_time TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+
+        # Add new columns if they don't exist (migration for existing databases)
+        for col, col_type, default in [
+            ('total_trades', 'INTEGER', 0),
+            ('total_pnl', 'REAL', 0),
+            ('total_commission', 'REAL', 0),
+            ('winning_trades', 'INTEGER', 0),
+            ('losing_trades', 'INTEGER', 0),
+            ('last_sync_time', 'TIMESTAMP', None)
+        ]:
+            try:
+                cursor.execute(f'ALTER TABLE accounts ADD COLUMN {col} {col_type} DEFAULT {default if default is not None else "NULL"}')
+            except sqlite3.OperationalError:
+                pass  # Column already exists
         
         # Bots table (with optional account_id)
         cursor.execute('''
@@ -122,26 +142,23 @@ def get_all_accounts():
     with db_lock:
         conn = get_connection()
         cursor = conn.cursor()
-        
+
         cursor.execute('''
-            SELECT 
-                a.id,
-                a.name,
-                a.api_key,
-                a.api_secret,
-                a.is_testnet,
-                a.created_at,
-                COUNT(t.id) as total_trades,
-                COALESCE(SUM(t.realized_pnl), 0) as total_pnl,
-                COALESCE(SUM(t.commission), 0) as total_commission
-            FROM accounts a
-            LEFT JOIN trades t ON a.id = t.account_id
-            GROUP BY a.id
-            ORDER BY a.created_at DESC
+            SELECT
+                id, name, api_key, api_secret, is_testnet, created_at,
+                total_trades, total_pnl, total_commission,
+                winning_trades, losing_trades, last_sync_time
+            FROM accounts
+            ORDER BY created_at DESC
         ''')
-        
+
         accounts = []
         for row in cursor.fetchall():
+            total_trades = row['total_trades'] or 0
+            winning = row['winning_trades'] or 0
+            losing = row['losing_trades'] or 0
+            win_rate = round(winning / (winning + losing) * 100, 1) if (winning + losing) > 0 else 0
+
             accounts.append({
                 'id': row['id'],
                 'name': row['name'],
@@ -150,11 +167,15 @@ def get_all_accounts():
                 'api_secret': row['api_secret'],
                 'is_testnet': bool(row['is_testnet']),
                 'created_at': row['created_at'],
-                'total_trades': row['total_trades'] or 0,
+                'total_trades': total_trades,
                 'total_pnl': round(row['total_pnl'] or 0, 2),
-                'total_commission': round(row['total_commission'] or 0, 2)
+                'total_commission': round(row['total_commission'] or 0, 2),
+                'winning_trades': winning,
+                'losing_trades': losing,
+                'win_rate': win_rate,
+                'last_sync_time': row['last_sync_time']
             })
-        
+
         conn.close()
         return accounts
 
@@ -213,12 +234,56 @@ def update_account(account_id, name=None, api_key=None, api_secret=None, is_test
         return True
 
 
+def update_account_stats(account_id):
+    """Recalculate and update account stats from trades table."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Calculate stats from trades
+        cursor.execute('''
+            SELECT
+                COUNT(*) as total_trades,
+                COALESCE(SUM(realized_pnl), 0) as total_pnl,
+                COALESCE(SUM(commission), 0) as total_commission,
+                SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END) as winning_trades,
+                SUM(CASE WHEN realized_pnl < 0 THEN 1 ELSE 0 END) as losing_trades
+            FROM trades
+            WHERE account_id = ?
+        ''', (account_id,))
+
+        row = cursor.fetchone()
+
+        if row:
+            cursor.execute('''
+                UPDATE accounts SET
+                    total_trades = ?,
+                    total_pnl = ?,
+                    total_commission = ?,
+                    winning_trades = ?,
+                    losing_trades = ?,
+                    last_sync_time = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (
+                row['total_trades'] or 0,
+                round(row['total_pnl'] or 0, 4),
+                round(row['total_commission'] or 0, 4),
+                row['winning_trades'] or 0,
+                row['losing_trades'] or 0,
+                account_id
+            ))
+
+        conn.commit()
+        conn.close()
+        return True
+
+
 def delete_account(account_id):
     """Delete an account and all its trades."""
     with db_lock:
         conn = get_connection()
         cursor = conn.cursor()
-        
+
         cursor.execute('DELETE FROM accounts WHERE id = ?', (account_id,))
         deleted = cursor.rowcount > 0
         
