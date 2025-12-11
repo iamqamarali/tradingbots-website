@@ -861,7 +861,7 @@ def api_get_account_positions(account_id):
                     'entry_price': entry_price,
                     'mark_price': mark_price,
                     'unrealized_pnl': round(unrealized_pnl, 2),
-                    'leverage': int(pos['leverage'])
+                    'leverage': int(pos.get('leverage', 5))
                 })
 
         print(f"Returning {len(open_positions)} open positions")
