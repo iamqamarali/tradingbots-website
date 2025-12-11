@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Account Details - Trading Bot Manager</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/accounts.css">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="account-detail-page">
+        <!-- Header -->
+        <header class="page-header">
+            <div class="header-left">
+                <a href="/accounts" class="back-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                </a>
+                <div class="account-header-info">
+                    <div class="account-title">
+                        <h1 id="accountName">Loading...</h1>
+                        <span class="testnet-badge" id="testnetBadge" style="display: none;">TESTNET</span>
+                    </div>
+                    <span class="account-key" id="accountKey">API Key: ...</span>
+                </div>
+            </div>
+            <div class="header-nav">
+                <a href="/" class="nav-link">Dashboard</a>
+                <a href="/logs" class="nav-link">Logs</a>
+                <a href="/accounts" class="nav-link active">Accounts</a>
+                <a href="/bots" class="nav-link">Bots</a>
+            </div>
+            <div class="header-actions">
+                <button class="action-btn sync-btn" id="syncBtn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                    </svg>
+                    <span>Sync Trades</span>
+                </button>
+                <button class="action-btn close-all-btn" id="closeAllBtn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="15" y1="9" x2="9" y2="15"/>
+                        <line x1="9" y1="9" x2="15" y2="15"/>
+                    </svg>
+                    <span>Close All</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Balance & Stats Section -->
+        <section class="balance-section">
+            <div class="balance-card">
+                <div class="balance-header">
+                    <span class="balance-label">Account Balance</span>
+                    <button class="refresh-balance-btn" id="refreshBalanceBtn" title="Refresh Balance">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10"/>
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="balance-value" id="accountBalance">
+                    <span class="balance-amount">$0.00</span>
+                    <span class="balance-asset">USDT</span>
+                </div>
+            </div>
+            <div class="stats-row">
+                <div class="mini-stat">
+                    <span class="mini-stat-value" id="statTotalTrades">0</span>
+                    <span class="mini-stat-label">Trades</span>
+                </div>
+                <div class="mini-stat">
+                    <span class="mini-stat-value" id="statWinRate">0%</span>
+                    <span class="mini-stat-label">Win Rate</span>
+                </div>
+                <div class="mini-stat">
+                    <span class="mini-stat-value" id="statTotalPnL">$0.00</span>
+                    <span class="mini-stat-label">Total PnL</span>
+                </div>
+                <div class="mini-stat">
+                    <span class="mini-stat-value" id="statTotalFees">$0.00</span>
+                    <span class="mini-stat-label">Fees Paid</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Open Positions Section -->
+        <section class="positions-section">
+            <div class="section-header">
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                    </svg>
+                    Open Positions
+                </h2>
+                <button class="refresh-btn" id="refreshPositionsBtn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+            
+            <div class="positions-container">
+                <div class="positions-table-wrapper">
+                    <table class="positions-table" id="positionsTable">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Side</th>
+                                <th>Size</th>
+                                <th>Entry Price</th>
+                                <th>Mark Price</th>
+                                <th>PnL</th>
+                                <th>Leverage</th>
+                            </tr>
+                        </thead>
+                        <tbody id="positionsBody">
+                            <!-- Positions will be inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="loading-state" id="positionsLoading" style="display: none;">
+                    <div class="spinner"></div>
+                    <p>Loading positions...</p>
+                </div>
+                
+                <div class="empty-positions" id="emptyPositions" style="display: none;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M8 12h8"/>
+                    </svg>
+                    <p>No open positions</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Recent Trades Section -->
+        <section class="trades-section">
+            <div class="section-header">
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    Synced Trades
+                </h2>
+                <button class="refresh-btn" id="refreshTradesBtn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+            
+            <div class="trades-container">
+                <div class="trades-table-wrapper">
+                    <table class="trades-table" id="tradesTable">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Symbol</th>
+                                <th>Side</th>
+                                <th>Quantity</th>
+                                <th>Price</th>
+                                <th>PnL</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tradesBody">
+                            <!-- Trades will be inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="loading-state" id="tradesLoading" style="display: none;">
+                    <div class="spinner"></div>
+                    <p>Loading trades...</p>
+                </div>
+                
+                <div class="empty-trades" id="emptyTrades" style="display: none;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    <p>No trades synced yet</p>
+                    <button class="btn-secondary" onclick="document.getElementById('syncBtn').click()">Sync Trades Now</button>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Close All Confirmation Modal -->
+    <div class="modal-overlay" id="closeAllModal">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3>Close All Positions</h3>
+                <button class="modal-close" id="closeCloseAllModal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="warning-icon danger">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                        <line x1="12" y1="9" x2="12" y2="13"/>
+                        <line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                </div>
+                <p><strong>Warning:</strong> This will close ALL open positions at market price.</p>
+                <p class="warning-text">This action cannot be undone. Make sure you understand the implications.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelCloseAllBtn">Cancel</button>
+                <button class="btn-danger" id="confirmCloseAllBtn">
+                    <span class="btn-text">Close All Positions</span>
+                    <span class="btn-loading" style="display: none;">
+                        <div class="btn-spinner"></div>
+                        Closing...
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sync Progress Modal -->
+    <div class="modal-overlay" id="syncModal">
+        <div class="modal modal-small">
+            <div class="modal-body sync-progress">
+                <div class="sync-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                    </svg>
+                </div>
+                <h3>Syncing Trades</h3>
+                <p id="syncStatus">Fetching trades from Binance...</p>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="syncProgress"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        // Pass account ID to JavaScript
+        const ACCOUNT_ID = {{ account_id }};
+    </script>
+    <script src="/static/accounts.js"></script>
+</body>
+</html>
+

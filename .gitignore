@@ -6,3 +6,8 @@ logs/
 scripts/
 scripts_metadata.json
 
+# Database
+trades.db
+trades.db-wal
+trades.db-shm
+

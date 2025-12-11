@@ -15,6 +15,18 @@ from threading import Thread, Lock
 import time
 import atexit
 
+# Import database module for trade tracking
+import database as db
+
+# Binance API for account sync
+try:
+    from binance.client import Client as BinanceClient
+    from binance.exceptions import BinanceAPIException
+    BINANCE_AVAILABLE = True
+except ImportError:
+    BINANCE_AVAILABLE = False
+    print("[WARNING] binance-python not installed. Account sync disabled.")
+
 app = Flask(__name__)
 
 # Configuration
@@ -315,6 +327,9 @@ def upload_script():
     }
     save_metadata(metadata)
     
+    # Create bot record in database (symbol will be set when script calls register_bot)
+    db.create_bot(script_id, script_name, symbol='')
+    
     return jsonify({
         'success': True,
         'script': {
@@ -388,7 +403,7 @@ def update_script(script_id):
 
 @app.route('/api/scripts/<script_id>', methods=['DELETE'])
 def delete_script(script_id):
-    """Delete a script."""
+    """Delete a script file and metadata (keeps database record for trade history)."""
     filename = f"{script_id}.py"
     filepath = os.path.join(SCRIPTS_FOLDER, filename)
     
@@ -406,7 +421,7 @@ def delete_script(script_id):
     if os.path.exists(log_file):
         os.remove(log_file)
     
-    # Remove metadata
+    # Remove metadata (JSON file only)
     metadata = load_metadata()
     if script_id in metadata:
         del metadata[script_id]
@@ -416,6 +431,9 @@ def delete_script(script_id):
     with logs_lock:
         if script_id in script_logs:
             del script_logs[script_id]
+    
+    # NOTE: Database record (bot + trades) is intentionally kept for historical tracking
+    # Use the Bots page (/bots) to delete a bot and all its trade history
     
     return jsonify({'success': True})
 
@@ -660,6 +678,426 @@ def get_status():
     })
 
 
+# ==================== PAGES ====================
+
+@app.route('/accounts')
+def accounts_page():
+    """Render the accounts page."""
+    return render_template('accounts.html')
+
+
+@app.route('/accounts/<int:account_id>')
+def account_detail_page(account_id):
+    """Render the account detail page."""
+    account = db.get_account(account_id)
+    if not account:
+        return "Account not found", 404
+    return render_template('account_detail.html', account_id=account_id)
+
+
+@app.route('/bots')
+def bots_page():
+    """Render the bots page."""
+    return render_template('bots.html')
+
+
+# ==================== ACCOUNTS API ====================
+
+@app.route('/api/accounts', methods=['GET'])
+def api_get_accounts():
+    """Get all accounts."""
+    accounts = db.get_all_accounts()
+    # Don't expose full API keys/secrets in list view
+    for acc in accounts:
+        del acc['api_key_full']
+        del acc['api_secret']
+    return jsonify(accounts)
+
+
+@app.route('/api/accounts', methods=['POST'])
+def api_create_account():
+    """Create a new account."""
+    data = request.json
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    name = data.get('name', '').strip()
+    api_key = data.get('api_key', '').strip()
+    api_secret = data.get('api_secret', '').strip()
+    is_testnet = data.get('is_testnet', False)
+    
+    if not name or not api_key or not api_secret:
+        return jsonify({'error': 'Name, API key, and API secret are required'}), 400
+    
+    # Test the API connection
+    if BINANCE_AVAILABLE:
+        try:
+            client = BinanceClient(api_key, api_secret, testnet=is_testnet)
+            if is_testnet:
+                client.FUTURES_URL = 'https://testnet.binancefuture.com'
+            # Test connection
+            client.futures_account_balance()
+        except BinanceAPIException as e:
+            return jsonify({'error': f'Invalid API credentials: {e.message}'}), 400
+        except Exception as e:
+            return jsonify({'error': f'Connection failed: {str(e)}'}), 400
+    
+    account_id = db.create_account(name, api_key, api_secret, is_testnet)
+    
+    return jsonify({
+        'success': True,
+        'account_id': account_id,
+        'message': f'Account "{name}" created successfully'
+    })
+
+
+@app.route('/api/accounts/<int:account_id>', methods=['GET'])
+def api_get_account(account_id):
+    """Get a specific account."""
+    account = db.get_account(account_id)
+    if account:
+        # Mask the secrets
+        account['api_key'] = account['api_key'][:8] + '...' if account['api_key'] else ''
+        del account['api_secret']
+        return jsonify(account)
+    return jsonify({'error': 'Account not found'}), 404
+
+
+@app.route('/api/accounts/<int:account_id>', methods=['DELETE'])
+def api_delete_account(account_id):
+    """Delete an account and all its trades."""
+    if db.delete_account(account_id):
+        return jsonify({'success': True})
+    return jsonify({'error': 'Account not found'}), 404
+
+
+@app.route('/api/accounts/<int:account_id>/balance', methods=['GET'])
+def api_get_account_balance(account_id):
+    """Get account balance from Binance."""
+    if not BINANCE_AVAILABLE:
+        return jsonify({'error': 'Binance API not available'}), 500
+    
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+    
+    try:
+        client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
+        if account['is_testnet']:
+            client.FUTURES_URL = 'https://testnet.binancefuture.com'
+        
+        balances = client.futures_account_balance()
+        usdt_balance = 0
+        for bal in balances:
+            if bal['asset'] == 'USDT':
+                usdt_balance = float(bal['balance'])
+                break
+        
+        return jsonify({
+            'balance': round(usdt_balance, 2),
+            'asset': 'USDT'
+        })
+    except BinanceAPIException as e:
+        return jsonify({'error': f'Binance error: {e.message}'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/accounts/<int:account_id>/positions', methods=['GET'])
+def api_get_account_positions(account_id):
+    """Get open positions from Binance."""
+    if not BINANCE_AVAILABLE:
+        return jsonify({'error': 'Binance API not available'}), 500
+    
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+    
+    try:
+        client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
+        if account['is_testnet']:
+            client.FUTURES_URL = 'https://testnet.binancefuture.com'
+        
+        positions = client.futures_position_information()
+        open_positions = []
+        
+        for pos in positions:
+            amt = float(pos['positionAmt'])
+            if amt != 0:
+                entry_price = float(pos['entryPrice'])
+                mark_price = float(pos['markPrice'])
+                unrealized_pnl = float(pos['unRealizedProfit'])
+                
+                open_positions.append({
+                    'symbol': pos['symbol'],
+                    'side': 'LONG' if amt > 0 else 'SHORT',
+                    'quantity': abs(amt),
+                    'entry_price': entry_price,
+                    'mark_price': mark_price,
+                    'unrealized_pnl': round(unrealized_pnl, 2),
+                    'leverage': int(pos['leverage'])
+                })
+        
+        return jsonify(open_positions)
+    except BinanceAPIException as e:
+        return jsonify({'error': f'Binance error: {e.message}'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/accounts/<int:account_id>/close-all', methods=['POST'])
+def api_close_all_positions(account_id):
+    """Close all open positions for an account."""
+    if not BINANCE_AVAILABLE:
+        return jsonify({'error': 'Binance API not available'}), 500
+    
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+    
+    try:
+        client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
+        if account['is_testnet']:
+            client.FUTURES_URL = 'https://testnet.binancefuture.com'
+        
+        positions = client.futures_position_information()
+        closed = []
+        errors = []
+        
+        for pos in positions:
+            amt = float(pos['positionAmt'])
+            if amt != 0:
+                symbol = pos['symbol']
+                try:
+                    # Close by placing opposite market order
+                    side = 'SELL' if amt > 0 else 'BUY'
+                    client.futures_create_order(
+                        symbol=symbol,
+                        side=side,
+                        type='MARKET',
+                        quantity=abs(amt),
+                        reduceOnly='true'
+                    )
+                    closed.append(symbol)
+                except Exception as e:
+                    errors.append(f'{symbol}: {str(e)}')
+        
+        return jsonify({
+            'success': True,
+            'closed': closed,
+            'errors': errors
+        })
+    except BinanceAPIException as e:
+        return jsonify({'error': f'Binance error: {e.message}'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/accounts/<int:account_id>/sync', methods=['POST'])
+def api_sync_account_trades(account_id):
+    """Sync trades from Binance for the last 7 days."""
+    if not BINANCE_AVAILABLE:
+        return jsonify({'error': 'Binance API not available'}), 500
+    
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+    
+    try:
+        client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
+        if account['is_testnet']:
+            client.FUTURES_URL = 'https://testnet.binancefuture.com'
+        
+        # Get trades from last 7 days
+        end_time = int(datetime.now().timestamp() * 1000)
+        start_time = int((datetime.now() - timedelta(days=7)).timestamp() * 1000)
+        
+        # Get all symbols with positions or recent activity
+        exchange_info = client.futures_exchange_info()
+        symbols = [s['symbol'] for s in exchange_info['symbols'] if s['status'] == 'TRADING']
+        
+        new_trades = 0
+        total_checked = 0
+        
+        # Only sync popular USDT pairs to avoid rate limits
+        priority_symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 
+                          'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'DOTUSDT', 'LINKUSDT',
+                          'MATICUSDT', 'LTCUSDT', 'ATOMUSDT', 'UNIUSDT', 'APTUSDT']
+        
+        for symbol in priority_symbols:
+            if symbol not in symbols:
+                continue
+            
+            try:
+                trades = client.futures_account_trades(
+                    symbol=symbol,
+                    startTime=start_time,
+                    endTime=end_time,
+                    limit=1000
+                )
+                
+                for trade in trades:
+                    total_checked += 1
+                    
+                    # Determine side
+                    side = trade['side']  # BUY or SELL
+                    
+                    # Insert trade (will skip if already exists)
+                    inserted = db.insert_trade(
+                        account_id=account_id,
+                        exchange_trade_id=trade['id'],
+                        order_id=trade['orderId'],
+                        symbol=trade['symbol'],
+                        side=side,
+                        quantity=float(trade['qty']),
+                        price=float(trade['price']),
+                        realized_pnl=float(trade['realizedPnl']),
+                        commission=float(trade['commission']),
+                        commission_asset=trade['commissionAsset'],
+                        trade_time=datetime.fromtimestamp(trade['time'] / 1000).isoformat()
+                    )
+                    
+                    if inserted:
+                        new_trades += 1
+                
+            except BinanceAPIException as e:
+                if 'Invalid symbol' not in str(e):
+                    print(f"Error syncing {symbol}: {e}")
+            except Exception as e:
+                print(f"Error syncing {symbol}: {e}")
+        
+        return jsonify({
+            'success': True,
+            'new_trades': new_trades,
+            'total_checked': total_checked,
+            'message': f'Synced {new_trades} new trades'
+        })
+    except BinanceAPIException as e:
+        return jsonify({'error': f'Binance error: {e.message}'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ==================== BOTS API ====================
+
+@app.route('/api/bots', methods=['GET'])
+def api_get_bots():
+    """Get all bots."""
+    bots = db.get_all_bots()
+    return jsonify(bots)
+
+
+@app.route('/api/bots/<int:bot_id>', methods=['GET'])
+def api_get_bot(bot_id):
+    """Get a specific bot."""
+    bot = db.get_bot(bot_id)
+    if bot:
+        return jsonify(bot)
+    return jsonify({'error': 'Bot not found'}), 404
+
+
+@app.route('/api/bots/<int:bot_id>', methods=['PUT'])
+def api_update_bot(bot_id):
+    """Update a bot (e.g., link to account)."""
+    data = request.json
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    bot = db.get_bot(bot_id)
+    if not bot:
+        return jsonify({'error': 'Bot not found'}), 404
+    
+    account_id = data.get('account_id')
+    
+    # Validate account exists if provided
+    if account_id is not None and account_id != '':
+        account = db.get_account(int(account_id))
+        if not account:
+            return jsonify({'error': 'Account not found'}), 404
+    
+    if db.update_bot(bot_id, account_id=account_id if account_id else None):
+        return jsonify({'success': True})
+    return jsonify({'error': 'Failed to update bot'}), 500
+
+
+@app.route('/api/bots/<int:bot_id>', methods=['DELETE'])
+def api_delete_bot(bot_id):
+    """Delete a bot and the script file if it exists."""
+    bot = db.get_bot(bot_id)
+    if not bot:
+        return jsonify({'error': 'Bot not found'}), 404
+    
+    script_id = bot.get('script_id')
+    
+    if not db.delete_bot(bot_id):
+        return jsonify({'error': 'Failed to delete bot'}), 500
+    
+    # Also delete the script file if it exists
+    if script_id:
+        filename = f"{script_id}.py"
+        filepath = os.path.join(SCRIPTS_FOLDER, filename)
+        
+        if os.path.exists(filepath):
+            stop_script_process(script_id)
+            os.remove(filepath)
+            
+            log_file = get_log_file_path(script_id)
+            if os.path.exists(log_file):
+                os.remove(log_file)
+            
+            metadata = load_metadata()
+            if script_id in metadata:
+                del metadata[script_id]
+                save_metadata(metadata)
+            
+            with logs_lock:
+                if script_id in script_logs:
+                    del script_logs[script_id]
+    
+    return jsonify({'success': True})
+
+
+# ==================== TRADES API ====================
+
+@app.route('/api/trades', methods=['GET'])
+def api_get_trades():
+    """Get all trades with optional filters."""
+    account_id = request.args.get('account_id', None, type=int)
+    symbol = request.args.get('symbol', None)
+    limit = request.args.get('limit', 100, type=int)
+    offset = request.args.get('offset', 0, type=int)
+    
+    trades = db.get_trades(account_id=account_id, symbol=symbol, limit=limit, offset=offset)
+    return jsonify(trades)
+
+
+@app.route('/api/trades/<int:trade_id>', methods=['DELETE'])
+def api_delete_trade(trade_id):
+    """Delete a trade."""
+    if db.delete_trade(trade_id):
+        return jsonify({'success': True})
+    return jsonify({'error': 'Trade not found'}), 404
+
+
+@app.route('/api/trades/stats', methods=['GET'])
+def api_get_trade_stats():
+    """Get overall trade statistics."""
+    account_id = request.args.get('account_id', None, type=int)
+    stats = db.get_trade_stats(account_id=account_id)
+    if stats:
+        return jsonify(stats)
+    return jsonify({
+        'total_trades': 0,
+        'symbols_traded': 0,
+        'winning_trades': 0,
+        'losing_trades': 0,
+        'breakeven_trades': 0,
+        'win_rate': 0,
+        'total_pnl': 0,
+        'total_commission': 0
+    })
+
+
 def cleanup_on_exit():
     """Clean up all running processes on application exit."""
     print("\nShutting down... stopping all running scripts")
@@ -685,7 +1123,10 @@ if __name__ == '__main__':
     print("=" * 60)
     print("  Trading Bot Script Manager")
     print("  Dashboard: http://localhost:5000")
+    print("  Accounts: http://localhost:5000/accounts")
     print("  Logs Page: http://localhost:5000/logs")
+    print("  Bots Page: http://localhost:5000/bots")
+    print("  Trades Page: http://localhost:5000/trades")
     print("=" * 60)
     print(f"  Scripts folder: {SCRIPTS_FOLDER}")
     print(f"  Logs folder: {LOGS_FOLDER}")

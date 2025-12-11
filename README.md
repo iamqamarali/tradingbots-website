@@ -70,18 +70,29 @@ Navigate to [http://localhost:5000](http://localhost:5000)
 ```
 tradingwebsite/
 ├── app.py                 # Flask backend
+├── database.py            # SQLite database for trade tracking
+├── trade_reporter.py      # Helper module for logging trades
 ├── requirements.txt       # Python dependencies
 ├── README.md             # This file
-├── scripts/              # Uploaded bot scripts (auto-created)
+├── trades.db             # SQLite database (auto-created)
+├── scripts/              # Uploaded bot scripts (auto-created, gitignored)
 ├── scripts_metadata.json # Script metadata (auto-created)
 ├── templates/
-│   └── index.html        # Main HTML template
+│   ├── index.html        # Main dashboard
+│   ├── logs.html         # Logs page
+│   ├── bots.html         # Bots overview page
+│   └── trades.html       # Trade history page
 └── static/
-    ├── style.css         # Stylesheet
-    └── script.js         # Frontend JavaScript
+    ├── style.css         # Main stylesheet
+    ├── script.js         # Dashboard JavaScript
+    ├── logs.css/js       # Logs page styles/scripts
+    ├── bots.css/js       # Bots page styles/scripts
+    └── trades.css/js     # Trades page styles/scripts
 ```
 
 ## 🔧 API Endpoints
+
+### Scripts API
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -93,6 +104,25 @@ tradingwebsite/
 | POST | `/api/scripts/<id>/run` | Run script |
 | POST | `/api/scripts/<id>/stop` | Stop script |
 | GET | `/api/scripts/<id>/logs` | Get script logs |
+
+### Bots API (Trade Tracking)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/bots` | Get all bots with stats |
+| GET | `/api/bots/<id>` | Get specific bot |
+| DELETE | `/api/bots/<id>` | Delete bot and trades |
+| GET | `/api/bots/<id>/trades` | Get bot's trades |
+| GET | `/api/bots/<id>/stats` | Get bot statistics |
+
+### Trades API
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/trades` | Get all trades (filterable) |
+| GET | `/api/trades/<id>` | Get specific trade |
+| DELETE | `/api/trades/<id>` | Delete trade |
+| GET | `/api/trades/stats` | Get trade statistics |
 
 ## 📝 Example Trading Bot
 
@@ -128,6 +158,69 @@ while True:
         print(f"Error: {e}")
         time.sleep(5)
 ```
+
+## 📊 Trade Tracking
+
+BotTrader includes a built-in trade tracking system. Your bot scripts can log trades to an SQLite database, which are then viewable in the **Bots** and **Trades** pages.
+
+### Using the Trade Reporter
+
+Add this to your trading bot script (in the `scripts/` folder):
+
+```python
+# Add parent directory to path (required for scripts in scripts/ folder)
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from trade_reporter import TradeReporter
+
+# Initialize with your script ID (the filename without .py)
+reporter = TradeReporter(script_id="your_script_id")
+
+# Register your bot (call once at startup)
+reporter.register_bot("My Trading Bot", "BTCUSDT")
+
+# When opening a trade
+trade_id = reporter.open_trade(
+    side="LONG",           # or "SHORT"
+    leverage=50,           # leverage multiplier
+    quantity=0.01,         # position size
+    entry_price=97500.00,  # entry price
+    commission=0.50        # entry commission/fee
+)
+
+# When closing a trade
+result = reporter.close_trade(
+    trade_id=trade_id,     # from open_trade()
+    exit_price=98000.00,   # exit price
+    commission=0.50,       # exit commission/fee
+    reason="TP1"           # exit reason: TP, SL, SIGNAL, MANUAL
+)
+
+# Result contains:
+# - pnl: Net profit/loss in USD
+# - pnl_percent: Return on margin (accounts for leverage)
+# - duration_seconds: Trade duration
+
+print(f"Trade closed: ${result['pnl']:.2f} ({result['pnl_percent']:.1f}%)")
+```
+
+### Trade Reporter Methods
+
+| Method | Description |
+|--------|-------------|
+| `register_bot(name, symbol)` | Register/update bot info |
+| `open_trade(side, leverage, quantity, entry_price, commission)` | Log trade entry |
+| `close_trade(trade_id, exit_price, commission, reason)` | Log trade exit with PnL |
+| `has_open_trade()` | Check if there's an open trade |
+| `get_stats()` | Get trading statistics |
+| `get_recent_trades(limit)` | Get recent trades |
+
+### Viewing Trades
+
+- **Bots Page** (`/bots`): View all bots with their statistics (win rate, total PnL, trade count)
+- **Trades Page** (`/trades`): View all trades with filtering by bot, side, and status
 
 ## ⚠️ Important Notes
 

@@ -1,0 +1,482 @@
+"""
+SQLite Database for Account-Based Trade Tracking
+=================================================
+Stores accounts, bots, and trades synced from Binance.
+"""
+
+import sqlite3
+import os
+from datetime import datetime, timedelta
+from threading import Lock
+
+# Database path
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'trades.db')
+
+# Thread-safe lock for database operations
+db_lock = Lock()
+
+
+def get_connection():
+    """Get a database connection with WAL mode for concurrent access."""
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+def init_db():
+    """Initialize the database with tables."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Accounts table (NEW)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                api_key TEXT NOT NULL,
+                api_secret TEXT NOT NULL,
+                is_testnet INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Bots table (with optional account_id)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS bots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                script_id TEXT UNIQUE NOT NULL,
+                name TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                account_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL
+            )
+        ''')
+        
+        # Add account_id column if it doesn't exist (migration)
+        try:
+            cursor.execute('ALTER TABLE bots ADD COLUMN account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL')
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        
+        # Trades table (linked to accounts, with exchange_trade_id for deduplication)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL,
+                exchange_trade_id TEXT UNIQUE,
+                order_id TEXT,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL CHECK(side IN ('LONG', 'SHORT', 'BUY', 'SELL')),
+                quantity REAL NOT NULL,
+                price REAL NOT NULL,
+                realized_pnl REAL DEFAULT 0,
+                commission REAL DEFAULT 0,
+                commission_asset TEXT,
+                trade_time TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+            )
+        ''')
+        
+        # Add account_id column to trades if it doesn't exist (migration for existing databases)
+        try:
+            cursor.execute('ALTER TABLE trades ADD COLUMN account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE')
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+        # Create indexes
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_trades_account_id ON trades(account_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_trades_trade_time ON trades(trade_time)')
+        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_exchange_id ON trades(exchange_trade_id)')
+        
+        conn.commit()
+        conn.close()
+
+
+# ==================== ACCOUNT OPERATIONS ====================
+
+def create_account(name, api_key, api_secret, is_testnet=False):
+    """Create a new account. Returns account id."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            'INSERT INTO accounts (name, api_key, api_secret, is_testnet) VALUES (?, ?, ?, ?)',
+            (name, api_key, api_secret, 1 if is_testnet else 0)
+        )
+        account_id = cursor.lastrowid
+        
+        conn.commit()
+        conn.close()
+        return account_id
+
+
+def get_all_accounts():
+    """Get all accounts with trade statistics."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT 
+                a.id,
+                a.name,
+                a.api_key,
+                a.api_secret,
+                a.is_testnet,
+                a.created_at,
+                COUNT(t.id) as total_trades,
+                COALESCE(SUM(t.realized_pnl), 0) as total_pnl,
+                COALESCE(SUM(t.commission), 0) as total_commission
+            FROM accounts a
+            LEFT JOIN trades t ON a.id = t.account_id
+            GROUP BY a.id
+            ORDER BY a.created_at DESC
+        ''')
+        
+        accounts = []
+        for row in cursor.fetchall():
+            accounts.append({
+                'id': row['id'],
+                'name': row['name'],
+                'api_key': row['api_key'][:8] + '...' if row['api_key'] else '',  # Mask key
+                'api_key_full': row['api_key'],
+                'api_secret': row['api_secret'],
+                'is_testnet': bool(row['is_testnet']),
+                'created_at': row['created_at'],
+                'total_trades': row['total_trades'] or 0,
+                'total_pnl': round(row['total_pnl'] or 0, 2),
+                'total_commission': round(row['total_commission'] or 0, 2)
+            })
+        
+        conn.close()
+        return accounts
+
+
+def get_account(account_id):
+    """Get a single account by ID."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM accounts WHERE id = ?', (account_id,))
+        row = cursor.fetchone()
+        
+        conn.close()
+        
+        if row:
+            return {
+                'id': row['id'],
+                'name': row['name'],
+                'api_key': row['api_key'],
+                'api_secret': row['api_secret'],
+                'is_testnet': bool(row['is_testnet']),
+                'created_at': row['created_at']
+            }
+        return None
+
+
+def update_account(account_id, name=None, api_key=None, api_secret=None, is_testnet=None):
+    """Update an account."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        updates = []
+        params = []
+        
+        if name is not None:
+            updates.append('name = ?')
+            params.append(name)
+        if api_key is not None:
+            updates.append('api_key = ?')
+            params.append(api_key)
+        if api_secret is not None:
+            updates.append('api_secret = ?')
+            params.append(api_secret)
+        if is_testnet is not None:
+            updates.append('is_testnet = ?')
+            params.append(1 if is_testnet else 0)
+        
+        if updates:
+            params.append(account_id)
+            cursor.execute(f'UPDATE accounts SET {", ".join(updates)} WHERE id = ?', params)
+        
+        conn.commit()
+        conn.close()
+        return True
+
+
+def delete_account(account_id):
+    """Delete an account and all its trades."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('DELETE FROM accounts WHERE id = ?', (account_id,))
+        deleted = cursor.rowcount > 0
+        
+        conn.commit()
+        conn.close()
+        return deleted
+
+
+# ==================== BOT OPERATIONS ====================
+
+def create_bot(script_id, name, symbol='', account_id=None):
+    """Create a new bot record. Returns bot id."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Check if already exists
+        cursor.execute('SELECT id FROM bots WHERE script_id = ?', (script_id,))
+        row = cursor.fetchone()
+        
+        if row:
+            # Update existing bot
+            cursor.execute(
+                'UPDATE bots SET name = ?, symbol = ?, account_id = ? WHERE id = ?',
+                (name, symbol, account_id, row['id'])
+            )
+            conn.commit()
+            conn.close()
+            return row['id']
+        
+        # Create new bot
+        cursor.execute(
+            'INSERT INTO bots (script_id, name, symbol, account_id) VALUES (?, ?, ?, ?)',
+            (script_id, name, symbol, account_id)
+        )
+        bot_id = cursor.lastrowid
+        
+        conn.commit()
+        conn.close()
+        return bot_id
+
+
+def get_all_bots():
+    """Get all bots."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT b.*, a.name as account_name
+            FROM bots b
+            LEFT JOIN accounts a ON b.account_id = a.id
+            ORDER BY b.created_at DESC
+        ''')
+        
+        bots = []
+        for row in cursor.fetchall():
+            bots.append({
+                'id': row['id'],
+                'script_id': row['script_id'],
+                'name': row['name'],
+                'symbol': row['symbol'],
+                'account_id': row['account_id'],
+                'account_name': row['account_name'],
+                'created_at': row['created_at']
+            })
+        
+        conn.close()
+        return bots
+
+
+def get_bot(bot_id):
+    """Get a single bot by ID."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM bots WHERE id = ?', (bot_id,))
+        row = cursor.fetchone()
+        
+        conn.close()
+        
+        if row:
+            return dict(row)
+        return None
+
+
+def update_bot(bot_id, account_id=None):
+    """Update a bot's account assignment."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('UPDATE bots SET account_id = ? WHERE id = ?', (account_id, bot_id))
+        updated = cursor.rowcount > 0
+        
+        conn.commit()
+        conn.close()
+        return updated
+
+
+def delete_bot(bot_id):
+    """Delete a bot."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('DELETE FROM bots WHERE id = ?', (bot_id,))
+        deleted = cursor.rowcount > 0
+        
+        conn.commit()
+        conn.close()
+        return deleted
+
+
+# ==================== TRADE OPERATIONS ====================
+
+def insert_trade(account_id, exchange_trade_id, order_id, symbol, side, quantity, 
+                 price, realized_pnl, commission, commission_asset, trade_time):
+    """Insert a trade if it doesn't already exist. Returns True if inserted."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Check if trade already exists
+        cursor.execute('SELECT id FROM trades WHERE exchange_trade_id = ?', (str(exchange_trade_id),))
+        if cursor.fetchone():
+            conn.close()
+            return False  # Already exists
+        
+        cursor.execute('''
+            INSERT INTO trades (
+                account_id, exchange_trade_id, order_id, symbol, side, quantity,
+                price, realized_pnl, commission, commission_asset, trade_time
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (account_id, str(exchange_trade_id), str(order_id), symbol, side, quantity,
+              price, realized_pnl, commission, commission_asset, trade_time))
+        
+        conn.commit()
+        conn.close()
+        return True
+
+
+def get_trades(account_id=None, symbol=None, limit=100, offset=0):
+    """Get trades with optional filters."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        query = '''
+            SELECT t.*, a.name as account_name
+            FROM trades t
+            JOIN accounts a ON t.account_id = a.id
+            WHERE 1=1
+        '''
+        params = []
+        
+        if account_id:
+            query += ' AND t.account_id = ?'
+            params.append(account_id)
+        
+        if symbol:
+            query += ' AND t.symbol = ?'
+            params.append(symbol)
+        
+        query += ' ORDER BY t.trade_time DESC LIMIT ? OFFSET ?'
+        params.extend([limit, offset])
+        
+        cursor.execute(query, params)
+        
+        trades = []
+        for row in cursor.fetchall():
+            trade = dict(row)
+            trades.append(trade)
+        
+        conn.close()
+        return trades
+
+
+def get_trade_stats(account_id=None):
+    """Get aggregated trade statistics."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        query = '''
+            SELECT 
+                COUNT(*) as total_trades,
+                COUNT(DISTINCT symbol) as symbols_traded,
+                COALESCE(SUM(realized_pnl), 0) as total_pnl,
+                COALESCE(SUM(commission), 0) as total_commission,
+                SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END) as winning_trades,
+                SUM(CASE WHEN realized_pnl < 0 THEN 1 ELSE 0 END) as losing_trades,
+                SUM(CASE WHEN realized_pnl = 0 THEN 1 ELSE 0 END) as breakeven_trades
+            FROM trades
+        '''
+        
+        if account_id:
+            query += ' WHERE account_id = ?'
+            cursor.execute(query, (account_id,))
+        else:
+            cursor.execute(query)
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            total = row['total_trades'] or 0
+            winning = row['winning_trades'] or 0
+            losing = row['losing_trades'] or 0
+            
+            return {
+                'total_trades': total,
+                'symbols_traded': row['symbols_traded'] or 0,
+                'total_pnl': round(row['total_pnl'] or 0, 2),
+                'total_commission': round(row['total_commission'] or 0, 2),
+                'winning_trades': winning,
+                'losing_trades': losing,
+                'breakeven_trades': row['breakeven_trades'] or 0,
+                'win_rate': round(winning / (winning + losing) * 100, 1) if (winning + losing) > 0 else 0
+            }
+        
+        return None
+
+
+def delete_trade(trade_id):
+    """Delete a trade."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('DELETE FROM trades WHERE id = ?', (trade_id,))
+        deleted = cursor.rowcount > 0
+        
+        conn.commit()
+        conn.close()
+        return deleted
+
+
+def get_last_sync_time(account_id):
+    """Get the most recent trade time for an account."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT MAX(trade_time) as last_time
+            FROM trades
+            WHERE account_id = ?
+        ''', (account_id,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row and row['last_time']:
+            return row['last_time']
+        return None
+
+
+# Initialize database on module load
+init_db()
