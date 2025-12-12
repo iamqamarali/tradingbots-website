@@ -185,7 +185,8 @@ def get_all_accounts():
             
             current_balance = row['current_balance'] or 0
             starting_balance = row['starting_balance'] or 0
-            net_profit = current_balance - starting_balance if starting_balance > 0 else row['total_pnl'] or 0
+            # Net profit is realized PnL from trades (not balance difference)
+            net_profit = row['total_pnl'] or 0
             net_profit_pct = round((net_profit / starting_balance) * 100, 2) if starting_balance > 0 else 0
 
             accounts.append({
@@ -520,8 +521,8 @@ def get_trade_stats(account_id=None):
                 balance_info = {
                     'current_balance': round(current_balance, 2),
                     'starting_balance': round(starting_balance, 2),
-                    'net_profit': round(current_balance - starting_balance, 2) if starting_balance > 0 else 0,
-                    'net_profit_pct': round((current_balance - starting_balance) / starting_balance * 100, 2) if starting_balance > 0 else 0
+                    'net_profit': round(stats.get('total_pnl', 0), 2),
+                    'net_profit_pct': round((stats.get('total_pnl', 0) / starting_balance) * 100, 2) if starting_balance > 0 else 0
                 }
         
         conn.close()

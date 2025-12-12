@@ -458,29 +458,14 @@ async function loadBalance() {
                 balanceAmount.textContent = `$${data.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
             }
             
-            // Update balance details if available
+            // Update starting balance if available
             if (data.starting_balance !== undefined) {
                 const startBalEl = document.getElementById('startingBalance');
                 if (startBalEl) {
                     startBalEl.textContent = `$${(data.starting_balance || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
                 }
-                
-                // Calculate net profit
-                const netProfit = data.balance - (data.starting_balance || 0);
-                const netProfitEl = document.getElementById('netProfit');
-                if (netProfitEl && data.starting_balance > 0) {
-                    netProfitEl.textContent = `${netProfit >= 0 ? '+' : ''}$${netProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
-                    netProfitEl.className = `detail-value ${netProfit >= 0 ? 'positive' : 'negative'}`;
-                }
-                
-                // Calculate percentage
-                const netPctEl = document.getElementById('netProfitPct');
-                if (netPctEl && data.starting_balance > 0) {
-                    const pct = (netProfit / data.starting_balance) * 100;
-                    netPctEl.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
-                    netPctEl.className = `detail-value ${pct >= 0 ? 'positive' : 'negative'}`;
-                }
             }
+            // Note: Realized profit and ROI are updated via loadStats() which uses actual trade PnL
         } else {
             console.error('Balance error:', data.error);
         }
