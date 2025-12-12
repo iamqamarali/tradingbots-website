@@ -146,7 +146,40 @@ def init_db():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_trades_trade_time ON trades(trade_time)')
         cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_exchange_id ON trades(exchange_trade_id)')
-        
+
+        # Open positions table (cached from Binance)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS open_positions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                quantity REAL NOT NULL,
+                entry_price REAL NOT NULL,
+                mark_price REAL NOT NULL,
+                unrealized_pnl REAL DEFAULT 0,
+                leverage INTEGER DEFAULT 1,
+                stop_price REAL,
+                stop_order_id INTEGER,
+                stop_type TEXT,
+                tp_price REAL,
+                tp_order_id INTEGER,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
+                UNIQUE(account_id, symbol)
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_positions_account_id ON open_positions(account_id)')
+
+        # Cache metadata table (stores last update timestamps)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS cache_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         conn.commit()
         conn.close()
 
@@ -705,6 +738,120 @@ def set_registration_open(is_open):
         conn.commit()
         conn.close()
         return True
+
+
+# ==================== OPEN POSITIONS CACHE ====================
+
+def get_positions_cache_time():
+    """Get the last update time for positions cache."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT value FROM cache_meta WHERE key = ?', ('positions_updated',))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            try:
+                return float(row['value'])
+            except:
+                return None
+        return None
+
+
+def set_positions_cache_time(timestamp):
+    """Set the last update time for positions cache."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'INSERT OR REPLACE INTO cache_meta (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
+            ('positions_updated', str(timestamp))
+        )
+        conn.commit()
+        conn.close()
+
+
+def save_open_positions(positions):
+    """Save open positions to database (replaces all existing)."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Clear existing positions
+        cursor.execute('DELETE FROM open_positions')
+
+        # Insert new positions
+        for pos in positions:
+            cursor.execute('''
+                INSERT INTO open_positions
+                (account_id, symbol, side, quantity, entry_price, mark_price,
+                 unrealized_pnl, leverage, stop_price, stop_order_id, stop_type, tp_price, tp_order_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                pos['account_id'],
+                pos['symbol'],
+                pos['side'],
+                pos['quantity'],
+                pos['entry_price'],
+                pos['mark_price'],
+                pos['unrealized_pnl'],
+                pos['leverage'],
+                pos.get('stop_price'),
+                pos.get('stop_order_id'),
+                pos.get('stop_type'),
+                pos.get('tp_price'),
+                pos.get('tp_order_id')
+            ))
+
+        conn.commit()
+        conn.close()
+
+
+def get_open_positions():
+    """Get all open positions from database with account info."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT p.*, a.name as account_name, a.is_testnet
+            FROM open_positions p
+            JOIN accounts a ON p.account_id = a.id
+            ORDER BY a.name, p.symbol
+        ''')
+        rows = cursor.fetchall()
+        conn.close()
+
+        positions = []
+        for row in rows:
+            positions.append({
+                'account_id': row['account_id'],
+                'account_name': row['account_name'],
+                'is_testnet': bool(row['is_testnet']),
+                'symbol': row['symbol'],
+                'side': row['side'],
+                'quantity': row['quantity'],
+                'entry_price': row['entry_price'],
+                'mark_price': row['mark_price'],
+                'unrealized_pnl': row['unrealized_pnl'],
+                'leverage': row['leverage'],
+                'stop_price': row['stop_price'],
+                'stop_order_id': row['stop_order_id'],
+                'stop_type': row['stop_type'],
+                'tp_price': row['tp_price'],
+                'tp_order_id': row['tp_order_id']
+            })
+        return positions
+
+
+def clear_open_positions():
+    """Clear all cached open positions."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM open_positions')
+        cursor.execute('DELETE FROM cache_meta WHERE key = ?', ('positions_updated',))
+        conn.commit()
+        conn.close()
 
 
 # Initialize database on module load

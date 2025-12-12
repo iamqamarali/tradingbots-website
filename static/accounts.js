@@ -351,6 +351,7 @@ function initDetailPage() {
     loadPositions();
     loadTrades();
     loadStats();
+    loadEquityCurve();
     setupDetailPageEventListeners();
     setupClosePositionModal();
     setupEditStopLossModal();
@@ -1226,5 +1227,189 @@ async function removeStopLoss() {
         removeBtn.disabled = false;
         removeBtn.textContent = 'Remove SL';
     }
+}
+
+// ==================== EQUITY CURVE ====================
+
+let equityChart = null;
+
+async function loadEquityCurve() {
+    const chartLoading = document.getElementById('chartLoading');
+    const chartEmpty = document.getElementById('chartEmpty');
+    const chartCanvas = document.getElementById('equityChart');
+
+    if (!chartCanvas) return;
+
+    try {
+        const response = await fetch(`/api/accounts/${ACCOUNT_ID}/equity-curve`);
+        const data = await response.json();
+
+        chartLoading.style.display = 'none';
+
+        if (!data.data_points || data.data_points.length === 0) {
+            chartEmpty.style.display = 'flex';
+            chartCanvas.style.display = 'none';
+            return;
+        }
+
+        chartEmpty.style.display = 'none';
+        chartCanvas.style.display = 'block';
+
+        renderEquityChart(data);
+    } catch (error) {
+        console.error('Error loading equity curve:', error);
+        chartLoading.style.display = 'none';
+        chartEmpty.style.display = 'flex';
+    }
+}
+
+function renderEquityChart(data) {
+    const canvas = document.getElementById('equityChart');
+    const ctx = canvas.getContext('2d');
+
+    // Get container dimensions
+    const container = canvas.parentElement;
+    canvas.width = container.clientWidth;
+    canvas.height = 280;
+
+    const points = data.data_points;
+    const padding = { top: 30, right: 20, bottom: 40, left: 70 };
+    const chartWidth = canvas.width - padding.left - padding.right;
+    const chartHeight = canvas.height - padding.top - padding.bottom;
+
+    // Get min/max values
+    const pnlValues = points.map(p => p.pnl);
+    let minPnl = Math.min(0, ...pnlValues);
+    let maxPnl = Math.max(0, ...pnlValues);
+
+    // Add padding to range
+    const range = maxPnl - minPnl || 1;
+    minPnl -= range * 0.1;
+    maxPnl += range * 0.1;
+
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw background
+    ctx.fillStyle = 'rgba(24, 24, 32, 0.3)';
+    ctx.fillRect(padding.left, padding.top, chartWidth, chartHeight);
+
+    // Draw zero line
+    const zeroY = padding.top + chartHeight - ((0 - minPnl) / (maxPnl - minPnl)) * chartHeight;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(padding.left, zeroY);
+    ctx.lineTo(canvas.width - padding.right, zeroY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw Y-axis labels
+    ctx.fillStyle = '#71717a';
+    ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'right';
+
+    const ySteps = 5;
+    for (let i = 0; i <= ySteps; i++) {
+        const value = minPnl + (maxPnl - minPnl) * (i / ySteps);
+        const y = padding.top + chartHeight - (i / ySteps) * chartHeight;
+
+        ctx.fillText(`$${value.toFixed(0)}`, padding.left - 10, y + 4);
+
+        // Grid line
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.beginPath();
+        ctx.moveTo(padding.left, y);
+        ctx.lineTo(canvas.width - padding.right, y);
+        ctx.stroke();
+    }
+
+    // Draw X-axis labels
+    ctx.textAlign = 'center';
+    const xLabels = Math.min(5, points.length);
+    for (let i = 0; i < xLabels; i++) {
+        const idx = Math.floor(i * (points.length - 1) / (xLabels - 1 || 1));
+        const point = points[idx];
+        const x = padding.left + (idx / (points.length - 1 || 1)) * chartWidth;
+
+        const date = new Date(point.timestamp);
+        const label = `${date.getMonth() + 1}/${date.getDate()}`;
+        ctx.fillText(label, x, canvas.height - 10);
+    }
+
+    // Draw gradient fill under line
+    const gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartHeight);
+    const lastPnl = points[points.length - 1].pnl;
+    if (lastPnl >= 0) {
+        gradient.addColorStop(0, 'rgba(74, 222, 128, 0.3)');
+        gradient.addColorStop(1, 'rgba(74, 222, 128, 0)');
+    } else {
+        gradient.addColorStop(0, 'rgba(239, 68, 68, 0.3)');
+        gradient.addColorStop(1, 'rgba(239, 68, 68, 0)');
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(padding.left, zeroY);
+
+    for (let i = 0; i < points.length; i++) {
+        const x = padding.left + (i / (points.length - 1 || 1)) * chartWidth;
+        const y = padding.top + chartHeight - ((points[i].pnl - minPnl) / (maxPnl - minPnl)) * chartHeight;
+
+        if (i === 0) {
+            ctx.lineTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
+    }
+
+    // Close path for fill
+    const lastX = padding.left + chartWidth;
+    ctx.lineTo(lastX, zeroY);
+    ctx.closePath();
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // Draw line
+    ctx.beginPath();
+    for (let i = 0; i < points.length; i++) {
+        const x = padding.left + (i / (points.length - 1 || 1)) * chartWidth;
+        const y = padding.top + chartHeight - ((points[i].pnl - minPnl) / (maxPnl - minPnl)) * chartHeight;
+
+        if (i === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
+    }
+
+    ctx.strokeStyle = lastPnl >= 0 ? '#4ade80' : '#f87171';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Draw points for trades
+    for (let i = 0; i < points.length; i++) {
+        const x = padding.left + (i / (points.length - 1 || 1)) * chartWidth;
+        const y = padding.top + chartHeight - ((points[i].pnl - minPnl) / (maxPnl - minPnl)) * chartHeight;
+        const tradePnl = points[i].trade_pnl;
+
+        ctx.beginPath();
+        ctx.arc(x, y, 3, 0, Math.PI * 2);
+        ctx.fillStyle = tradePnl >= 0 ? '#4ade80' : '#f87171';
+        ctx.fill();
+    }
+
+    // Draw current PnL label
+    ctx.fillStyle = '#e4e4e7';
+    ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'left';
+    const pnlText = `PnL: ${lastPnl >= 0 ? '+' : ''}$${lastPnl.toFixed(2)}`;
+    ctx.fillStyle = lastPnl >= 0 ? '#4ade80' : '#f87171';
+    ctx.fillText(pnlText, padding.left + 10, padding.top + 20);
+
+    // Draw trade count
+    ctx.fillStyle = '#71717a';
+    ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText(`${points.length} trades`, canvas.width - padding.right - 60, padding.top + 20);
 }
 

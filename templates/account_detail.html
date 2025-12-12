@@ -145,6 +145,34 @@
             </div>
         </section>
 
+        <!-- Equity Curve Section -->
+        <section class="equity-curve-section">
+            <div class="section-header">
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 3v18h18"/>
+                        <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/>
+                    </svg>
+                    Equity Curve
+                </h2>
+            </div>
+            <div class="equity-chart-container">
+                <div class="chart-loading" id="chartLoading">
+                    <div class="spinner"></div>
+                    <p>Loading chart...</p>
+                </div>
+                <div class="chart-empty" id="chartEmpty" style="display: none;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M3 3v18h18"/>
+                        <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                    <p>No trade data available</p>
+                    <span>Sync trades to see the equity curve</span>
+                </div>
+                <canvas id="equityChart" style="display: none;"></canvas>
+            </div>
+        </section>
+
         <!-- Open Positions Section -->
         <section class="positions-section">
             <div class="section-header">

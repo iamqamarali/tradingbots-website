@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from threading import Thread, Lock
 import time
 import atexit
+import math
 
 # Import database module for trade tracking
 import database as db
@@ -1121,6 +1122,145 @@ def api_get_account_positions(account_id):
         return jsonify({'error': str(e)}), 500
 
 
+# Cache settings for positions
+POSITIONS_CACHE_DURATION = 15 * 60  # 15 minutes in seconds
+
+
+@app.route('/api/positions/all', methods=['GET'])
+def api_get_all_positions():
+    """Get open positions from all accounts with caching."""
+    force_refresh = request.args.get('force', 'false').lower() == 'true'
+    print(f"=== GET ALL POSITIONS (force={force_refresh}) ===")
+
+    # Check cache time from database (unless force refresh)
+    if not force_refresh:
+        cache_time = db.get_positions_cache_time()
+        if cache_time and (time.time() - cache_time) < POSITIONS_CACHE_DURATION:
+            age_minutes = (time.time() - cache_time) / 60
+            cached_positions = db.get_open_positions()
+            print(f"Returning cached positions from DB ({len(cached_positions)} positions, {age_minutes:.1f} min old)")
+            return jsonify(cached_positions)
+
+    if not BINANCE_AVAILABLE:
+        print("ERROR: Binance API not available")
+        return jsonify({'error': 'Binance API not available'}), 500
+
+    accounts = db.get_all_accounts()
+    all_positions = []
+
+    for account in accounts:
+        account_id = account['id']
+        account_name = account['name']
+        print(f"Fetching positions for account: {account_name} (id={account_id})")
+
+        try:
+            client = BinanceClient(account['api_key_full'], account['api_secret'], testnet=account['is_testnet'])
+            if account['is_testnet']:
+                client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+
+            positions = client.futures_position_information()
+
+            # Get all open orders for stop-loss/take-profit info
+            all_open_orders = []
+            try:
+                all_open_orders = client.futures_get_open_orders()
+            except Exception as e:
+                print(f"Warning: Could not fetch open orders for {account_name}: {e}")
+
+            # Build stop order maps
+            stop_order_types = ['STOP_MARKET', 'STOP', 'STOP_LIMIT', 'TRAILING_STOP_MARKET']
+            stop_orders_map = {}
+            tp_orders_map = {}
+
+            for order in all_open_orders:
+                symbol = order['symbol']
+                order_type = order.get('type', '')
+                stop_price = float(order.get('stopPrice', 0)) if order.get('stopPrice') else 0
+
+                if order_type in stop_order_types:
+                    if symbol not in stop_orders_map:
+                        stop_orders_map[symbol] = []
+                    stop_orders_map[symbol].append({
+                        'order_id': order['orderId'],
+                        'type': order_type,
+                        'side': order['side'],
+                        'stop_price': stop_price,
+                        'quantity': float(order.get('origQty', 0))
+                    })
+                elif order_type in ['TAKE_PROFIT_MARKET', 'TAKE_PROFIT']:
+                    if symbol not in tp_orders_map:
+                        tp_orders_map[symbol] = []
+                    tp_orders_map[symbol].append({
+                        'order_id': order['orderId'],
+                        'type': order_type,
+                        'side': order['side'],
+                        'stop_price': stop_price,
+                        'quantity': float(order.get('origQty', 0))
+                    })
+
+            for pos in positions:
+                amt = float(pos['positionAmt'])
+                if amt != 0:
+                    entry_price = float(pos['entryPrice'])
+                    mark_price = float(pos['markPrice'])
+                    unrealized_pnl = float(pos['unRealizedProfit'])
+                    symbol = pos['symbol']
+                    side = 'LONG' if amt > 0 else 'SHORT'
+
+                    # Find stop-loss
+                    stop_price = None
+                    stop_order_id = None
+                    stop_type = None
+                    for stop in stop_orders_map.get(symbol, []):
+                        if (side == 'LONG' and stop['side'] == 'SELL') or (side == 'SHORT' and stop['side'] == 'BUY'):
+                            stop_price = stop['stop_price']
+                            stop_order_id = stop['order_id']
+                            stop_type = stop['type']
+                            break
+
+                    # Find take-profit
+                    tp_price = None
+                    tp_order_id = None
+                    for tp in tp_orders_map.get(symbol, []):
+                        if (side == 'LONG' and tp['side'] == 'SELL') or (side == 'SHORT' and tp['side'] == 'BUY'):
+                            tp_price = tp['stop_price']
+                            tp_order_id = tp['order_id']
+                            break
+
+                    all_positions.append({
+                        'account_id': account_id,
+                        'account_name': account_name,
+                        'is_testnet': account['is_testnet'],
+                        'symbol': symbol,
+                        'side': side,
+                        'quantity': abs(amt),
+                        'entry_price': entry_price,
+                        'mark_price': mark_price,
+                        'unrealized_pnl': round(unrealized_pnl, 2),
+                        'leverage': int(pos.get('leverage', 5)),
+                        'stop_price': stop_price,
+                        'stop_order_id': stop_order_id,
+                        'stop_type': stop_type,
+                        'tp_price': tp_price,
+                        'tp_order_id': tp_order_id
+                    })
+
+        except BinanceAPIException as e:
+            print(f"BinanceAPIException for {account_name}: {e}")
+            continue
+        except Exception as e:
+            print(f"Exception for {account_name}: {e}")
+            continue
+
+    print(f"Returning {len(all_positions)} total positions from all accounts")
+
+    # Save to database and update cache time
+    db.save_open_positions(all_positions)
+    db.set_positions_cache_time(time.time())
+
+    return jsonify(all_positions)
+
+
 @app.route('/api/accounts/<int:account_id>/close-all', methods=['POST'])
 def api_close_all_positions(account_id):
     """Close all open positions for an account."""
@@ -1157,7 +1297,7 @@ def api_close_all_positions(account_id):
                     closed.append(symbol)
                 except Exception as e:
                     errors.append(f'{symbol}: {str(e)}')
-        
+
         return jsonify({
             'success': True,
             'closed': closed,
@@ -1192,12 +1332,46 @@ def api_close_position(account_id):
         if account['is_testnet']:
             client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
 
+        # Get symbol precision info
+        exchange_info = client.futures_exchange_info()
+        symbol_info = None
+        for s in exchange_info['symbols']:
+            if s['symbol'] == symbol:
+                symbol_info = s
+                break
+
+        # Determine quantity precision from symbol info and adjust quantity
+        step_size = 0.001  # Default
+        if symbol_info:
+            # First try to get quantityPrecision directly
+            quantity_precision = symbol_info.get('quantityPrecision', 3)
+
+            # Also get step_size from LOT_SIZE filter for proper rounding
+            for f in symbol_info.get('filters', []):
+                if f['filterType'] == 'LOT_SIZE':
+                    step_size = float(f['stepSize'])
+                    break
+
+        # Round down to nearest valid step size (floor to avoid exceeding position)
+        quantity = math.floor(quantity / step_size) * step_size
+
+        # Calculate decimal precision from step_size to avoid floating point issues
+        if step_size >= 1:
+            precision = 0
+        else:
+            precision = int(round(-math.log10(step_size)))
+        quantity = round(quantity, precision)
+
+        # Ensure it's not zero after rounding
+        if quantity <= 0:
+            return jsonify({'error': 'Quantity too small after precision adjustment'}), 400
+
         # To close a position, place opposite order
         # If LONG (bought), we SELL to close
         # If SHORT (sold), we BUY to close
         close_side = 'SELL' if side == 'LONG' else 'BUY'
 
-        print(f"Closing position: {symbol} {side} qty={quantity} -> {close_side}")
+        print(f"Closing position: {symbol} {side} qty={quantity} (step_size={step_size}, precision={precision}) -> {close_side}")
 
         order = client.futures_create_order(
             symbol=symbol,
@@ -1254,6 +1428,42 @@ def api_update_stop_loss(account_id):
         if account['is_testnet']:
             client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
 
+        # Get symbol precision info
+        exchange_info = client.futures_exchange_info()
+        symbol_info = None
+        for s in exchange_info['symbols']:
+            if s['symbol'] == symbol:
+                symbol_info = s
+                break
+
+        # Adjust quantity precision
+        step_size = 0.001  # Default
+        price_tick = 0.01  # Default
+        if symbol_info:
+            for f in symbol_info.get('filters', []):
+                if f['filterType'] == 'LOT_SIZE':
+                    step_size = float(f['stepSize'])
+                elif f['filterType'] == 'PRICE_FILTER':
+                    price_tick = float(f['tickSize'])
+
+        # Round quantity down to nearest valid step size
+        quantity = math.floor(quantity / step_size) * step_size
+        if step_size >= 1:
+            qty_precision = 0
+        else:
+            qty_precision = int(round(-math.log10(step_size)))
+        quantity = round(quantity, qty_precision)
+
+        # Round price to valid tick size
+        if price_tick >= 1:
+            price_precision = 0
+        else:
+            price_precision = int(round(-math.log10(price_tick)))
+        stop_price = round(stop_price, price_precision)
+
+        if quantity <= 0:
+            return jsonify({'error': 'Quantity too small after precision adjustment'}), 400
+
         # Cancel existing stop order if provided
         if old_order_id:
             try:
@@ -1266,7 +1476,7 @@ def api_update_stop_loss(account_id):
         order_side = 'SELL' if position_side == 'LONG' else 'BUY'
 
         # Create new stop-loss order
-        print(f"  Creating STOP_MARKET order: {order_side} {quantity} @ stop {stop_price}")
+        print(f"  Creating STOP_MARKET order: {order_side} {quantity} @ stop {stop_price} (step={step_size}, tick={price_tick})")
         order = client.futures_create_order(
             symbol=symbol,
             side=order_side,
@@ -1529,6 +1739,54 @@ def api_get_trade_stats():
         'win_rate': 0,
         'total_pnl': 0,
         'total_commission': 0
+    })
+
+
+@app.route('/api/accounts/<int:account_id>/equity-curve', methods=['GET'])
+def api_get_equity_curve(account_id):
+    """Get equity curve data for an account based on trade history."""
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    # Get starting balance
+    starting_balance = account.get('starting_balance', 0) or 0
+
+    # Get all trades for this account ordered by time
+    trades = db.get_trades(account_id=account_id, limit=10000)
+
+    if not trades:
+        return jsonify({
+            'data_points': [],
+            'starting_balance': starting_balance,
+            'current_balance': account.get('current_balance', starting_balance)
+        })
+
+    # Sort trades by trade_time
+    trades.sort(key=lambda t: t['trade_time'])
+
+    # Build equity curve - cumulative PnL over time
+    equity_data = []
+    cumulative_pnl = 0
+
+    for trade in trades:
+        pnl = trade.get('realized_pnl', 0) or 0
+        commission = trade.get('commission', 0) or 0
+        net_pnl = pnl - commission
+        cumulative_pnl += net_pnl
+
+        equity_data.append({
+            'timestamp': trade['trade_time'],
+            'pnl': round(cumulative_pnl, 2),
+            'balance': round(starting_balance + cumulative_pnl, 2),
+            'trade_pnl': round(net_pnl, 2),
+            'symbol': trade['symbol']
+        })
+
+    return jsonify({
+        'data_points': equity_data,
+        'starting_balance': starting_balance,
+        'current_balance': account.get('current_balance', starting_balance + cumulative_pnl)
     })
 
 

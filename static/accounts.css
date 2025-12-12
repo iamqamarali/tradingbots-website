@@ -3,7 +3,10 @@
 .accounts-page,
 .account-detail-page {
     min-height: 100vh;
-    background: linear-gradient(135deg, #0a0a0f 0%, #12121a 50%, #0a0a0f 100%);
+    background:
+        radial-gradient(ellipse at 10% 0%, rgba(245, 158, 11, 0.06) 0%, transparent 50%),
+        radial-gradient(ellipse at 90% 100%, rgba(251, 191, 36, 0.04) 0%, transparent 50%),
+        #0a0a0f;
     color: #e4e4e7;
     overflow-x: hidden;
     overflow-y: auto;
@@ -1885,5 +1888,108 @@
 .fee {
     color: #a1a1aa;
     font-size: 0.85rem;
+}
+
+/* ========== Equity Curve Section ========== */
+.equity-curve-section {
+    margin: 0 2rem 2rem;
+    background: rgba(24, 24, 32, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+.equity-curve-section .section-header {
+    padding: 1rem 1.5rem;
+    background: rgba(18, 18, 26, 0.5);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.equity-curve-section .section-header h2 {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #e4e4e7;
+    margin: 0;
+}
+
+.equity-curve-section .section-header h2 svg {
+    width: 20px;
+    height: 20px;
+    color: #fbbf24;
+}
+
+.equity-chart-container {
+    padding: 1.5rem;
+    min-height: 300px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.chart-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    color: #71717a;
+}
+
+.chart-loading .spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid rgba(255, 255, 255, 0.1);
+    border-top-color: #fbbf24;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.chart-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    color: #71717a;
+    text-align: center;
+}
+
+.chart-empty svg {
+    width: 48px;
+    height: 48px;
+    opacity: 0.5;
+    margin-bottom: 0.5rem;
+}
+
+.chart-empty p {
+    font-size: 1rem;
+    color: #a1a1aa;
+    margin: 0;
+}
+
+.chart-empty span {
+    font-size: 0.8rem;
+}
+
+#equityChart {
+    width: 100% !important;
+    height: 280px !important;
+    max-height: 280px;
+}
+
+@media (max-width: 768px) {
+    .equity-curve-section {
+        margin: 0 1rem 1rem;
+    }
+
+    .equity-chart-container {
+        padding: 1rem;
+        min-height: 220px;
+    }
+
+    #equityChart {
+        height: 200px !important;
+    }
 }
 

@@ -177,8 +177,65 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Open Positions Section -->
+                <div class="positions-section" id="dashboardPositions">
+                    <div class="section-header">
+                        <h2>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M3 3v18h18"/>
+                                <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/>
+                            </svg>
+                            Open Positions
+                            <span class="position-count" id="positionCount">0</span>
+                        </h2>
+                        <div class="section-actions">
+                            <button class="refresh-btn" id="refreshPositionsBtn" title="Refresh Positions">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M23 4v6h-6"/>
+                                    <path d="M1 20v-6h6"/>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                                </svg>
+                                <span>Refresh</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="positions-container" id="positionsContainer">
+                        <div class="positions-loading" id="positionsLoading">
+                            <div class="spinner"></div>
+                            <p>Loading positions...</p>
+                        </div>
+                        <div class="positions-table-wrapper" id="positionsTableWrapper" style="display: none;">
+                            <table class="positions-table" id="positionsTable">
+                                <thead>
+                                    <tr>
+                                        <th>Account</th>
+                                        <th>Symbol</th>
+                                        <th>Side</th>
+                                        <th>Size</th>
+                                        <th>Entry Price</th>
+                                        <th>Mark Price</th>
+                                        <th>SL / TP</th>
+                                        <th>PnL</th>
+                                        <th>Leverage</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="positionsTableBody">
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="empty-positions" id="emptyPositions" style="display: none;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <circle cx="12" cy="12" r="10"/>
+                                <path d="M8 12h8"/>
+                            </svg>
+                            <p>No open positions</p>
+                        </div>
+                    </div>
+                </div>
             </div>
-            
+
             <!-- Editor Screen -->
             <div class="editor-screen" id="editorScreen" style="display: none;">
                 <div class="editor-container">
@@ -339,6 +396,97 @@ client = Client(api_key, api_secret)
             <div class="modal-footer">
                 <button class="btn-secondary" id="cancelUnlockBtn">Cancel</button>
                 <button class="btn-primary" id="confirmUnlockBtn">Unlock Registration</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Close Position Modal -->
+    <div class="modal-overlay" id="closePositionModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Close Position</h3>
+                <button class="modal-close" id="closePositionModalClose">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="position-info">
+                    <span class="position-symbol" id="closePositionSymbol">BTCUSDT</span>
+                    <span class="position-side" id="closePositionSide">LONG</span>
+                    <span class="position-account" id="closePositionAccount"></span>
+                </div>
+                <div class="position-details">
+                    <div class="detail-row">
+                        <span>Position Size</span>
+                        <span id="closePositionSize">0</span>
+                    </div>
+                    <div class="detail-row">
+                        <span>Unrealized PnL</span>
+                        <span id="closePositionPnl">$0.00</span>
+                    </div>
+                </div>
+                <div class="close-amount-section">
+                    <label>Amount to Close</label>
+                    <div class="percentage-buttons">
+                        <button class="pct-btn" data-pct="25">25%</button>
+                        <button class="pct-btn" data-pct="50">50%</button>
+                        <button class="pct-btn" data-pct="75">75%</button>
+                        <button class="pct-btn active" data-pct="100">100%</button>
+                    </div>
+                    <div class="slider-container">
+                        <input type="range" class="percentage-slider" id="closePercentageSlider" min="1" max="100" value="100">
+                        <span class="slider-value" id="closePercentageValue">100%</span>
+                    </div>
+                    <div class="close-quantity">
+                        <span>Quantity to Close</span>
+                        <span id="closeQuantityValue">0</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelClosePosition">Cancel</button>
+                <button class="btn-danger" id="confirmClosePosition">Close Position</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Stop Loss Modal -->
+    <div class="modal-overlay" id="editStopLossModal">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3>Edit Stop Loss</h3>
+                <button class="modal-close" id="editStopLossModalClose">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="position-info">
+                    <span class="position-symbol" id="slSymbol">BTCUSDT</span>
+                    <span class="position-side" id="slSide">LONG</span>
+                    <span class="position-account" id="slAccount"></span>
+                </div>
+                <div class="form-group">
+                    <label>Current Stop Loss</label>
+                    <p id="slCurrentStop" class="no-sl">None</p>
+                </div>
+                <div class="form-group">
+                    <label for="newStopPrice">New Stop Price</label>
+                    <input type="number" id="newStopPrice" step="any" placeholder="Enter stop price">
+                    <p class="stop-loss-hint">
+                        <span class="hint-warning" id="slHint"></span>
+                    </p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="removeStopLossBtn" style="margin-right: auto;">Remove SL</button>
+                <button class="btn-secondary" id="cancelEditStopLoss">Cancel</button>
+                <button class="btn-primary" id="confirmEditStopLoss">Update Stop Loss</button>
             </div>
         </div>
     </div>
