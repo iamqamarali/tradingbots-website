@@ -1123,6 +1123,28 @@ body {
     font-size: 0.85rem;
 }
 
+.info-icon {
+    width: 60px;
+    height: 60px;
+    background: rgba(0, 212, 170, 0.1);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1rem;
+}
+
+.info-icon svg {
+    width: 30px;
+    height: 30px;
+    color: var(--accent-primary);
+}
+
+.info-text {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
 .modal-small {
     max-width: 400px;
 }

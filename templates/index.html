@@ -304,8 +304,8 @@ client = Client(api_key, api_secret)
                         <line x1="12" y1="17" x2="12.01" y2="17"/>
                     </svg>
                 </div>
-                <p><strong>Warning:</strong> This will permanently disable new account registration.</p>
-                <p class="warning-text">Only existing users will be able to log in. This action cannot be undone from the UI.</p>
+                <p><strong>Warning:</strong> This will disable new account registration.</p>
+                <p class="warning-text">Only existing users will be able to log in.</p>
             </div>
             <div class="modal-footer">
                 <button class="btn-secondary" id="cancelLockBtn">Cancel</button>
@@ -314,30 +314,76 @@ client = Client(api_key, api_secret)
         </div>
     </div>
 
+    <!-- Unlock Registration Modal -->
+    <div class="modal-overlay" id="unlockRegistrationModal">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3>Unlock Registration</h3>
+                <button class="modal-close" id="closeUnlockModal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="info-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                        <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+                    </svg>
+                </div>
+                <p><strong>Open Registration</strong></p>
+                <p class="info-text">This will allow new users to create accounts.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelUnlockBtn">Cancel</button>
+                <button class="btn-primary" id="confirmUnlockBtn">Unlock Registration</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/script.js"></script>
     <script>
-        // Lock Registration functionality
+        // Registration Lock/Unlock functionality
         const lockBtn = document.getElementById('lockRegistrationBtn');
         const lockModal = document.getElementById('lockRegistrationModal');
         const closeLockModal = document.getElementById('closeLockModal');
         const cancelLockBtn = document.getElementById('cancelLockBtn');
         const confirmLockBtn = document.getElementById('confirmLockBtn');
 
+        const unlockModal = document.getElementById('unlockRegistrationModal');
+        const closeUnlockModal = document.getElementById('closeUnlockModal');
+        const cancelUnlockBtn = document.getElementById('cancelUnlockBtn');
+        const confirmUnlockBtn = document.getElementById('confirmUnlockBtn');
+
+        let isRegistrationOpen = true;
+
         // Check registration status and update button
         async function checkRegistrationStatus() {
             try {
                 const response = await fetch('/api/auth/registration-status');
                 const data = await response.json();
+                isRegistrationOpen = data.open;
+                
                 if (!data.open) {
                     lockBtn.innerHTML = `
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
                             <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
                         </svg>
-                        <span>Registration Locked</span>
+                        <span>Unlock Registration</span>
                     `;
-                    lockBtn.disabled = true;
                     lockBtn.classList.add('locked');
+                } else {
+                    lockBtn.innerHTML = `
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                        </svg>
+                        <span>Lock Registration</span>
+                    `;
+                    lockBtn.classList.remove('locked');
                 }
             } catch (error) {
                 console.error('Error checking registration status:', error);
@@ -347,9 +393,14 @@ client = Client(api_key, api_secret)
         checkRegistrationStatus();
 
         lockBtn.addEventListener('click', () => {
-            lockModal.classList.add('active');
+            if (isRegistrationOpen) {
+                lockModal.classList.add('active');
+            } else {
+                unlockModal.classList.add('active');
+            }
         });
 
+        // Lock modal handlers
         closeLockModal.addEventListener('click', () => {
             lockModal.classList.remove('active');
         });
@@ -378,6 +429,41 @@ client = Client(api_key, api_secret)
                     checkRegistrationStatus();
                 } else {
                     showToast(data.error || 'Failed to lock registration', 'error');
+                }
+            } catch (error) {
+                showToast('Connection error', 'error');
+            }
+        });
+
+        // Unlock modal handlers
+        closeUnlockModal.addEventListener('click', () => {
+            unlockModal.classList.remove('active');
+        });
+
+        cancelUnlockBtn.addEventListener('click', () => {
+            unlockModal.classList.remove('active');
+        });
+
+        unlockModal.addEventListener('click', (e) => {
+            if (e.target === unlockModal) {
+                unlockModal.classList.remove('active');
+            }
+        });
+
+        confirmUnlockBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/auth/open-registration', {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    unlockModal.classList.remove('active');
+                    showToast('Registration unlocked successfully', 'success');
+                    checkRegistrationStatus();
+                } else {
+                    showToast(data.error || 'Failed to unlock registration', 'error');
                 }
             } catch (error) {
                 showToast('Connection error', 'error');

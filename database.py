@@ -1,7 +1,7 @@
 """
 SQLite Database for Account-Based Trade Tracking
 =================================================
-Stores accounts, bots, and trades synced from Binance.
+Stores accounts and trades synced from Binance.
 """
 
 import sqlite3
@@ -87,25 +87,6 @@ def init_db():
                 cursor.execute(f'ALTER TABLE accounts ADD COLUMN {col} {col_type} DEFAULT {default if default is not None else "NULL"}')
             except sqlite3.OperationalError:
                 pass  # Column already exists
-        
-        # Bots table (with optional account_id)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS bots (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                script_id TEXT UNIQUE NOT NULL,
-                name TEXT NOT NULL,
-                symbol TEXT NOT NULL,
-                account_id INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL
-            )
-        ''')
-        
-        # Add account_id column if it doesn't exist (migration)
-        try:
-            cursor.execute('ALTER TABLE bots ADD COLUMN account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL')
-        except sqlite3.OperationalError:
-            pass  # Column already exists
         
         # Trades table (linked to accounts, with exchange_trade_id for deduplication)
         cursor.execute('''
@@ -310,113 +291,6 @@ def delete_account(account_id):
         cursor = conn.cursor()
 
         cursor.execute('DELETE FROM accounts WHERE id = ?', (account_id,))
-        deleted = cursor.rowcount > 0
-        
-        conn.commit()
-        conn.close()
-        return deleted
-
-
-# ==================== BOT OPERATIONS ====================
-
-def create_bot(script_id, name, symbol='', account_id=None):
-    """Create a new bot record. Returns bot id."""
-    with db_lock:
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        # Check if already exists
-        cursor.execute('SELECT id FROM bots WHERE script_id = ?', (script_id,))
-        row = cursor.fetchone()
-        
-        if row:
-            # Update existing bot
-            cursor.execute(
-                'UPDATE bots SET name = ?, symbol = ?, account_id = ? WHERE id = ?',
-                (name, symbol, account_id, row['id'])
-            )
-            conn.commit()
-            conn.close()
-            return row['id']
-        
-        # Create new bot
-        cursor.execute(
-            'INSERT INTO bots (script_id, name, symbol, account_id) VALUES (?, ?, ?, ?)',
-            (script_id, name, symbol, account_id)
-        )
-        bot_id = cursor.lastrowid
-        
-        conn.commit()
-        conn.close()
-        return bot_id
-
-
-def get_all_bots():
-    """Get all bots."""
-    with db_lock:
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT b.*, a.name as account_name
-            FROM bots b
-            LEFT JOIN accounts a ON b.account_id = a.id
-            ORDER BY b.created_at DESC
-        ''')
-        
-        bots = []
-        for row in cursor.fetchall():
-            bots.append({
-                'id': row['id'],
-                'script_id': row['script_id'],
-                'name': row['name'],
-                'symbol': row['symbol'],
-                'account_id': row['account_id'],
-                'account_name': row['account_name'],
-                'created_at': row['created_at']
-            })
-        
-        conn.close()
-        return bots
-
-
-def get_bot(bot_id):
-    """Get a single bot by ID."""
-    with db_lock:
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('SELECT * FROM bots WHERE id = ?', (bot_id,))
-        row = cursor.fetchone()
-        
-        conn.close()
-        
-        if row:
-            return dict(row)
-        return None
-
-
-def update_bot(bot_id, account_id=None):
-    """Update a bot's account assignment."""
-    with db_lock:
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('UPDATE bots SET account_id = ? WHERE id = ?', (account_id, bot_id))
-        updated = cursor.rowcount > 0
-        
-        conn.commit()
-        conn.close()
-        return updated
-
-
-def delete_bot(bot_id):
-    """Delete a bot."""
-    with db_lock:
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('DELETE FROM bots WHERE id = ?', (bot_id,))
         deleted = cursor.rowcount > 0
         
         conn.commit()

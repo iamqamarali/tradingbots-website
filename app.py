@@ -388,8 +388,15 @@ def api_registration_status():
 
 @app.route('/api/auth/restrict-registration', methods=['POST'])
 def api_restrict_registration():
-    """Close registration permanently."""
+    """Close registration."""
     db.set_registration_open(False)
+    return jsonify({'success': True})
+
+
+@app.route('/api/auth/open-registration', methods=['POST'])
+def api_open_registration():
+    """Open registration."""
+    db.set_registration_open(True)
     return jsonify({'success': True})
 
 
@@ -445,9 +452,6 @@ def upload_script():
         'created': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     }
     save_metadata(metadata)
-    
-    # Create bot record in database (symbol will be set when script calls register_bot)
-    db.create_bot(script_id, script_name, symbol='')
     
     return jsonify({
         'success': True,
@@ -550,9 +554,6 @@ def delete_script(script_id):
     with logs_lock:
         if script_id in script_logs:
             del script_logs[script_id]
-    
-    # NOTE: Database record (bot + trades) is intentionally kept for historical tracking
-    # Use the Bots page (/bots) to delete a bot and all its trade history
     
     return jsonify({'success': True})
 
@@ -1289,7 +1290,6 @@ if __name__ == '__main__':
     print("  Dashboard: http://localhost:5000")
     print("  Accounts: http://localhost:5000/accounts")
     print("  Logs Page: http://localhost:5000/logs")
-    print("  Trades Page: http://localhost:5000/trades")
     print("=" * 60)
     print(f"  Scripts folder: {SCRIPTS_FOLDER}")
     print(f"  Logs folder: {LOGS_FOLDER}")

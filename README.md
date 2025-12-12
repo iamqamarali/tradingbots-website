@@ -80,14 +80,13 @@ tradingwebsite/
 ├── templates/
 │   ├── index.html        # Main dashboard
 │   ├── logs.html         # Logs page
-│   ├── bots.html         # Bots overview page
-│   └── trades.html       # Trade history page
+│   ├── accounts.html     # Accounts management page
+│   └── account_detail.html # Account detail page
 └── static/
     ├── style.css         # Main stylesheet
     ├── script.js         # Dashboard JavaScript
     ├── logs.css/js       # Logs page styles/scripts
-    ├── bots.css/js       # Bots page styles/scripts
-    └── trades.css/js     # Trades page styles/scripts
+    └── accounts.css/js   # Accounts page styles/scripts
 ```
 
 ## 🔧 API Endpoints
@@ -104,16 +103,6 @@ tradingwebsite/
 | POST | `/api/scripts/<id>/run` | Run script |
 | POST | `/api/scripts/<id>/stop` | Stop script |
 | GET | `/api/scripts/<id>/logs` | Get script logs |
-
-### Bots API (Trade Tracking)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/bots` | Get all bots with stats |
-| GET | `/api/bots/<id>` | Get specific bot |
-| DELETE | `/api/bots/<id>` | Delete bot and trades |
-| GET | `/api/bots/<id>/trades` | Get bot's trades |
-| GET | `/api/bots/<id>/stats` | Get bot statistics |
 
 ### Trades API
 
@@ -219,14 +208,13 @@ print(f"Trade closed: ${result['pnl']:.2f} ({result['pnl_percent']:.1f}%)")
 
 ### Viewing Trades
 
-- **Bots Page** (`/bots`): View all bots with their statistics (win rate, total PnL, trade count)
-- **Trades Page** (`/trades`): View all trades with filtering by bot, side, and status
+- **Accounts Page** (`/accounts`): View all accounts with their statistics and trade history
 
 ## ⚠️ Important Notes
 
 1. **API Keys**: Never commit your Binance API keys to version control
-2. **Testing**: Always test bots on Binance Testnet first
-3. **Risk**: Trading bots involve financial risk - use at your own discretion
+2. **Testing**: Always test scripts on Binance Testnet first
+3. **Risk**: Trading scripts involve financial risk - use at your own discretion
 4. **Permissions**: Use API keys with minimal required permissions
 
 ## 🛡️ Security Recommendations
