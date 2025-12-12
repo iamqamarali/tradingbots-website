@@ -508,23 +508,6 @@ def get_trade_stats(account_id=None):
         
         row = cursor.fetchone()
         
-        # Also get account balance info if account_id specified
-        balance_info = {}
-        if account_id:
-            cursor.execute('''
-                SELECT current_balance, starting_balance FROM accounts WHERE id = ?
-            ''', (account_id,))
-            acc_row = cursor.fetchone()
-            if acc_row:
-                current_balance = acc_row['current_balance'] or 0
-                starting_balance = acc_row['starting_balance'] or 0
-                balance_info = {
-                    'current_balance': round(current_balance, 2),
-                    'starting_balance': round(starting_balance, 2),
-                    'net_profit': round(stats.get('total_pnl', 0), 2),
-                    'net_profit_pct': round((stats.get('total_pnl', 0) / starting_balance) * 100, 2) if starting_balance > 0 else 0
-                }
-        
         conn.close()
         
         if row:
@@ -533,12 +516,13 @@ def get_trade_stats(account_id=None):
             losing = row['losing_trades'] or 0
             gross_profit = row['gross_profit'] or 0
             gross_loss = row['gross_loss'] or 0
+            total_pnl = row['total_pnl'] or 0
             profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else (999.99 if gross_profit > 0 else 0)
             
             stats = {
                 'total_trades': total,
                 'symbols_traded': row['symbols_traded'] or 0,
-                'total_pnl': round(row['total_pnl'] or 0, 2),
+                'total_pnl': round(total_pnl, 2),
                 'total_commission': round(row['total_commission'] or 0, 2),
                 'total_volume': round(row['total_volume'] or 0, 2),
                 'winning_trades': winning,
@@ -553,7 +537,25 @@ def get_trade_stats(account_id=None):
                 'gross_profit': round(gross_profit, 2),
                 'gross_loss': round(gross_loss, 2)
             }
-            stats.update(balance_info)
+            
+            # Add account balance info if account_id specified
+            if account_id:
+                conn2 = get_connection()
+                cursor2 = conn2.cursor()
+                cursor2.execute('''
+                    SELECT current_balance, starting_balance FROM accounts WHERE id = ?
+                ''', (account_id,))
+                acc_row = cursor2.fetchone()
+                conn2.close()
+                
+                if acc_row:
+                    current_balance = acc_row['current_balance'] or 0
+                    starting_balance = acc_row['starting_balance'] or 0
+                    stats['current_balance'] = round(current_balance, 2)
+                    stats['starting_balance'] = round(starting_balance, 2)
+                    stats['net_profit'] = round(total_pnl, 2)
+                    stats['net_profit_pct'] = round((total_pnl / starting_balance) * 100, 2) if starting_balance > 0 else 0
+            
             return stats
         
         return None
