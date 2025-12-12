@@ -1360,10 +1360,10 @@ def api_sync_account_trades(account_id):
         except Exception as e:
             print(f"Warning: Could not fetch balance: {e}")
 
-        # Get trades from last 30 days for more comprehensive history
+        # Get trades from last 7 days (Binance API limit is 7 days per request)
         end_time = int(datetime.now().timestamp() * 1000)
-        start_time = int((datetime.now() - timedelta(days=30)).timestamp() * 1000)
-        print(f"Time range: last 30 days")
+        start_time = int((datetime.now() - timedelta(days=7)).timestamp() * 1000)
+        print(f"Time range: last 7 days")
 
         # Get all symbols with positions or recent activity
         print("Fetching exchange info...")
@@ -1392,13 +1392,9 @@ def api_sync_account_trades(account_id):
         # Check common trading pairs (both USDT and USDC pairs)
         priority_symbols = [
             # USDT pairs
-            'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'XRPUSDT',
-            'BNBUSDT', 'ADAUSDT', 'AVAXUSDT', 'DOTUSDT', 'MATICUSDT',
-            'LINKUSDT', 'LTCUSDT', 'ATOMUSDT', 'UNIUSDT', 'APTUSDT',
+            'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT',
             # USDC pairs
-            'BTCUSDC', 'ETHUSDC', 'SOLUSDC', 'DOGEUSDC', 'XRPUSDC',
-            'BNBUSDC', 'ADAUSDC', 'AVAXUSDC', 'DOTUSDC', 'MATICUSDC',
-            'LINKUSDC', 'LTCUSDC', 'ATOMUSDC', 'UNIUSDC', 'APTUSDC'
+            'BTCUSDC', 'ETHUSDC', 'SOLUSDC', 'DOGEUSDC'
         ]
         symbols_to_sync.update(priority_symbols)
 
