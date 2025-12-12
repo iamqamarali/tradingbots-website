@@ -56,7 +56,7 @@
         <section class="balance-section">
             <div class="balance-card">
                 <div class="balance-header">
-                    <span class="balance-label">Account Balance</span>
+                    <span class="balance-label">Current Balance</span>
                     <button class="refresh-balance-btn" id="refreshBalanceBtn" title="Refresh Balance">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="23 4 23 10 17 10"/>
@@ -68,11 +68,31 @@
                     <span class="balance-amount">$0.00</span>
                     <span class="balance-asset">USDT</span>
                 </div>
+                <div class="balance-details">
+                    <div class="balance-detail">
+                        <span class="detail-label">Starting Balance</span>
+                        <span class="detail-value" id="startingBalance">$0.00</span>
+                    </div>
+                    <div class="balance-detail">
+                        <span class="detail-label">Net Profit</span>
+                        <span class="detail-value" id="netProfit">$0.00</span>
+                    </div>
+                    <div class="balance-detail">
+                        <span class="detail-label">Return</span>
+                        <span class="detail-value" id="netProfitPct">0%</span>
+                    </div>
+                    <div class="balance-detail">
+                        <span class="detail-label">Unrealized PnL</span>
+                        <span class="detail-value" id="unrealizedPnl">$0.00</span>
+                    </div>
+                </div>
             </div>
+            
+            <!-- Primary Stats Row -->
             <div class="stats-row">
                 <div class="mini-stat">
                     <span class="mini-stat-value" id="statTotalTrades">0</span>
-                    <span class="mini-stat-label">Trades</span>
+                    <span class="mini-stat-label">Total Trades</span>
                 </div>
                 <div class="mini-stat">
                     <span class="mini-stat-value" id="statWinRate">0%</span>
@@ -80,11 +100,47 @@
                 </div>
                 <div class="mini-stat">
                     <span class="mini-stat-value" id="statTotalPnL">$0.00</span>
-                    <span class="mini-stat-label">Total PnL</span>
+                    <span class="mini-stat-label">Realized PnL</span>
+                </div>
+                <div class="mini-stat">
+                    <span class="mini-stat-value" id="statProfitFactor">0</span>
+                    <span class="mini-stat-label">Profit Factor</span>
+                </div>
+            </div>
+            
+            <!-- Secondary Stats Row -->
+            <div class="stats-row stats-row-secondary">
+                <div class="mini-stat">
+                    <span class="mini-stat-value" id="statWinningTrades">0</span>
+                    <span class="mini-stat-label">Winning</span>
+                </div>
+                <div class="mini-stat">
+                    <span class="mini-stat-value" id="statLosingTrades">0</span>
+                    <span class="mini-stat-label">Losing</span>
+                </div>
+                <div class="mini-stat">
+                    <span class="mini-stat-value" id="statAvgWin">$0.00</span>
+                    <span class="mini-stat-label">Avg Win</span>
+                </div>
+                <div class="mini-stat">
+                    <span class="mini-stat-value" id="statAvgLoss">$0.00</span>
+                    <span class="mini-stat-label">Avg Loss</span>
+                </div>
+                <div class="mini-stat">
+                    <span class="mini-stat-value" id="statLargestWin">$0.00</span>
+                    <span class="mini-stat-label">Best Trade</span>
+                </div>
+                <div class="mini-stat">
+                    <span class="mini-stat-value" id="statLargestLoss">$0.00</span>
+                    <span class="mini-stat-label">Worst Trade</span>
                 </div>
                 <div class="mini-stat">
                     <span class="mini-stat-value" id="statTotalFees">$0.00</span>
                     <span class="mini-stat-label">Fees Paid</span>
+                </div>
+                <div class="mini-stat">
+                    <span class="mini-stat-value" id="statTotalVolume">$0</span>
+                    <span class="mini-stat-label">Volume</span>
                 </div>
             </div>
         </section>

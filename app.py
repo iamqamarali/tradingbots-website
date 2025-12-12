@@ -887,7 +887,7 @@ def api_delete_account(account_id):
 
 @app.route('/api/accounts/<int:account_id>/balance', methods=['GET'])
 def api_get_account_balance(account_id):
-    """Get account balance from Binance."""
+    """Get account balance from Binance and update database."""
     print(f"=== GET BALANCE for account_id: {account_id} ===")
 
     if not BINANCE_AVAILABLE:
@@ -918,8 +918,20 @@ def api_get_account_balance(account_id):
                 print(f"USDT balance found: {usdt_balance}")
                 break
 
+        # Update balance in database
+        db.update_account_balance(account_id, usdt_balance)
+        
+        # Get starting balance from database
+        accounts = db.get_all_accounts()
+        starting_balance = 0
+        for acc in accounts:
+            if acc['id'] == account_id:
+                starting_balance = acc.get('starting_balance', 0)
+                break
+
         return jsonify({
             'balance': round(usdt_balance, 2),
+            'starting_balance': round(starting_balance, 2),
             'asset': 'USDT'
         })
     except BinanceAPIException as e:
@@ -1096,7 +1108,7 @@ def api_close_position(account_id):
 
 @app.route('/api/accounts/<int:account_id>/sync', methods=['POST'])
 def api_sync_account_trades(account_id):
-    """Sync ALL historical trades from Binance."""
+    """Sync trades and balance from Binance."""
     print(f"=== SYNC TRADES CALLED for account_id: {account_id} ===")
 
     if not BINANCE_AVAILABLE:
@@ -1115,16 +1127,28 @@ def api_sync_account_trades(account_id):
         print("Creating Binance client...")
         client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
         if account['is_testnet']:
-            # Correct testnet futures URL
             client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
             print(f"Using testnet URL: {client.FUTURES_URL}")
         else:
             print(f"Using mainnet URL: {client.FUTURES_URL}")
 
-        # Get trades from last 7 days
+        # First, fetch and update account balance
+        print("Fetching account balance...")
+        current_balance = 0
+        try:
+            balances = client.futures_account_balance()
+            for bal in balances:
+                if bal['asset'] == 'USDT':
+                    current_balance = float(bal['balance'])
+                    print(f"  USDT Balance: ${current_balance:.2f}")
+                    break
+        except Exception as e:
+            print(f"Warning: Could not fetch balance: {e}")
+
+        # Get trades from last 30 days for more comprehensive history
         end_time = int(datetime.now().timestamp() * 1000)
-        start_time = int((datetime.now() - timedelta(days=7)).timestamp() * 1000)
-        print(f"Time range: last 7 days")
+        start_time = int((datetime.now() - timedelta(days=30)).timestamp() * 1000)
+        print(f"Time range: last 30 days")
 
         # Get all symbols with positions or recent activity
         print("Fetching exchange info...")
@@ -1138,37 +1162,39 @@ def api_sync_account_trades(account_id):
         # Get symbols from current positions
         print("Fetching current positions to find active symbols...")
         symbols_to_sync = set()
+        unrealized_pnl = 0
         try:
             positions = client.futures_position_information()
             for pos in positions:
                 amt = float(pos['positionAmt'])
                 if amt != 0:
                     symbols_to_sync.add(pos['symbol'])
+                    unrealized_pnl += float(pos['unRealizedProfit'])
                     print(f"  Found open position in {pos['symbol']}")
         except Exception as e:
             print(f"Warning: Could not fetch positions: {e}")
 
-        # Check BTC, ETH, SOL, DOGE pairs (USDT and USDC)
-        priority_symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT',
-                          'BTCUSDC', 'ETHUSDC', 'SOLUSDC', 'DOGEUSDC']
+        # Check common trading pairs
+        priority_symbols = [
+            'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'XRPUSDT',
+            'BNBUSDT', 'ADAUSDT', 'AVAXUSDT', 'DOTUSDT', 'MATICUSDT',
+            'LINKUSDT', 'LTCUSDT', 'ATOMUSDT', 'UNIUSDT', 'APTUSDT'
+        ]
         symbols_to_sync.update(priority_symbols)
 
-        print(f"Will sync {len(symbols_to_sync)} symbols: {symbols_to_sync}")
+        print(f"Will sync {len(symbols_to_sync)} symbols")
 
         for symbol in symbols_to_sync:
             if symbol not in all_symbols:
-                print(f"Skipping {symbol} - not in exchange symbols")
                 continue
 
             try:
-                print(f"Fetching trades for {symbol}...")
                 trades = client.futures_account_trades(
                     symbol=symbol,
                     startTime=start_time,
                     endTime=end_time,
                     limit=1000
                 )
-                print(f"  Found {len(trades)} trades for {symbol}")
 
                 for trade in trades:
                     total_checked += 1
@@ -1197,12 +1223,16 @@ def api_sync_account_trades(account_id):
             except Exception as e:
                 print(f"Exception syncing {symbol}: {e}")
 
-        # Update account stats in database
+        # Update account stats in database (including balance)
         print("Updating account stats...")
-        db.update_account_stats(account_id)
+        db.update_account_stats(account_id, current_balance=current_balance)
 
         # Get updated stats to return
         stats = db.get_trade_stats(account_id)
+        
+        # Add additional info to stats
+        if stats:
+            stats['unrealized_pnl'] = round(unrealized_pnl, 2)
 
         print(f"=== SYNC COMPLETE: {new_trades} new trades, {total_checked} total checked ===")
         return jsonify({
@@ -1210,7 +1240,8 @@ def api_sync_account_trades(account_id):
             'new_trades': new_trades,
             'total_checked': total_checked,
             'message': f'Synced {new_trades} new trades',
-            'stats': stats
+            'stats': stats,
+            'balance': round(current_balance, 2)
         })
     except BinanceAPIException as e:
         print(f"BinanceAPIException: {e}")

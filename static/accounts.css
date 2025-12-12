@@ -522,8 +522,12 @@
 .balance-section {
     padding: 1.5rem 2rem;
     display: flex;
-    gap: 1.5rem;
-    align-items: stretch;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.balance-section > .balance-card {
+    align-self: flex-start;
 }
 
 .balance-card {
@@ -596,8 +600,44 @@
     color: #a1a1aa;
 }
 
+.balance-details {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(245, 158, 11, 0.15);
+    margin-top: 0.5rem;
+}
+
+.balance-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.balance-detail .detail-label {
+    font-size: 0.65rem;
+    color: #71717a;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.balance-detail .detail-value {
+    font-size: 0.9rem;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+    color: #e4e4e7;
+}
+
+.balance-detail .detail-value.positive {
+    color: #4ade80;
+}
+
+.balance-detail .detail-value.negative {
+    color: #f87171;
+}
+
 .stats-row {
-    flex: 1;
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 1rem;
@@ -636,6 +676,24 @@
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-top: 0.25rem;
+}
+
+/* Secondary stats row with more items */
+.stats-row-secondary {
+    grid-template-columns: repeat(8, 1fr);
+    margin-top: 0;
+}
+
+.stats-row-secondary .mini-stat {
+    padding: 1rem 0.75rem;
+}
+
+.stats-row-secondary .mini-stat-value {
+    font-size: 1rem;
+}
+
+.stats-row-secondary .mini-stat-label {
+    font-size: 0.6rem;
 }
 
 /* Positions Section */
@@ -1304,6 +1362,12 @@
 }
 
 /* Responsive */
+@media (max-width: 1200px) {
+    .stats-row-secondary {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
 @media (max-width: 1024px) {
     .stats-overview {
         grid-template-columns: repeat(2, 1fr);
@@ -1311,6 +1375,10 @@
     
     .stats-row {
         grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .stats-row-secondary {
+        grid-template-columns: repeat(4, 1fr);
     }
     
     .balance-section {

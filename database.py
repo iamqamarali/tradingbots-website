@@ -56,7 +56,7 @@ def init_db():
         cursor.execute('INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)',
                       ('registration_open', 'true'))
 
-        # Accounts table (NEW)
+        # Accounts table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS accounts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,6 +69,14 @@ def init_db():
                 total_commission REAL DEFAULT 0,
                 winning_trades INTEGER DEFAULT 0,
                 losing_trades INTEGER DEFAULT 0,
+                current_balance REAL DEFAULT 0,
+                starting_balance REAL DEFAULT 0,
+                avg_win REAL DEFAULT 0,
+                avg_loss REAL DEFAULT 0,
+                largest_win REAL DEFAULT 0,
+                largest_loss REAL DEFAULT 0,
+                profit_factor REAL DEFAULT 0,
+                total_volume REAL DEFAULT 0,
                 last_sync_time TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -81,6 +89,14 @@ def init_db():
             ('total_commission', 'REAL', 0),
             ('winning_trades', 'INTEGER', 0),
             ('losing_trades', 'INTEGER', 0),
+            ('current_balance', 'REAL', 0),
+            ('starting_balance', 'REAL', 0),
+            ('avg_win', 'REAL', 0),
+            ('avg_loss', 'REAL', 0),
+            ('largest_win', 'REAL', 0),
+            ('largest_loss', 'REAL', 0),
+            ('profit_factor', 'REAL', 0),
+            ('total_volume', 'REAL', 0),
             ('last_sync_time', 'TIMESTAMP', None)
         ]:
             try:
@@ -153,7 +169,9 @@ def get_all_accounts():
             SELECT
                 id, name, api_key, api_secret, is_testnet, created_at,
                 total_trades, total_pnl, total_commission,
-                winning_trades, losing_trades, last_sync_time
+                winning_trades, losing_trades, last_sync_time,
+                current_balance, starting_balance, avg_win, avg_loss,
+                largest_win, largest_loss, profit_factor, total_volume
             FROM accounts
             ORDER BY created_at DESC
         ''')
@@ -164,6 +182,11 @@ def get_all_accounts():
             winning = row['winning_trades'] or 0
             losing = row['losing_trades'] or 0
             win_rate = round(winning / (winning + losing) * 100, 1) if (winning + losing) > 0 else 0
+            
+            current_balance = row['current_balance'] or 0
+            starting_balance = row['starting_balance'] or 0
+            net_profit = current_balance - starting_balance if starting_balance > 0 else row['total_pnl'] or 0
+            net_profit_pct = round((net_profit / starting_balance) * 100, 2) if starting_balance > 0 else 0
 
             accounts.append({
                 'id': row['id'],
@@ -179,7 +202,17 @@ def get_all_accounts():
                 'winning_trades': winning,
                 'losing_trades': losing,
                 'win_rate': win_rate,
-                'last_sync_time': row['last_sync_time']
+                'last_sync_time': row['last_sync_time'],
+                'current_balance': round(current_balance, 2),
+                'starting_balance': round(starting_balance, 2),
+                'net_profit': round(net_profit, 2),
+                'net_profit_pct': net_profit_pct,
+                'avg_win': round(row['avg_win'] or 0, 2),
+                'avg_loss': round(row['avg_loss'] or 0, 2),
+                'largest_win': round(row['largest_win'] or 0, 2),
+                'largest_loss': round(row['largest_loss'] or 0, 2),
+                'profit_factor': round(row['profit_factor'] or 0, 2),
+                'total_volume': round(row['total_volume'] or 0, 2)
             })
 
         conn.close()
@@ -240,20 +273,27 @@ def update_account(account_id, name=None, api_key=None, api_secret=None, is_test
         return True
 
 
-def update_account_stats(account_id):
+def update_account_stats(account_id, current_balance=None):
     """Recalculate and update account stats from trades table."""
     with db_lock:
         conn = get_connection()
         cursor = conn.cursor()
 
-        # Calculate stats from trades
+        # Calculate comprehensive stats from trades
         cursor.execute('''
             SELECT
                 COUNT(*) as total_trades,
                 COALESCE(SUM(realized_pnl), 0) as total_pnl,
                 COALESCE(SUM(commission), 0) as total_commission,
+                COALESCE(SUM(quantity * price), 0) as total_volume,
                 SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END) as winning_trades,
-                SUM(CASE WHEN realized_pnl < 0 THEN 1 ELSE 0 END) as losing_trades
+                SUM(CASE WHEN realized_pnl < 0 THEN 1 ELSE 0 END) as losing_trades,
+                COALESCE(AVG(CASE WHEN realized_pnl > 0 THEN realized_pnl END), 0) as avg_win,
+                COALESCE(AVG(CASE WHEN realized_pnl < 0 THEN realized_pnl END), 0) as avg_loss,
+                COALESCE(MAX(realized_pnl), 0) as largest_win,
+                COALESCE(MIN(realized_pnl), 0) as largest_loss,
+                COALESCE(SUM(CASE WHEN realized_pnl > 0 THEN realized_pnl ELSE 0 END), 0) as gross_profit,
+                COALESCE(ABS(SUM(CASE WHEN realized_pnl < 0 THEN realized_pnl ELSE 0 END)), 0) as gross_loss
             FROM trades
             WHERE account_id = ?
         ''', (account_id,))
@@ -261,24 +301,96 @@ def update_account_stats(account_id):
         row = cursor.fetchone()
 
         if row:
-            cursor.execute('''
-                UPDATE accounts SET
-                    total_trades = ?,
-                    total_pnl = ?,
-                    total_commission = ?,
-                    winning_trades = ?,
-                    losing_trades = ?,
-                    last_sync_time = CURRENT_TIMESTAMP
-                WHERE id = ?
-            ''', (
+            # Calculate profit factor (gross profit / gross loss)
+            gross_profit = row['gross_profit'] or 0
+            gross_loss = row['gross_loss'] or 0
+            profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else (999.99 if gross_profit > 0 else 0)
+            
+            # Build update query
+            update_fields = '''
+                total_trades = ?,
+                total_pnl = ?,
+                total_commission = ?,
+                total_volume = ?,
+                winning_trades = ?,
+                losing_trades = ?,
+                avg_win = ?,
+                avg_loss = ?,
+                largest_win = ?,
+                largest_loss = ?,
+                profit_factor = ?,
+                last_sync_time = CURRENT_TIMESTAMP
+            '''
+            params = [
                 row['total_trades'] or 0,
                 round(row['total_pnl'] or 0, 4),
                 round(row['total_commission'] or 0, 4),
+                round(row['total_volume'] or 0, 2),
                 row['winning_trades'] or 0,
                 row['losing_trades'] or 0,
-                account_id
-            ))
+                round(row['avg_win'] or 0, 4),
+                round(row['avg_loss'] or 0, 4),
+                round(row['largest_win'] or 0, 4),
+                round(row['largest_loss'] or 0, 4),
+                profit_factor
+            ]
+            
+            # Also update current balance if provided
+            if current_balance is not None:
+                update_fields += ', current_balance = ?'
+                params.append(round(current_balance, 2))
+                
+                # Set starting balance if not set yet
+                cursor.execute('SELECT starting_balance FROM accounts WHERE id = ?', (account_id,))
+                acc_row = cursor.fetchone()
+                if acc_row and (acc_row['starting_balance'] is None or acc_row['starting_balance'] == 0):
+                    update_fields += ', starting_balance = ?'
+                    params.append(round(current_balance, 2))
+            
+            params.append(account_id)
+            cursor.execute(f'UPDATE accounts SET {update_fields} WHERE id = ?', params)
 
+        conn.commit()
+        conn.close()
+        return True
+
+
+def update_account_balance(account_id, balance):
+    """Update just the current balance for an account."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Check if starting balance is set
+        cursor.execute('SELECT starting_balance FROM accounts WHERE id = ?', (account_id,))
+        row = cursor.fetchone()
+        
+        if row and (row['starting_balance'] is None or row['starting_balance'] == 0):
+            # Set both starting and current balance
+            cursor.execute('''
+                UPDATE accounts SET current_balance = ?, starting_balance = ? WHERE id = ?
+            ''', (round(balance, 2), round(balance, 2), account_id))
+        else:
+            # Only update current balance
+            cursor.execute('''
+                UPDATE accounts SET current_balance = ? WHERE id = ?
+            ''', (round(balance, 2), account_id))
+        
+        conn.commit()
+        conn.close()
+        return True
+
+
+def set_starting_balance(account_id, balance):
+    """Manually set the starting balance for an account."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE accounts SET starting_balance = ? WHERE id = ?
+        ''', (round(balance, 2), account_id))
+        
         conn.commit()
         conn.close()
         return True
@@ -374,9 +486,16 @@ def get_trade_stats(account_id=None):
                 COUNT(DISTINCT symbol) as symbols_traded,
                 COALESCE(SUM(realized_pnl), 0) as total_pnl,
                 COALESCE(SUM(commission), 0) as total_commission,
+                COALESCE(SUM(quantity * price), 0) as total_volume,
                 SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END) as winning_trades,
                 SUM(CASE WHEN realized_pnl < 0 THEN 1 ELSE 0 END) as losing_trades,
-                SUM(CASE WHEN realized_pnl = 0 THEN 1 ELSE 0 END) as breakeven_trades
+                SUM(CASE WHEN realized_pnl = 0 THEN 1 ELSE 0 END) as breakeven_trades,
+                COALESCE(AVG(CASE WHEN realized_pnl > 0 THEN realized_pnl END), 0) as avg_win,
+                COALESCE(AVG(CASE WHEN realized_pnl < 0 THEN realized_pnl END), 0) as avg_loss,
+                COALESCE(MAX(realized_pnl), 0) as largest_win,
+                COALESCE(MIN(realized_pnl), 0) as largest_loss,
+                COALESCE(SUM(CASE WHEN realized_pnl > 0 THEN realized_pnl ELSE 0 END), 0) as gross_profit,
+                COALESCE(ABS(SUM(CASE WHEN realized_pnl < 0 THEN realized_pnl ELSE 0 END)), 0) as gross_loss
             FROM trades
         '''
         
@@ -387,23 +506,54 @@ def get_trade_stats(account_id=None):
             cursor.execute(query)
         
         row = cursor.fetchone()
+        
+        # Also get account balance info if account_id specified
+        balance_info = {}
+        if account_id:
+            cursor.execute('''
+                SELECT current_balance, starting_balance FROM accounts WHERE id = ?
+            ''', (account_id,))
+            acc_row = cursor.fetchone()
+            if acc_row:
+                current_balance = acc_row['current_balance'] or 0
+                starting_balance = acc_row['starting_balance'] or 0
+                balance_info = {
+                    'current_balance': round(current_balance, 2),
+                    'starting_balance': round(starting_balance, 2),
+                    'net_profit': round(current_balance - starting_balance, 2) if starting_balance > 0 else 0,
+                    'net_profit_pct': round((current_balance - starting_balance) / starting_balance * 100, 2) if starting_balance > 0 else 0
+                }
+        
         conn.close()
         
         if row:
             total = row['total_trades'] or 0
             winning = row['winning_trades'] or 0
             losing = row['losing_trades'] or 0
+            gross_profit = row['gross_profit'] or 0
+            gross_loss = row['gross_loss'] or 0
+            profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else (999.99 if gross_profit > 0 else 0)
             
-            return {
+            stats = {
                 'total_trades': total,
                 'symbols_traded': row['symbols_traded'] or 0,
                 'total_pnl': round(row['total_pnl'] or 0, 2),
                 'total_commission': round(row['total_commission'] or 0, 2),
+                'total_volume': round(row['total_volume'] or 0, 2),
                 'winning_trades': winning,
                 'losing_trades': losing,
                 'breakeven_trades': row['breakeven_trades'] or 0,
-                'win_rate': round(winning / (winning + losing) * 100, 1) if (winning + losing) > 0 else 0
+                'win_rate': round(winning / (winning + losing) * 100, 1) if (winning + losing) > 0 else 0,
+                'avg_win': round(row['avg_win'] or 0, 2),
+                'avg_loss': round(row['avg_loss'] or 0, 2),
+                'largest_win': round(row['largest_win'] or 0, 2),
+                'largest_loss': round(row['largest_loss'] or 0, 2),
+                'profit_factor': profit_factor,
+                'gross_profit': round(gross_profit, 2),
+                'gross_loss': round(gross_loss, 2)
             }
+            stats.update(balance_info)
+            return stats
         
         return None
 

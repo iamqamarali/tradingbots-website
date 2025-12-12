@@ -456,6 +456,30 @@ async function loadBalance() {
             if (balanceAmount) {
                 balanceAmount.textContent = `$${data.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
             }
+            
+            // Update balance details if available
+            if (data.starting_balance !== undefined) {
+                const startBalEl = document.getElementById('startingBalance');
+                if (startBalEl) {
+                    startBalEl.textContent = `$${(data.starting_balance || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+                }
+                
+                // Calculate net profit
+                const netProfit = data.balance - (data.starting_balance || 0);
+                const netProfitEl = document.getElementById('netProfit');
+                if (netProfitEl && data.starting_balance > 0) {
+                    netProfitEl.textContent = `${netProfit >= 0 ? '+' : ''}$${netProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+                    netProfitEl.className = `detail-value ${netProfit >= 0 ? 'positive' : 'negative'}`;
+                }
+                
+                // Calculate percentage
+                const netPctEl = document.getElementById('netProfitPct');
+                if (netPctEl && data.starting_balance > 0) {
+                    const pct = (netProfit / data.starting_balance) * 100;
+                    netPctEl.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
+                    netPctEl.className = `detail-value ${pct >= 0 ? 'positive' : 'negative'}`;
+                }
+            }
         } else {
             console.error('Balance error:', data.error);
         }
@@ -592,18 +616,118 @@ async function loadStats() {
         const stats = await response.json();
         
         if (response.ok) {
-            document.getElementById('statTotalTrades').textContent = stats.total_trades || 0;
-            document.getElementById('statWinRate').textContent = `${stats.win_rate || 0}%`;
-            
-            const pnlElement = document.getElementById('statTotalPnL');
-            const pnl = stats.total_pnl || 0;
-            pnlElement.textContent = `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`;
-            pnlElement.className = `mini-stat-value ${pnl >= 0 ? 'positive' : 'negative'}`;
-            
-            document.getElementById('statTotalFees').textContent = `$${(stats.total_commission || 0).toFixed(2)}`;
+            updateStatsDisplay(stats);
         }
     } catch (error) {
         console.error('Error loading stats:', error);
+    }
+}
+
+function updateStatsDisplay(stats) {
+    if (!stats) return;
+    
+    // Primary stats
+    document.getElementById('statTotalTrades').textContent = stats.total_trades || 0;
+    
+    const winRate = stats.win_rate || 0;
+    const winRateEl = document.getElementById('statWinRate');
+    winRateEl.textContent = `${winRate}%`;
+    winRateEl.className = `mini-stat-value ${winRate >= 50 ? 'positive' : (winRate > 0 ? 'negative' : '')}`;
+    
+    const pnlElement = document.getElementById('statTotalPnL');
+    const pnl = stats.total_pnl || 0;
+    pnlElement.textContent = `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`;
+    pnlElement.className = `mini-stat-value ${pnl >= 0 ? 'positive' : 'negative'}`;
+    
+    const profitFactor = stats.profit_factor || 0;
+    const pfEl = document.getElementById('statProfitFactor');
+    if (pfEl) {
+        pfEl.textContent = profitFactor >= 999 ? '∞' : profitFactor.toFixed(2);
+        pfEl.className = `mini-stat-value ${profitFactor >= 1 ? 'positive' : 'negative'}`;
+    }
+    
+    // Secondary stats
+    const winningEl = document.getElementById('statWinningTrades');
+    if (winningEl) {
+        winningEl.textContent = stats.winning_trades || 0;
+        winningEl.className = 'mini-stat-value positive';
+    }
+    
+    const losingEl = document.getElementById('statLosingTrades');
+    if (losingEl) {
+        losingEl.textContent = stats.losing_trades || 0;
+        losingEl.className = 'mini-stat-value negative';
+    }
+    
+    const avgWin = stats.avg_win || 0;
+    const avgWinEl = document.getElementById('statAvgWin');
+    if (avgWinEl) {
+        avgWinEl.textContent = `+$${avgWin.toFixed(2)}`;
+        avgWinEl.className = 'mini-stat-value positive';
+    }
+    
+    const avgLoss = stats.avg_loss || 0;
+    const avgLossEl = document.getElementById('statAvgLoss');
+    if (avgLossEl) {
+        avgLossEl.textContent = `$${avgLoss.toFixed(2)}`;
+        avgLossEl.className = 'mini-stat-value negative';
+    }
+    
+    const largestWin = stats.largest_win || 0;
+    const largestWinEl = document.getElementById('statLargestWin');
+    if (largestWinEl) {
+        largestWinEl.textContent = `+$${largestWin.toFixed(2)}`;
+        largestWinEl.className = 'mini-stat-value positive';
+    }
+    
+    const largestLoss = stats.largest_loss || 0;
+    const largestLossEl = document.getElementById('statLargestLoss');
+    if (largestLossEl) {
+        largestLossEl.textContent = `$${largestLoss.toFixed(2)}`;
+        largestLossEl.className = 'mini-stat-value negative';
+    }
+    
+    document.getElementById('statTotalFees').textContent = `$${(stats.total_commission || 0).toFixed(2)}`;
+    
+    const volumeEl = document.getElementById('statTotalVolume');
+    if (volumeEl) {
+        const volume = stats.total_volume || 0;
+        volumeEl.textContent = volume >= 1000000 ? `$${(volume / 1000000).toFixed(1)}M` : 
+                              volume >= 1000 ? `$${(volume / 1000).toFixed(1)}K` : 
+                              `$${volume.toFixed(0)}`;
+    }
+    
+    // Balance related stats (if available from sync)
+    if (stats.starting_balance !== undefined) {
+        const startBalEl = document.getElementById('startingBalance');
+        if (startBalEl) startBalEl.textContent = `$${(stats.starting_balance || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+    }
+    
+    if (stats.net_profit !== undefined) {
+        const netProfitEl = document.getElementById('netProfit');
+        if (netProfitEl) {
+            const netProfit = stats.net_profit || 0;
+            netProfitEl.textContent = `${netProfit >= 0 ? '+' : ''}$${netProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+            netProfitEl.className = `detail-value ${netProfit >= 0 ? 'positive' : 'negative'}`;
+        }
+    }
+    
+    if (stats.net_profit_pct !== undefined) {
+        const netPctEl = document.getElementById('netProfitPct');
+        if (netPctEl) {
+            const pct = stats.net_profit_pct || 0;
+            netPctEl.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
+            netPctEl.className = `detail-value ${pct >= 0 ? 'positive' : 'negative'}`;
+        }
+    }
+    
+    if (stats.unrealized_pnl !== undefined) {
+        const unrealizedEl = document.getElementById('unrealizedPnl');
+        if (unrealizedEl) {
+            const upnl = stats.unrealized_pnl || 0;
+            unrealizedEl.textContent = `${upnl >= 0 ? '+' : ''}$${upnl.toFixed(2)}`;
+            unrealizedEl.className = `detail-value ${upnl >= 0 ? 'positive' : 'negative'}`;
+        }
     }
 }
 
@@ -616,33 +740,26 @@ async function syncTrades() {
     const syncProgress = document.getElementById('syncProgress');
     const syncStatus = document.getElementById('syncStatus');
 
-    console.log('syncBtn:', syncBtn);
-    console.log('syncModal:', syncModal);
-
     syncBtn.classList.add('syncing');
     syncModal.classList.add('active');
-    syncProgress.style.width = '30%';
-    syncStatus.textContent = 'Fetching trades from Binance...';
+    syncProgress.style.width = '20%';
+    syncStatus.textContent = 'Fetching account balance...';
 
     try {
-        // Simulate progress
+        // Simulate progress stages
         setTimeout(() => {
-            syncProgress.style.width = '60%';
-            syncStatus.textContent = 'Processing trades...';
-        }, 1000);
+            syncProgress.style.width = '40%';
+            syncStatus.textContent = 'Fetching trades from Binance...';
+        }, 500);
+        
+        setTimeout(() => {
+            syncProgress.style.width = '70%';
+            syncStatus.textContent = 'Processing and calculating stats...';
+        }, 2000);
 
         const url = `/api/accounts/${ACCOUNT_ID}/sync`;
-        console.log('Fetching URL:', url);
-
-        const response = await fetch(url, {
-            method: 'POST'
-        });
-
-        console.log('Response status:', response.status);
-        console.log('Response ok:', response.ok);
-
+        const response = await fetch(url, { method: 'POST' });
         const data = await response.json();
-        console.log('Response data:', data);
 
         syncProgress.style.width = '100%';
 
@@ -650,11 +767,24 @@ async function syncTrades() {
             syncStatus.textContent = `Done! Added ${data.new_trades} new trades.`;
             showToast(`Synced ${data.new_trades} new trades`, 'success');
 
-            // Reload data
+            // Update balance display immediately with sync data
+            if (data.balance !== undefined) {
+                const balanceAmount = document.querySelector('.balance-amount');
+                if (balanceAmount) {
+                    balanceAmount.textContent = `$${data.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                }
+            }
+            
+            // Update stats immediately with sync data
+            if (data.stats) {
+                updateStatsDisplay(data.stats);
+            }
+
+            // Reload other data
             setTimeout(() => {
                 syncModal.classList.remove('active');
                 loadTrades();
-                loadStats();
+                loadPositions();
             }, 1500);
         } else {
             console.error('Sync failed with error:', data.error);
@@ -663,7 +793,6 @@ async function syncTrades() {
         }
     } catch (error) {
         console.error('Error syncing trades:', error);
-        console.error('Error stack:', error.stack);
         syncModal.classList.remove('active');
         showToast('Failed to sync trades', 'error');
     } finally {
