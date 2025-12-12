@@ -244,13 +244,17 @@ def start_script_process(script_id):
         # Create startup info for Windows to run without console window
         startupinfo = None
         creationflags = 0
-        
+        preexec_fn = None
+
         if sys.platform == 'win32':
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startupinfo.wShowWindow = subprocess.SW_HIDE
             creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
-        
+        else:
+            # On Linux, start process in its own process group for clean shutdown
+            preexec_fn = os.setsid
+
         # Start the process
         process = subprocess.Popen(
             [sys.executable, '-u', filepath],
@@ -260,6 +264,7 @@ def start_script_process(script_id):
             bufsize=1,
             startupinfo=startupinfo,
             creationflags=creationflags,
+            preexec_fn=preexec_fn,
             cwd=SCRIPTS_FOLDER
         )
         
@@ -580,13 +585,17 @@ def run_script(script_id):
         # Create startup info for Windows to run without console window
         startupinfo = None
         creationflags = 0
-        
+        preexec_fn = None
+
         if sys.platform == 'win32':
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startupinfo.wShowWindow = subprocess.SW_HIDE
             creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
-        
+        else:
+            # On Linux, start process in its own process group for clean shutdown
+            preexec_fn = os.setsid
+
         # Start the process - runs indefinitely in background
         process = subprocess.Popen(
             [sys.executable, '-u', filepath],  # -u for unbuffered output
@@ -596,6 +605,7 @@ def run_script(script_id):
             bufsize=1,
             startupinfo=startupinfo,
             creationflags=creationflags,
+            preexec_fn=preexec_fn,
             cwd=SCRIPTS_FOLDER
         )
         
@@ -634,15 +644,27 @@ def stop_script_process(script_id):
                 if process.poll() is None:  # Still running
                     if sys.platform == 'win32':
                         # On Windows, terminate the process tree
-                        subprocess.run(['taskkill', '/F', '/T', '/PID', str(process.pid)], 
+                        subprocess.run(['taskkill', '/F', '/T', '/PID', str(process.pid)],
                                       capture_output=True)
                     else:
-                        process.terminate()
+                        # On Linux, kill the entire process group
+                        import os as os_module
                         try:
-                            process.wait(timeout=5)
+                            # Kill entire process group (negative PID)
+                            os_module.killpg(os_module.getpgid(process.pid), signal.SIGTERM)
+                        except (ProcessLookupError, PermissionError):
+                            pass
+
+                        try:
+                            process.wait(timeout=3)
                         except subprocess.TimeoutExpired:
+                            # Force kill the process group
+                            try:
+                                os_module.killpg(os_module.getpgid(process.pid), signal.SIGKILL)
+                            except (ProcessLookupError, PermissionError):
+                                pass
                             process.kill()
-                    
+
                     write_log_to_file(script_id, "[SYSTEM] Script stopped by user")
             except Exception as e:
                 write_log_to_file(script_id, f"[SYSTEM] Error stopping script: {e}")
@@ -1513,12 +1535,12 @@ def api_get_trade_stats():
 _cleanup_done = False
 
 def cleanup_on_exit():
-    """Clean up all running processes on application exit."""
+    """Clean up all running processes and database connections on application exit."""
     global _cleanup_done
     if _cleanup_done:
         return
     _cleanup_done = True
-    
+
     print("\n[SHUTDOWN] Stopping all running scripts...")
     with process_lock:
         for script_id in list(running_processes.keys()):
@@ -1528,6 +1550,14 @@ def cleanup_on_exit():
             except Exception as e:
                 print(f"[SHUTDOWN] Error stopping {script_id}: {e}")
     print("[SHUTDOWN] All scripts stopped.")
+
+    # Close database connections and checkpoint WAL
+    print("[SHUTDOWN] Closing database connections...")
+    try:
+        db.close_all_connections()
+    except Exception as e:
+        print(f"[SHUTDOWN] Error closing database: {e}")
+    print("[SHUTDOWN] Cleanup complete.")
 
 
 def handle_shutdown(signum, frame):
@@ -1571,5 +1601,13 @@ if __name__ == '__main__':
     print(f"  Logs folder: {LOGS_FOLDER}")
     print("  Logs are automatically cleared daily at midnight")
     print("=" * 60)
-    
-    app.run(debug=False, host='0.0.0.0', port=5000, threaded=True)
+
+    # Use socketserver options to allow port reuse
+    from werkzeug.serving import run_simple
+    run_simple(
+        '0.0.0.0', 5000, app,
+        threaded=True,
+        use_reloader=False,
+        use_debugger=False,
+        passthrough_errors=True
+    )

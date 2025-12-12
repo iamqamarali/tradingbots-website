@@ -20,11 +20,22 @@ db_lock = Lock()
 
 def get_connection():
     """Get a database connection with WAL mode for concurrent access."""
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=30000")  # 30 second busy timeout
     return conn
+
+
+def close_all_connections():
+    """Close all database connections and checkpoint WAL file."""
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=5)
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.close()
+    except Exception:
+        pass
 
 
 def init_db():
@@ -413,30 +424,31 @@ def delete_account(account_id):
 
 # ==================== TRADE OPERATIONS ====================
 
-def insert_trade(account_id, exchange_trade_id, order_id, symbol, side, quantity, 
+def insert_trade(account_id, exchange_trade_id, order_id, symbol, side, quantity,
                  price, realized_pnl, commission, commission_asset, trade_time):
     """Insert a trade if it doesn't already exist. Returns True if inserted."""
     with db_lock:
         conn = get_connection()
-        cursor = conn.cursor()
-        
-        # Check if trade already exists
-        cursor.execute('SELECT id FROM trades WHERE exchange_trade_id = ?', (str(exchange_trade_id),))
-        if cursor.fetchone():
+        try:
+            cursor = conn.cursor()
+
+            # Check if trade already exists
+            cursor.execute('SELECT id FROM trades WHERE exchange_trade_id = ?', (str(exchange_trade_id),))
+            if cursor.fetchone():
+                return False  # Already exists
+
+            cursor.execute('''
+                INSERT INTO trades (
+                    account_id, exchange_trade_id, order_id, symbol, side, quantity,
+                    price, realized_pnl, commission, commission_asset, trade_time
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (account_id, str(exchange_trade_id), str(order_id), symbol, side, quantity,
+                  price, realized_pnl, commission, commission_asset, trade_time))
+
+            conn.commit()
+            return True
+        finally:
             conn.close()
-            return False  # Already exists
-        
-        cursor.execute('''
-            INSERT INTO trades (
-                account_id, exchange_trade_id, order_id, symbol, side, quantity,
-                price, realized_pnl, commission, commission_asset, trade_time
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (account_id, str(exchange_trade_id), str(order_id), symbol, side, quantity,
-              price, realized_pnl, commission, commission_asset, trade_time))
-        
-        conn.commit()
-        conn.close()
-        return True
 
 
 def get_trades(account_id=None, symbol=None, limit=100, offset=0):
