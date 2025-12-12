@@ -830,13 +830,14 @@ function renderPositions() {
         const pnlClass = pos.unrealized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
         const pnlPrefix = pos.unrealized_pnl >= 0 ? '+' : '';
         const testnetBadge = pos.is_testnet ? '<span class="testnet-badge">TESTNET</span>' : '';
+        const sizeInUsd = Math.abs(pos.quantity * pos.mark_price);
 
         return `
             <tr>
-                <td><span class="account-name">${escapeHtml(pos.account_name)}${testnetBadge}</span></td>
+                <td><a href="/accounts/${pos.account_id}" class="account-link">${escapeHtml(pos.account_name)}${testnetBadge}</a></td>
                 <td class="symbol">${pos.symbol}</td>
                 <td><span class="side ${pos.side.toLowerCase()}">${pos.side}</span></td>
-                <td>${pos.quantity}</td>
+                <td><span class="size-qty">${pos.quantity}</span><span class="size-usd">$${sizeInUsd.toFixed(2)}</span></td>
                 <td>${formatPrice(pos.entry_price)}</td>
                 <td>${formatPrice(pos.mark_price)}</td>
                 <td class="sl-tp-cell">

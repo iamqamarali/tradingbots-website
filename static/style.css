@@ -1772,12 +1772,19 @@ body {
     background: var(--bg-hover);
 }
 
-.positions-table .account-name {
+.positions-table .account-link {
     color: var(--accent-primary);
     font-weight: 500;
+    text-decoration: none;
+    transition: color 0.2s ease;
 }
 
-.positions-table .account-name .testnet-badge {
+.positions-table .account-link:hover {
+    color: var(--accent-secondary);
+    text-decoration: underline;
+}
+
+.positions-table .account-link .testnet-badge {
     margin-left: 6px;
     padding: 2px 6px;
     background: rgba(245, 158, 11, 0.15);
@@ -1786,6 +1793,18 @@ body {
     font-weight: 700;
     border-radius: 4px;
     vertical-align: middle;
+}
+
+.positions-table .size-qty {
+    display: block;
+    font-weight: 500;
+}
+
+.positions-table .size-usd {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 2px;
 }
 
 .positions-table .symbol {
