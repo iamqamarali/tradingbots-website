@@ -1514,19 +1514,48 @@ def api_get_trade_stats():
     })
 
 
+_cleanup_done = False
+
 def cleanup_on_exit():
     """Clean up all running processes on application exit."""
-    print("\nShutting down... stopping all running scripts")
+    global _cleanup_done
+    if _cleanup_done:
+        return
+    _cleanup_done = True
+    
+    print("\n[SHUTDOWN] Stopping all running scripts...")
     with process_lock:
         for script_id in list(running_processes.keys()):
             try:
+                print(f"[SHUTDOWN] Stopping: {script_id}")
                 stop_script_process(script_id)
-            except:
-                pass
+            except Exception as e:
+                print(f"[SHUTDOWN] Error stopping {script_id}: {e}")
+    print("[SHUTDOWN] All scripts stopped.")
 
 
-# Register cleanup function
+def handle_shutdown(signum, frame):
+    """Handle SIGTERM/SIGINT/SIGQUIT for graceful shutdown (works with gunicorn/supervisor)."""
+    sig_names = {2: 'SIGINT', 3: 'SIGQUIT', 15: 'SIGTERM'}
+    sig_name = sig_names.get(signum, str(signum))
+    print(f"\n[SHUTDOWN] Received {sig_name}")
+    cleanup_on_exit()
+    sys.exit(0)
+
+
+# Register cleanup function for normal exit
 atexit.register(cleanup_on_exit)
+
+# Handle signals for gunicorn/supervisor graceful shutdown
+# SIGTERM: sent by supervisor/gunicorn master
+# SIGINT: Ctrl+C
+# SIGQUIT: gunicorn graceful shutdown
+signal.signal(signal.SIGTERM, handle_shutdown)
+signal.signal(signal.SIGINT, handle_shutdown)
+try:
+    signal.signal(signal.SIGQUIT, handle_shutdown)  # Unix only, gunicorn uses this
+except AttributeError:
+    pass  # SIGQUIT not available on Windows
 
 
 # Restart scripts on module load (works with gunicorn/production)
