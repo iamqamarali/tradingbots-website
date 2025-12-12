@@ -33,6 +33,12 @@ except ImportError:
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 
+# Configure session to last 365 days
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=365)
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True if using HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
 # Login required decorator
 def login_required(f):
     @wraps(f)
@@ -352,6 +358,7 @@ def api_login():
 
     user = db.verify_user(username, password)
     if user:
+        session.permanent = True  # Make session last 365 days
         session['user_id'] = user['id']
         session['username'] = user['username']
         return jsonify({'success': True, 'username': user['username']})

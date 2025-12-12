@@ -41,7 +41,10 @@ const elements = {
     totalScripts: document.getElementById('totalScripts'),
     activeScripts: document.getElementById('activeScripts'),
     codePanel: document.getElementById('codePanel'),
-    logsPanel: document.getElementById('logsPanel')
+    logsPanel: document.getElementById('logsPanel'),
+    welcomeTitle: document.getElementById('welcomeTitle'),
+    welcomeDescription: document.getElementById('welcomeDescription'),
+    welcomeBtnText: document.getElementById('welcomeBtnText')
 };
 
 // Initialize the application
@@ -619,10 +622,21 @@ async function fetchLogs(forceFullRefresh = false) {
 // Update statistics
 function updateStats() {
     const running = scripts.filter(s => s.status === 'running').length;
-    
+
     elements.runningCount.textContent = running;
     elements.totalScripts.textContent = scripts.length;
     elements.activeScripts.textContent = running;
+
+    // Update welcome content based on whether there are bots
+    if (scripts.length > 0) {
+        elements.welcomeTitle.textContent = 'Dashboard';
+        elements.welcomeDescription.textContent = 'Select a bot from the sidebar to view its code and logs, or add a new one.';
+        elements.welcomeBtnText.textContent = 'Add New Bot';
+    } else {
+        elements.welcomeTitle.textContent = 'Welcome to BotTrader';
+        elements.welcomeDescription.textContent = 'Your automated trading command center. Upload, manage, and monitor your Binance trading bots all in one place.';
+        elements.welcomeBtnText.textContent = 'Add Your First Bot';
+    }
 }
 
 // Show toast notification
