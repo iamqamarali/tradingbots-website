@@ -1618,6 +1618,107 @@
     border-color: rgba(239, 68, 68, 0.5);
 }
 
+/* Stop Loss / Take Profit Cell Styles */
+.sl-tp-cell {
+    min-width: 140px;
+}
+
+.sl-tp-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+
+.sl-label {
+    color: #f87171;
+    font-weight: 500;
+    min-width: 24px;
+}
+
+.tp-label {
+    color: #4ade80;
+    font-weight: 500;
+    min-width: 24px;
+}
+
+.has-sl {
+    color: #f87171;
+}
+
+.no-sl {
+    color: #6b7280;
+}
+
+.has-tp {
+    color: #4ade80;
+}
+
+.no-tp {
+    color: #6b7280;
+}
+
+.sl-value {
+    margin-right: 0.5rem;
+}
+
+.edit-sl-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    color: #a1a1aa;
+    cursor: pointer;
+    transition: all 0.2s;
+    vertical-align: middle;
+    margin-left: auto;
+}
+
+.edit-sl-btn:hover {
+    background: rgba(245, 158, 11, 0.2);
+    border-color: rgba(245, 158, 11, 0.4);
+    color: #fbbf24;
+}
+
+.actions-cell {
+    white-space: nowrap;
+}
+
+/* Stop Loss Modal Styles */
+.stop-loss-hint {
+    margin-top: 0.5rem;
+    font-size: 0.8rem;
+}
+
+.hint-warning {
+    color: #fbbf24;
+}
+
+#slCurrentStop.has-sl {
+    color: #fbbf24;
+    font-weight: 500;
+}
+
+#slCurrentStop.no-sl {
+    color: #6b7280;
+}
+
+#removeStopLossBtn {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #f87171;
+}
+
+#removeStopLossBtn:hover {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.5);
+}
+
 /* Close Position Modal */
 .position-info {
     display: flex;

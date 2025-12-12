@@ -956,7 +956,7 @@ def api_get_account_balance(account_id):
 
 @app.route('/api/accounts/<int:account_id>/positions', methods=['GET'])
 def api_get_account_positions(account_id):
-    """Get open positions from Binance."""
+    """Get open positions from Binance with stop-loss info."""
     print(f"=== GET POSITIONS for account_id: {account_id} ===")
 
     if not BINANCE_AVAILABLE:
@@ -980,6 +980,61 @@ def api_get_account_positions(account_id):
         positions = client.futures_position_information()
         print(f"Got {len(positions)} position entries")
 
+        # Get all open orders to find stop-loss orders
+        print("Fetching open orders for stop-loss info...")
+        all_open_orders = []
+        try:
+            all_open_orders = client.futures_get_open_orders()
+            print(f"Got {len(all_open_orders)} open orders")
+        except Exception as e:
+            print(f"Warning: Could not fetch open orders: {e}")
+
+        # Build a map of symbol -> stop orders
+        # Include all conditional/stop order types that Binance Futures supports
+        stop_order_types = [
+            'STOP_MARKET',           # Standard stop market
+            'STOP',                  # Stop limit
+            'STOP_LIMIT',            # Stop limit (alias)
+            'TRAILING_STOP_MARKET',  # Trailing stop
+        ]
+        
+        stop_orders_map = {}
+        tp_orders_map = {}  # Track take-profit orders separately
+        
+        for order in all_open_orders:
+            symbol = order['symbol']
+            order_type = order.get('type', '')
+            stop_price = float(order.get('stopPrice', 0)) if order.get('stopPrice') else 0
+            
+            # Check for stop-loss orders
+            if order_type in stop_order_types:
+                if symbol not in stop_orders_map:
+                    stop_orders_map[symbol] = []
+                stop_orders_map[symbol].append({
+                    'order_id': order['orderId'],
+                    'type': order_type,
+                    'side': order['side'],
+                    'stop_price': stop_price,
+                    'quantity': float(order.get('origQty', 0)),
+                    'status': order.get('status', ''),
+                    'activation_price': float(order.get('activatePrice', 0)) if order.get('activatePrice') else None
+                })
+                print(f"  Found stop order for {symbol}: {order_type} @ {stop_price}")
+            
+            # Also track take-profit orders
+            elif order_type in ['TAKE_PROFIT_MARKET', 'TAKE_PROFIT']:
+                if symbol not in tp_orders_map:
+                    tp_orders_map[symbol] = []
+                tp_orders_map[symbol].append({
+                    'order_id': order['orderId'],
+                    'type': order_type,
+                    'side': order['side'],
+                    'stop_price': stop_price,
+                    'quantity': float(order.get('origQty', 0)),
+                    'status': order.get('status', '')
+                })
+                print(f"  Found TP order for {symbol}: {order_type} @ {stop_price}")
+
         open_positions = []
 
         for pos in positions:
@@ -988,16 +1043,48 @@ def api_get_account_positions(account_id):
                 entry_price = float(pos['entryPrice'])
                 mark_price = float(pos['markPrice'])
                 unrealized_pnl = float(pos['unRealizedProfit'])
+                symbol = pos['symbol']
+                side = 'LONG' if amt > 0 else 'SHORT'
 
-                print(f"  Open position: {pos['symbol']} amt={amt} pnl={unrealized_pnl}")
+                # Find stop-loss for this position
+                # For LONG, stop-loss is a SELL order; for SHORT, it's a BUY order
+                stop_price = None
+                stop_order_id = None
+                stop_type = None
+                stop_orders = stop_orders_map.get(symbol, [])
+                for stop in stop_orders:
+                    # LONG position needs SELL stop, SHORT position needs BUY stop
+                    if (side == 'LONG' and stop['side'] == 'SELL') or (side == 'SHORT' and stop['side'] == 'BUY'):
+                        stop_price = stop['stop_price']
+                        stop_order_id = stop['order_id']
+                        stop_type = stop['type']
+                        break
+                
+                # Find take-profit for this position
+                tp_price = None
+                tp_order_id = None
+                tp_orders = tp_orders_map.get(symbol, [])
+                for tp in tp_orders:
+                    # LONG position needs SELL TP, SHORT position needs BUY TP
+                    if (side == 'LONG' and tp['side'] == 'SELL') or (side == 'SHORT' and tp['side'] == 'BUY'):
+                        tp_price = tp['stop_price']
+                        tp_order_id = tp['order_id']
+                        break
+
+                print(f"  Open position: {symbol} {side} amt={amt} pnl={unrealized_pnl} SL={stop_price} TP={tp_price}")
                 open_positions.append({
-                    'symbol': pos['symbol'],
-                    'side': 'LONG' if amt > 0 else 'SHORT',
+                    'symbol': symbol,
+                    'side': side,
                     'quantity': abs(amt),
                     'entry_price': entry_price,
                     'mark_price': mark_price,
                     'unrealized_pnl': round(unrealized_pnl, 2),
-                    'leverage': int(pos.get('leverage', 5))
+                    'leverage': int(pos.get('leverage', 5)),
+                    'stop_price': stop_price,
+                    'stop_order_id': stop_order_id,
+                    'stop_type': stop_type,
+                    'tp_price': tp_price,
+                    'tp_order_id': tp_order_id
                 })
 
         print(f"Returning {len(open_positions)} open positions")
@@ -1113,6 +1200,118 @@ def api_close_position(account_id):
         return jsonify({'error': f'Binance error: {e.message}'}), 500
     except Exception as e:
         print(f"Exception closing position: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/accounts/<int:account_id>/update-stop-loss', methods=['POST'])
+def api_update_stop_loss(account_id):
+    """Update or create a stop-loss order for a position."""
+    print(f"=== UPDATE STOP-LOSS for account_id: {account_id} ===")
+    
+    if not BINANCE_AVAILABLE:
+        return jsonify({'error': 'Binance API not available'}), 500
+
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    data = request.get_json()
+    symbol = data.get('symbol')
+    position_side = data.get('position_side')  # LONG or SHORT
+    stop_price = float(data.get('stop_price', 0))
+    quantity = float(data.get('quantity', 0))
+    old_order_id = data.get('old_order_id')  # Existing stop order to cancel
+
+    print(f"  Symbol: {symbol}, Side: {position_side}, Stop: {stop_price}, Qty: {quantity}")
+
+    if not symbol or not position_side or stop_price <= 0 or quantity <= 0:
+        return jsonify({'error': 'Invalid parameters'}), 400
+
+    try:
+        client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
+        if account['is_testnet']:
+            client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+
+        # Cancel existing stop order if provided
+        if old_order_id:
+            try:
+                print(f"  Cancelling old stop order: {old_order_id}")
+                client.futures_cancel_order(symbol=symbol, orderId=old_order_id)
+            except Exception as e:
+                print(f"  Warning: Could not cancel old stop order: {e}")
+
+        # For LONG position, stop-loss is a SELL; for SHORT, it's a BUY
+        order_side = 'SELL' if position_side == 'LONG' else 'BUY'
+
+        # Create new stop-loss order
+        print(f"  Creating STOP_MARKET order: {order_side} {quantity} @ stop {stop_price}")
+        order = client.futures_create_order(
+            symbol=symbol,
+            side=order_side,
+            type='STOP_MARKET',
+            stopPrice=str(stop_price),
+            quantity=quantity,
+            reduceOnly='true'
+        )
+
+        print(f"  Stop-loss order created: {order['orderId']}")
+        return jsonify({
+            'success': True,
+            'order': {
+                'orderId': order['orderId'],
+                'symbol': order['symbol'],
+                'side': order['side'],
+                'stopPrice': stop_price,
+                'quantity': order['origQty'],
+                'status': order['status']
+            }
+        })
+    except BinanceAPIException as e:
+        print(f"BinanceAPIException: {e}")
+        return jsonify({'error': f'Binance error: {e.message}'}), 500
+    except Exception as e:
+        print(f"Exception: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/accounts/<int:account_id>/cancel-stop-loss', methods=['POST'])
+def api_cancel_stop_loss(account_id):
+    """Cancel a stop-loss order."""
+    print(f"=== CANCEL STOP-LOSS for account_id: {account_id} ===")
+    
+    if not BINANCE_AVAILABLE:
+        return jsonify({'error': 'Binance API not available'}), 500
+
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    data = request.get_json()
+    symbol = data.get('symbol')
+    order_id = data.get('order_id')
+
+    if not symbol or not order_id:
+        return jsonify({'error': 'Invalid parameters'}), 400
+
+    try:
+        client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
+        if account['is_testnet']:
+            client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+
+        print(f"  Cancelling stop order {order_id} for {symbol}")
+        result = client.futures_cancel_order(symbol=symbol, orderId=order_id)
+
+        return jsonify({
+            'success': True,
+            'cancelled_order_id': order_id
+        })
+    except BinanceAPIException as e:
+        print(f"BinanceAPIException: {e}")
+        return jsonify({'error': f'Binance error: {e.message}'}), 500
+    except Exception as e:
+        print(f"Exception: {e}")
         return jsonify({'error': str(e)}), 500
 
 

@@ -353,6 +353,7 @@ function initDetailPage() {
     loadStats();
     setupDetailPageEventListeners();
     setupClosePositionModal();
+    setupEditStopLossModal();
 }
 
 function setupDetailPageEventListeners() {
@@ -514,6 +515,11 @@ async function loadPositions() {
             tbody.innerHTML = positions.map(pos => {
                 // Calculate position size in $
                 const sizeInDollars = pos.quantity * pos.mark_price;
+                const hasStopLoss = pos.stop_price && pos.stop_price > 0;
+                const hasTakeProfit = pos.tp_price && pos.tp_price > 0;
+                const stopLossDisplay = hasStopLoss ? `$${pos.stop_price.toFixed(4)}` : '-';
+                const takeProfitDisplay = hasTakeProfit ? `$${pos.tp_price.toFixed(4)}` : '-';
+                
                 return `
                 <tr>
                     <td class="symbol">${pos.symbol}</td>
@@ -521,11 +527,34 @@ async function loadPositions() {
                     <td>$${sizeInDollars.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td>$${pos.entry_price.toFixed(4)}</td>
                     <td>$${pos.mark_price.toFixed(4)}</td>
+                    <td class="sl-tp-cell">
+                        <div class="sl-tp-row">
+                            <span class="sl-label">SL:</span>
+                            <span class="${hasStopLoss ? 'has-sl' : 'no-sl'}">${stopLossDisplay}</span>
+                            <button class="edit-sl-btn" title="Edit Stop Loss"
+                                data-symbol="${pos.symbol}"
+                                data-side="${pos.side}"
+                                data-quantity="${pos.quantity}"
+                                data-entry-price="${pos.entry_price}"
+                                data-mark-price="${pos.mark_price}"
+                                data-stop-price="${pos.stop_price || ''}"
+                                data-stop-order-id="${pos.stop_order_id || ''}">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                </svg>
+                            </button>
+                        </div>
+                        <div class="sl-tp-row">
+                            <span class="tp-label">TP:</span>
+                            <span class="${hasTakeProfit ? 'has-tp' : 'no-tp'}">${takeProfitDisplay}</span>
+                        </div>
+                    </td>
                     <td class="${pos.unrealized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}">
                         ${pos.unrealized_pnl >= 0 ? '+' : ''}$${pos.unrealized_pnl.toFixed(2)}
                     </td>
                     <td><span class="leverage-badge">${pos.leverage}x</span></td>
-                    <td>
+                    <td class="actions-cell">
                         <button class="close-position-btn"
                             data-symbol="${pos.symbol}"
                             data-side="${pos.side}"
@@ -540,6 +569,11 @@ async function loadPositions() {
             // Add event listeners for close buttons
             tbody.querySelectorAll('.close-position-btn').forEach(btn => {
                 btn.addEventListener('click', () => openClosePositionModal(btn.dataset));
+            });
+            
+            // Add event listeners for edit stop-loss buttons
+            tbody.querySelectorAll('.edit-sl-btn').forEach(btn => {
+                btn.addEventListener('click', () => openEditStopLossModal(btn.dataset));
             });
         } else {
             if (empty) empty.style.display = 'flex';
@@ -1015,5 +1049,197 @@ function showToast(message, type = 'info') {
         toast.style.transform = 'translateX(100px)';
         setTimeout(() => toast.remove(), 300);
     }, 3000);
+}
+
+// ==================== STOP LOSS MANAGEMENT ====================
+
+let currentStopLossPosition = null;
+
+function openEditStopLossModal(posData) {
+    currentStopLossPosition = {
+        symbol: posData.symbol,
+        side: posData.side,
+        quantity: parseFloat(posData.quantity),
+        entryPrice: parseFloat(posData.entryPrice),
+        markPrice: parseFloat(posData.markPrice),
+        stopPrice: posData.stopPrice ? parseFloat(posData.stopPrice) : null,
+        stopOrderId: posData.stopOrderId || null
+    };
+
+    // Update modal content
+    document.getElementById('slSymbol').textContent = currentStopLossPosition.symbol;
+    const sideEl = document.getElementById('slSide');
+    sideEl.textContent = currentStopLossPosition.side;
+    sideEl.className = `position-side ${currentStopLossPosition.side.toLowerCase()}`;
+    
+    document.getElementById('slEntryPrice').textContent = `$${currentStopLossPosition.entryPrice.toFixed(4)}`;
+    document.getElementById('slMarkPrice').textContent = `$${currentStopLossPosition.markPrice.toFixed(4)}`;
+    document.getElementById('slQuantity').textContent = currentStopLossPosition.quantity;
+    
+    const currentStopEl = document.getElementById('slCurrentStop');
+    const removeBtn = document.getElementById('removeStopLossBtn');
+    
+    if (currentStopLossPosition.stopPrice) {
+        currentStopEl.textContent = `$${currentStopLossPosition.stopPrice.toFixed(4)}`;
+        currentStopEl.className = 'has-sl';
+        document.getElementById('newStopPrice').value = currentStopLossPosition.stopPrice;
+        removeBtn.style.display = 'inline-flex';
+    } else {
+        currentStopEl.textContent = 'None';
+        currentStopEl.className = 'no-sl';
+        document.getElementById('newStopPrice').value = '';
+        removeBtn.style.display = 'none';
+    }
+    
+    // Show hint based on position side
+    const hintEl = document.getElementById('slHint');
+    if (currentStopLossPosition.side === 'LONG') {
+        hintEl.innerHTML = `<span class="hint-warning">For LONG position, stop loss should be <strong>below</strong> entry price ($${currentStopLossPosition.entryPrice.toFixed(2)})</span>`;
+    } else {
+        hintEl.innerHTML = `<span class="hint-warning">For SHORT position, stop loss should be <strong>above</strong> entry price ($${currentStopLossPosition.entryPrice.toFixed(2)})</span>`;
+    }
+
+    // Show modal
+    document.getElementById('editStopLossModal').classList.add('active');
+}
+
+function setupEditStopLossModal() {
+    const modal = document.getElementById('editStopLossModal');
+    if (!modal) return;
+    
+    const closeBtn = document.getElementById('closeEditStopLossModal');
+    const cancelBtn = document.getElementById('cancelEditStopLossBtn');
+    const confirmBtn = document.getElementById('confirmEditStopLossBtn');
+    const removeBtn = document.getElementById('removeStopLossBtn');
+
+    // Close modal handlers
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            modal.classList.remove('active');
+            currentStopLossPosition = null;
+        });
+    }
+
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+            modal.classList.remove('active');
+            currentStopLossPosition = null;
+        });
+    }
+
+    // Close on overlay click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.classList.remove('active');
+            currentStopLossPosition = null;
+        }
+    });
+
+    // Confirm update
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', updateStopLoss);
+    }
+    
+    // Remove stop loss
+    if (removeBtn) {
+        removeBtn.addEventListener('click', removeStopLoss);
+    }
+}
+
+async function updateStopLoss() {
+    if (!currentStopLossPosition) return;
+
+    const newStopPrice = parseFloat(document.getElementById('newStopPrice').value);
+    
+    if (!newStopPrice || newStopPrice <= 0) {
+        showToast('Please enter a valid stop price', 'error');
+        return;
+    }
+    
+    // Validate stop price direction
+    if (currentStopLossPosition.side === 'LONG' && newStopPrice >= currentStopLossPosition.markPrice) {
+        showToast('Stop loss for LONG position should be below current price', 'error');
+        return;
+    }
+    if (currentStopLossPosition.side === 'SHORT' && newStopPrice <= currentStopLossPosition.markPrice) {
+        showToast('Stop loss for SHORT position should be above current price', 'error');
+        return;
+    }
+
+    const confirmBtn = document.getElementById('confirmEditStopLossBtn');
+    const btnText = confirmBtn.querySelector('.btn-text');
+    const btnLoading = confirmBtn.querySelector('.btn-loading');
+
+    btnText.style.display = 'none';
+    btnLoading.style.display = 'flex';
+    confirmBtn.disabled = true;
+
+    try {
+        const response = await fetch(`/api/accounts/${ACCOUNT_ID}/update-stop-loss`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol: currentStopLossPosition.symbol,
+                position_side: currentStopLossPosition.side,
+                stop_price: newStopPrice,
+                quantity: currentStopLossPosition.quantity,
+                old_order_id: currentStopLossPosition.stopOrderId
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showToast(`Stop loss set at $${newStopPrice.toFixed(4)}`, 'success');
+            document.getElementById('editStopLossModal').classList.remove('active');
+            currentStopLossPosition = null;
+            loadPositions();
+        } else {
+            showToast(data.error || 'Failed to update stop loss', 'error');
+        }
+    } catch (error) {
+        console.error('Error updating stop loss:', error);
+        showToast('Failed to update stop loss', 'error');
+    } finally {
+        btnText.style.display = 'inline';
+        btnLoading.style.display = 'none';
+        confirmBtn.disabled = false;
+    }
+}
+
+async function removeStopLoss() {
+    if (!currentStopLossPosition || !currentStopLossPosition.stopOrderId) return;
+
+    const removeBtn = document.getElementById('removeStopLossBtn');
+    removeBtn.disabled = true;
+    removeBtn.textContent = 'Removing...';
+
+    try {
+        const response = await fetch(`/api/accounts/${ACCOUNT_ID}/cancel-stop-loss`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol: currentStopLossPosition.symbol,
+                order_id: currentStopLossPosition.stopOrderId
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showToast('Stop loss removed', 'success');
+            document.getElementById('editStopLossModal').classList.remove('active');
+            currentStopLossPosition = null;
+            loadPositions();
+        } else {
+            showToast(data.error || 'Failed to remove stop loss', 'error');
+        }
+    } catch (error) {
+        console.error('Error removing stop loss:', error);
+        showToast('Failed to remove stop loss', 'error');
+    } finally {
+        removeBtn.disabled = false;
+        removeBtn.textContent = 'Remove SL';
+    }
 }
 
