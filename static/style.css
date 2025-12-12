@@ -323,6 +323,63 @@ body {
     box-shadow: 0 0 8px var(--status-running);
 }
 
+.lock-registration-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: var(--radius-sm);
+    color: #f87171;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.lock-registration-btn:hover {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.5);
+}
+
+.lock-registration-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.lock-registration-btn.locked {
+    background: rgba(107, 114, 128, 0.1);
+    border-color: rgba(107, 114, 128, 0.3);
+    color: #6b7280;
+    cursor: not-allowed;
+}
+
+.logout-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-sm);
+    color: #f87171;
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all var(--transition-fast);
+}
+
+.logout-link:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.logout-link svg {
+    width: 18px;
+    height: 18px;
+}
+
 /* ========== Main Content ========== */
 .main-content {
     flex: 1;
@@ -1024,6 +1081,57 @@ body {
 .btn-primary:hover {
     transform: translateY(-2px);
     box-shadow: 0 6px 20px var(--accent-glow);
+}
+
+.btn-danger {
+    padding: 12px 24px;
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-primary);
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #f87171;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-danger:hover {
+    background: rgba(239, 68, 68, 0.3);
+    border-color: rgba(239, 68, 68, 0.5);
+}
+
+.warning-icon {
+    width: 60px;
+    height: 60px;
+    background: rgba(239, 68, 68, 0.1);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1rem;
+}
+
+.warning-icon svg {
+    width: 30px;
+    height: 30px;
+    color: #f87171;
+}
+
+.warning-text {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.modal-small {
+    max-width: 400px;
+}
+
+.modal-body p {
+    color: var(--text-secondary);
+    text-align: center;
+    margin: 0 0 0.5rem;
+    line-height: 1.5;
 }
 
 /* ========== Toast Notifications ========== */

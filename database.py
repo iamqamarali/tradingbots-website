@@ -6,6 +6,8 @@ Stores accounts, bots, and trades synced from Binance.
 
 import sqlite3
 import os
+import hashlib
+import secrets
 from datetime import datetime, timedelta
 from threading import Lock
 
@@ -30,7 +32,30 @@ def init_db():
     with db_lock:
         conn = get_connection()
         cursor = conn.cursor()
-        
+
+        # Users table for authentication
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                salt TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # App settings table (for registration restriction)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        ''')
+
+        # Initialize registration_open setting if not exists
+        cursor.execute('INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)',
+                      ('registration_open', 'true'))
+
         # Accounts table (NEW)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS accounts (
@@ -541,6 +566,106 @@ def get_last_sync_time(account_id):
         if row and row['last_time']:
             return row['last_time']
         return None
+
+
+# ==================== USER AUTHENTICATION ====================
+
+def hash_password(password, salt=None):
+    """Hash a password with salt."""
+    if salt is None:
+        salt = secrets.token_hex(32)
+    password_hash = hashlib.pbkdf2_hmac(
+        'sha256',
+        password.encode('utf-8'),
+        salt.encode('utf-8'),
+        100000
+    ).hex()
+    return password_hash, salt
+
+
+def create_user(username, password):
+    """Create a new user. Returns user id or None if username exists."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Check if username exists
+        cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
+        if cursor.fetchone():
+            conn.close()
+            return None
+
+        password_hash, salt = hash_password(password)
+
+        cursor.execute(
+            'INSERT INTO users (username, password_hash, salt) VALUES (?, ?, ?)',
+            (username, password_hash, salt)
+        )
+        user_id = cursor.lastrowid
+
+        conn.commit()
+        conn.close()
+        return user_id
+
+
+def verify_user(username, password):
+    """Verify user credentials. Returns user dict or None."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return None
+
+        password_hash, _ = hash_password(password, row['salt'])
+
+        if password_hash == row['password_hash']:
+            return {
+                'id': row['id'],
+                'username': row['username'],
+                'created_at': row['created_at']
+            }
+        return None
+
+
+def get_user_count():
+    """Get the number of registered users."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) as count FROM users')
+        row = cursor.fetchone()
+        conn.close()
+        return row['count'] if row else 0
+
+
+def is_registration_open():
+    """Check if registration is open."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT value FROM app_settings WHERE key = ?', ('registration_open',))
+        row = cursor.fetchone()
+        conn.close()
+        return row['value'] == 'true' if row else True
+
+
+def set_registration_open(is_open):
+    """Set registration open/closed."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
+            ('registration_open', 'true' if is_open else 'false')
+        )
+        conn.commit()
+        conn.close()
+        return True
 
 
 # Initialize database on module load

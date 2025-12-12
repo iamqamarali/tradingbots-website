@@ -3,13 +3,15 @@ Trading Bot Script Manager
 A Flask web application to manage, run, and monitor Python trading bot scripts.
 """
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session
+from functools import wraps
 import os
 import subprocess
 import signal
 import sys
 import uuid
 import json
+import secrets
 from datetime import datetime, timedelta
 from threading import Thread, Lock
 import time
@@ -28,6 +30,37 @@ except ImportError:
     print("[WARNING] binance-python not installed. Account sync disabled.")
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+
+# Login required decorator
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            if request.is_json:
+                return jsonify({'error': 'Authentication required'}), 401
+            return redirect(url_for('login_page'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# Protect all routes except auth endpoints
+@app.before_request
+def check_authentication():
+    # Public endpoints that don't require auth
+    public_endpoints = [
+        'login_page', 'register_page', 'api_login', 'api_register',
+        'api_registration_status', 'api_restrict_registration', 'static'
+    ]
+
+    # Skip auth check for public endpoints
+    if request.endpoint in public_endpoints:
+        return None
+
+    # Check if user is authenticated
+    if 'user_id' not in session:
+        if request.is_json or request.path.startswith('/api/'):
+            return jsonify({'error': 'Authentication required'}), 401
+        return redirect(url_for('login_page'))
 
 # Configuration
 SCRIPTS_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scripts')
@@ -275,6 +308,92 @@ def restart_persistent_scripts():
     
     return restarted
 
+
+# ==================== AUTHENTICATION ROUTES ====================
+
+@app.route('/login')
+def login_page():
+    """Render the login page."""
+    if 'user_id' in session:
+        return redirect(url_for('index'))
+    return render_template('login.html')
+
+
+@app.route('/register')
+def register_page():
+    """Render the register page."""
+    if 'user_id' in session:
+        return redirect(url_for('index'))
+    return render_template('register.html')
+
+
+@app.route('/logout')
+def logout():
+    """Log out the user."""
+    session.clear()
+    return redirect(url_for('login_page'))
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def api_login():
+    """Authenticate user and create session."""
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+
+    if not username or not password:
+        return jsonify({'error': 'Username and password required'}), 400
+
+    user = db.verify_user(username, password)
+    if user:
+        session['user_id'] = user['id']
+        session['username'] = user['username']
+        return jsonify({'success': True, 'username': user['username']})
+
+    return jsonify({'error': 'Invalid username or password'}), 401
+
+
+@app.route('/api/auth/register', methods=['POST'])
+def api_register():
+    """Register a new user."""
+    # Check if registration is open
+    if not db.is_registration_open():
+        return jsonify({'error': 'Registration is closed'}), 403
+
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+
+    if not username or not password:
+        return jsonify({'error': 'Username and password required'}), 400
+
+    if len(username) < 3:
+        return jsonify({'error': 'Username must be at least 3 characters'}), 400
+
+    if len(password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+
+    user_id = db.create_user(username, password)
+    if user_id:
+        return jsonify({'success': True, 'user_id': user_id})
+
+    return jsonify({'error': 'Username already exists'}), 400
+
+
+@app.route('/api/auth/registration-status')
+def api_registration_status():
+    """Check if registration is open."""
+    return jsonify({'open': db.is_registration_open()})
+
+
+@app.route('/api/auth/restrict-registration', methods=['POST'])
+def api_restrict_registration():
+    """Close registration permanently."""
+    db.set_registration_open(False)
+    return jsonify({'success': True})
+
+
+# ==================== PAGE ROUTES ====================
 
 @app.route('/')
 def index():
