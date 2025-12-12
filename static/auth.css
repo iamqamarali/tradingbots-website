@@ -2,12 +2,15 @@
 
 .auth-page {
     min-height: 100vh;
+    min-height: 100dvh;
     display: flex;
     align-items: center;
     justify-content: center;
     background: linear-gradient(135deg, #0a0a0f 0%, #12121a 50%, #0a0a0f 100%);
     padding: 2rem;
     position: relative;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .auth-container {
@@ -529,11 +532,53 @@
 
 /* Responsive */
 @media (max-width: 480px) {
+    .auth-page {
+        padding: 1rem;
+        align-items: flex-start;
+        padding-top: 2rem;
+    }
+    
     .auth-container {
-        padding: 2rem 1.5rem;
+        padding: 1.5rem;
+        margin: auto 0;
     }
 
     .auth-header .logo-text {
         font-size: 1.5rem;
+    }
+    
+    .auth-header .logo-icon {
+        width: 40px;
+        height: 40px;
+    }
+    
+    .auth-header .logo-icon svg {
+        width: 24px;
+        height: 24px;
+    }
+    
+    .auth-subtitle {
+        font-size: 0.85rem;
+    }
+    
+    .auth-form input {
+        padding: 0.75rem;
+        font-size: 0.9rem;
+    }
+    
+    .auth-btn {
+        padding: 0.875rem;
+    }
+    
+    .auth-error,
+    .auth-success {
+        left: 1rem;
+        right: 1rem;
+        transform: none;
+        font-size: 0.85rem;
+    }
+    
+    .modal {
+        width: calc(100% - 2rem);
     }
 }

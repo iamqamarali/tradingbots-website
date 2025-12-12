@@ -911,15 +911,23 @@ def api_get_account_balance(account_id):
         balances = client.futures_account_balance()
         print(f"Got {len(balances)} balance entries")
 
+        # Check both USDT and USDC balances
         usdt_balance = 0
+        usdc_balance = 0
         for bal in balances:
             if bal['asset'] == 'USDT':
                 usdt_balance = float(bal['balance'])
                 print(f"USDT balance found: {usdt_balance}")
-                break
+            elif bal['asset'] == 'USDC':
+                usdc_balance = float(bal['balance'])
+                print(f"USDC balance found: {usdc_balance}")
+        
+        # Combine both balances
+        total_balance = usdt_balance + usdc_balance
+        print(f"Total balance (USDT + USDC): {total_balance}")
 
         # Update balance in database
-        db.update_account_balance(account_id, usdt_balance)
+        db.update_account_balance(account_id, total_balance)
         
         # Get starting balance from database
         accounts = db.get_all_accounts()
@@ -930,9 +938,11 @@ def api_get_account_balance(account_id):
                 break
 
         return jsonify({
-            'balance': round(usdt_balance, 2),
+            'balance': round(total_balance, 2),
+            'usdt_balance': round(usdt_balance, 2),
+            'usdc_balance': round(usdc_balance, 2),
             'starting_balance': round(starting_balance, 2),
-            'asset': 'USDT'
+            'asset': 'USDT+USDC'
         })
     except BinanceAPIException as e:
         print(f"BinanceAPIException: {e}")
@@ -1132,16 +1142,22 @@ def api_sync_account_trades(account_id):
         else:
             print(f"Using mainnet URL: {client.FUTURES_URL}")
 
-        # First, fetch and update account balance
+        # First, fetch and update account balance (check both USDT and USDC)
         print("Fetching account balance...")
         current_balance = 0
+        usdt_balance = 0
+        usdc_balance = 0
         try:
             balances = client.futures_account_balance()
             for bal in balances:
                 if bal['asset'] == 'USDT':
-                    current_balance = float(bal['balance'])
-                    print(f"  USDT Balance: ${current_balance:.2f}")
-                    break
+                    usdt_balance = float(bal['balance'])
+                    print(f"  USDT Balance: ${usdt_balance:.2f}")
+                elif bal['asset'] == 'USDC':
+                    usdc_balance = float(bal['balance'])
+                    print(f"  USDC Balance: ${usdc_balance:.2f}")
+            current_balance = usdt_balance + usdc_balance
+            print(f"  Total Balance (USDT + USDC): ${current_balance:.2f}")
         except Exception as e:
             print(f"Warning: Could not fetch balance: {e}")
 
@@ -1174,11 +1190,16 @@ def api_sync_account_trades(account_id):
         except Exception as e:
             print(f"Warning: Could not fetch positions: {e}")
 
-        # Check common trading pairs
+        # Check common trading pairs (both USDT and USDC pairs)
         priority_symbols = [
+            # USDT pairs
             'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'XRPUSDT',
             'BNBUSDT', 'ADAUSDT', 'AVAXUSDT', 'DOTUSDT', 'MATICUSDT',
-            'LINKUSDT', 'LTCUSDT', 'ATOMUSDT', 'UNIUSDT', 'APTUSDT'
+            'LINKUSDT', 'LTCUSDT', 'ATOMUSDT', 'UNIUSDT', 'APTUSDT',
+            # USDC pairs
+            'BTCUSDC', 'ETHUSDC', 'SOLUSDC', 'DOGEUSDC', 'XRPUSDC',
+            'BNBUSDC', 'ADAUSDC', 'AVAXUSDC', 'DOTUSDC', 'MATICUSDC',
+            'LINKUSDC', 'LTCUSDC', 'ATOMUSDC', 'UNIUSDC', 'APTUSDC'
         ]
         symbols_to_sync.update(priority_symbols)
 
