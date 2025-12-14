@@ -2,6 +2,7 @@
 
 let accountsData = [];
 let accountToDelete = null;
+let accountToEdit = null;
 
 // Check if we're on detail page or list page
 const isDetailPage = typeof ACCOUNT_ID !== 'undefined';
@@ -89,7 +90,33 @@ function setupListPageEventListeners() {
     if (confirmDeleteBtn) {
         confirmDeleteBtn.addEventListener('click', confirmDeleteAccount);
     }
-    
+
+    // Edit Modal
+    const editAccountModal = document.getElementById('editAccountModal');
+    const closeEditModalBtn = document.getElementById('closeEditModal');
+    const cancelEditBtn = document.getElementById('cancelEditBtn');
+    const saveEditBtn = document.getElementById('saveEditBtn');
+
+    if (closeEditModalBtn) {
+        closeEditModalBtn.addEventListener('click', closeEditModal);
+    }
+
+    if (cancelEditBtn) {
+        cancelEditBtn.addEventListener('click', closeEditModal);
+    }
+
+    if (saveEditBtn) {
+        saveEditBtn.addEventListener('click', saveAccountEdit);
+    }
+
+    if (editAccountModal) {
+        editAccountModal.addEventListener('click', (e) => {
+            if (e.target === editAccountModal) {
+                closeEditModal();
+            }
+        });
+    }
+
     // Close modals on overlay click
     if (addAccountModal) {
         addAccountModal.addEventListener('click', (e) => {
@@ -149,32 +176,42 @@ function renderAccounts() {
     const grid = document.getElementById('accountsGrid');
     const loadingState = document.getElementById('loadingState');
     const emptyState = document.getElementById('emptyState');
-    
+
     loadingState.style.display = 'none';
-    
+
     if (accountsData.length === 0) {
         grid.style.display = 'none';
         emptyState.style.display = 'flex';
+        renderAttachedBots(); // Still render bots section (will be hidden if none)
         return;
     }
-    
+
     grid.style.display = 'grid';
     emptyState.style.display = 'none';
-    
+
     grid.innerHTML = accountsData.map(account => createAccountCard(account)).join('');
-    
+
     // Attach event listeners
     grid.querySelectorAll('.account-card').forEach(card => {
         card.addEventListener('click', (e) => {
-            // Don't navigate if clicking delete button or script link
+            // Don't navigate if clicking action buttons
             if (e.target.closest('.delete-account-btn')) return;
-            if (e.target.closest('.account-script-link')) return;
+            if (e.target.closest('.edit-account-btn')) return;
 
             const accountId = card.dataset.accountId;
             window.location.href = `/accounts/${accountId}`;
         });
     });
-    
+
+    grid.querySelectorAll('.edit-account-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const accountId = btn.dataset.accountId;
+            const accountName = btn.dataset.accountName;
+            showEditModal(accountId, accountName);
+        });
+    });
+
     grid.querySelectorAll('.delete-account-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -183,6 +220,56 @@ function renderAccounts() {
             showDeleteModal(accountId, accountName);
         });
     });
+
+    // Render attached bots section
+    renderAttachedBots();
+}
+
+function renderAttachedBots() {
+    const section = document.getElementById('attachedBotsSection');
+    const grid = document.getElementById('attachedBotsGrid');
+    const countEl = document.getElementById('botsCount');
+
+    // Collect all scripts from all accounts
+    const allBots = [];
+    accountsData.forEach(account => {
+        if (account.scripts && account.scripts.length > 0) {
+            account.scripts.forEach(script => {
+                allBots.push({
+                    ...script,
+                    accountId: account.id,
+                    accountName: account.name
+                });
+            });
+        }
+    });
+
+    if (allBots.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+
+    section.style.display = 'block';
+    countEl.textContent = `${allBots.length} bot${allBots.length !== 1 ? 's' : ''}`;
+
+    grid.innerHTML = allBots.map(bot => `
+        <a href="/scripts?open=${bot.id}" class="attached-bot-card" title="Open ${escapeHtml(bot.name)}">
+            <div class="bot-card-header">
+                <span class="bot-status-indicator ${bot.status}"></span>
+                <span class="bot-name">${escapeHtml(bot.name)}</span>
+            </div>
+            <div class="bot-card-account">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                    <circle cx="12" cy="7" r="4"/>
+                </svg>
+                <span>${escapeHtml(bot.accountName)}</span>
+            </div>
+            <div class="bot-card-status">
+                <span class="status-badge ${bot.status}">${bot.status}</span>
+            </div>
+        </a>
+    `).join('');
 }
 
 function createAccountCard(account) {
@@ -208,27 +295,6 @@ function createAccountCard(account) {
         })
         : 'Never';
 
-    // Generate attached scripts HTML
-    const scripts = account.scripts || [];
-    const scriptsHtml = scripts.length > 0 ? `
-        <div class="account-scripts">
-            <div class="account-scripts-label">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
-                </svg>
-                <span>Bots</span>
-            </div>
-            <div class="account-scripts-list">
-                ${scripts.map(script => `
-                    <a href="/scripts?open=${script.id}" class="account-script-link" data-script-id="${script.id}" title="Open ${escapeHtml(script.name)}">
-                        <span class="script-status-dot ${script.status}"></span>
-                        <span class="script-link-name">${escapeHtml(script.name)}</span>
-                    </a>
-                `).join('')}
-            </div>
-        </div>
-    ` : '';
-
     return `
         <div class="account-card" data-account-id="${account.id}">
             <div class="account-card-header">
@@ -240,6 +306,15 @@ function createAccountCard(account) {
                     <span class="account-api-key">${account.api_key}</span>
                 </div>
                 <div class="account-actions">
+                    <button class="account-action-btn edit edit-account-btn"
+                            data-account-id="${account.id}"
+                            data-account-name="${escapeHtml(account.name)}"
+                            title="Edit Account">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                    </button>
                     <button class="account-action-btn delete delete-account-btn"
                             data-account-id="${account.id}"
                             data-account-name="${escapeHtml(account.name)}"
@@ -251,7 +326,6 @@ function createAccountCard(account) {
                     </button>
                 </div>
             </div>
-            ${scriptsHtml}
             <div class="account-card-stats">
                 <div class="account-stat">
                     <span class="account-stat-value">${account.total_trades || 0}</span>
@@ -336,6 +410,54 @@ function clearAddAccountForm() {
     document.getElementById('apiSecret').value = '';
     document.getElementById('isTestnet').checked = false;
 }
+
+// ==================== EDIT ACCOUNT ====================
+
+function showEditModal(accountId, accountName) {
+    accountToEdit = { id: accountId, name: accountName };
+    document.getElementById('editAccountName').value = accountName;
+    document.getElementById('editAccountModal').classList.add('active');
+    document.getElementById('editAccountName').focus();
+}
+
+function closeEditModal() {
+    document.getElementById('editAccountModal').classList.remove('active');
+    accountToEdit = null;
+}
+
+async function saveAccountEdit() {
+    if (!accountToEdit) return;
+
+    const newName = document.getElementById('editAccountName').value.trim();
+
+    if (!newName) {
+        showToast('Account name is required', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/accounts/${accountToEdit.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: newName })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showToast(`Account renamed to "${newName}"`, 'success');
+            closeEditModal();
+            loadAccounts();
+        } else {
+            showToast(data.error || 'Failed to update account', 'error');
+        }
+    } catch (error) {
+        console.error('Error updating account:', error);
+        showToast('Failed to update account', 'error');
+    }
+}
+
+// ==================== DELETE ACCOUNT ====================
 
 function showDeleteModal(accountId, accountName) {
     accountToDelete = { id: accountId, name: accountName };

@@ -1020,6 +1020,25 @@ def api_get_account(account_id):
     return jsonify({'error': 'Account not found'}), 404
 
 
+@app.route('/api/accounts/<int:account_id>', methods=['PUT'])
+def api_update_account(account_id):
+    """Update an account's name."""
+    data = request.json
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({'error': 'Account name is required'}), 400
+
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    db.update_account(account_id, name=name)
+    return jsonify({'success': True, 'name': name})
+
+
 @app.route('/api/accounts/<int:account_id>', methods=['DELETE'])
 def api_delete_account(account_id):
     """Delete an account and all its trades."""
