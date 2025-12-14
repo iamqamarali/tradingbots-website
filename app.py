@@ -410,7 +410,8 @@ def api_register():
 @app.route('/api/auth/registration-status')
 def api_registration_status():
     """Check if registration is open."""
-    return jsonify({'open': db.is_registration_open()})
+    is_open = db.is_registration_open()
+    return jsonify({'open': is_open, 'locked': not is_open})
 
 
 @app.route('/api/auth/restrict-registration', methods=['POST'])
@@ -418,6 +419,15 @@ def api_restrict_registration():
     """Close registration."""
     db.set_registration_open(False)
     return jsonify({'success': True})
+
+
+@app.route('/api/auth/toggle-registration-lock', methods=['POST'])
+def api_toggle_registration_lock():
+    """Toggle registration lock status."""
+    is_open = db.is_registration_open()
+    db.set_registration_open(not is_open)
+    new_locked = not (not is_open)  # After toggle, locked = not new_open
+    return jsonify({'success': True, 'locked': new_locked})
 
 
 @app.route('/api/auth/open-registration', methods=['POST'])
