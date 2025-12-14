@@ -542,32 +542,38 @@ def delete_script(script_id):
     """Delete a script file and metadata (keeps database record for trade history)."""
     filename = f"{script_id}.py"
     filepath = os.path.join(SCRIPTS_FOLDER, filename)
-    
+
     if not os.path.exists(filepath):
         return jsonify({'error': 'Script not found'}), 404
-    
+
     # Stop if running
     stop_script_process(script_id)
-    
+
     # Delete file
-    os.remove(filepath)
-    
+    try:
+        os.remove(filepath)
+    except Exception as e:
+        return jsonify({'error': f'Failed to delete script file: {str(e)}'}), 500
+
     # Delete log file if exists
     log_file = get_log_file_path(script_id)
     if os.path.exists(log_file):
-        os.remove(log_file)
-    
+        try:
+            os.remove(log_file)
+        except:
+            pass  # Log file deletion is not critical
+
     # Remove metadata (JSON file only)
     metadata = load_metadata()
     if script_id in metadata:
         del metadata[script_id]
         save_metadata(metadata)
-    
+
     # Clear in-memory logs
     with logs_lock:
         if script_id in script_logs:
             del script_logs[script_id]
-    
+
     return jsonify({'success': True})
 
 

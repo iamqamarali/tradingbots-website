@@ -304,38 +304,40 @@ async function saveCurrentScript() {
 // Delete the current script
 async function deleteCurrentScript() {
     if (!currentScript) return;
-    
+
     if (!confirm(`Are you sure you want to delete "${currentScript.name}"? This action cannot be undone.`)) {
         return;
     }
-    
+
     try {
         const response = await fetch(`/api/scripts/${currentScript.id}`, {
             method: 'DELETE'
         });
-        
+
+        const data = await response.json();
+
         if (response.ok) {
             showToast('Bot deleted', 'info');
-            
+
             // Remove from local list
             scripts = scripts.filter(s => s.id !== currentScript.id);
             currentScript = null;
-            
+
             // Reset UI
             elements.welcomeScreen.style.display = 'flex';
             elements.editorScreen.style.display = 'none';
             elements.headerActions.style.display = 'none';
             elements.currentScriptName.textContent = 'Select a Script';
             elements.currentScriptStatus.textContent = '';
-            
+
             renderScriptsList();
             updateStats();
             stopLogsPolling();
         } else {
-            showToast('Failed to delete bot', 'error');
+            showToast(data.error || 'Failed to delete bot', 'error');
         }
     } catch (error) {
-        showToast('Failed to delete bot', 'error');
+        showToast('Failed to delete bot: ' + error.message, 'error');
     }
 }
 
