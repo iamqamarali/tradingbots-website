@@ -451,6 +451,7 @@ function initDetailPage() {
     setupDetailPageEventListeners();
     setupClosePositionModal();
     setupEditStopLossModal();
+    setupEditTakeProfitModal();
     setupAddToPositionModal();
     setupSectionTabs();
 }
@@ -670,6 +671,19 @@ async function loadPositions() {
                         <div class="sl-tp-row">
                             <span class="tp-label">TP:</span>
                             <span class="${hasTakeProfit ? 'has-tp' : 'no-tp'}">${takeProfitDisplay}</span>
+                            <button class="edit-tp-btn" title="Edit Take Profit"
+                                data-symbol="${pos.symbol}"
+                                data-side="${pos.side}"
+                                data-quantity="${pos.quantity}"
+                                data-entry-price="${pos.entry_price}"
+                                data-mark-price="${pos.mark_price}"
+                                data-tp-price="${pos.tp_price || ''}"
+                                data-tp-order-id="${pos.tp_order_id || ''}">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                </svg>
+                            </button>
                         </div>
                     </td>
                     <td class="${pos.unrealized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}">
@@ -710,6 +724,11 @@ async function loadPositions() {
             // Add event listeners for edit stop-loss buttons
             tbody.querySelectorAll('.edit-sl-btn').forEach(btn => {
                 btn.addEventListener('click', () => openEditStopLossModal(btn.dataset));
+            });
+
+            // Add event listeners for edit take-profit buttons
+            tbody.querySelectorAll('.edit-tp-btn').forEach(btn => {
+                btn.addEventListener('click', () => openEditTakeProfitModal(btn.dataset));
             });
         } else {
             if (empty) empty.style.display = 'flex';
@@ -1477,7 +1496,6 @@ async function updateStopLoss() {
                 symbol: currentStopLossPosition.symbol,
                 position_side: currentStopLossPosition.side,
                 stop_price: newStopPrice,
-                quantity: currentStopLossPosition.quantity,
                 old_order_id: currentStopLossPosition.stopOrderId
             })
         });
@@ -1539,6 +1557,201 @@ async function removeStopLoss() {
     } finally {
         removeBtn.disabled = false;
         removeBtn.textContent = 'Remove SL';
+    }
+}
+
+// ==================== TAKE PROFIT MANAGEMENT ====================
+
+let currentTakeProfitPosition = null;
+
+function openEditTakeProfitModal(posData) {
+    currentTakeProfitPosition = {
+        symbol: posData.symbol,
+        side: posData.side,
+        quantity: parseFloat(posData.quantity),
+        entryPrice: parseFloat(posData.entryPrice),
+        markPrice: parseFloat(posData.markPrice),
+        tpPrice: posData.tpPrice ? parseFloat(posData.tpPrice) : null,
+        tpOrderId: posData.tpOrderId ? parseInt(posData.tpOrderId) : null
+    };
+
+    // Update modal content
+    document.getElementById('tpSymbol').textContent = currentTakeProfitPosition.symbol;
+    const sideEl = document.getElementById('tpSide');
+    sideEl.textContent = currentTakeProfitPosition.side;
+    sideEl.className = `position-side ${currentTakeProfitPosition.side.toLowerCase()}`;
+
+    document.getElementById('tpEntryPrice').textContent = `$${currentTakeProfitPosition.entryPrice.toFixed(4)}`;
+    document.getElementById('tpMarkPrice').textContent = `$${currentTakeProfitPosition.markPrice.toFixed(4)}`;
+
+    const currentTPEl = document.getElementById('tpCurrentTP');
+    const removeBtn = document.getElementById('removeTakeProfitBtn');
+
+    if (currentTakeProfitPosition.tpPrice && currentTakeProfitPosition.tpOrderId) {
+        currentTPEl.textContent = `$${currentTakeProfitPosition.tpPrice.toFixed(4)}`;
+        currentTPEl.className = 'has-tp';
+        removeBtn.style.display = 'block';
+    } else {
+        currentTPEl.textContent = currentTakeProfitPosition.tpPrice ? `$${currentTakeProfitPosition.tpPrice.toFixed(4)}` : 'None';
+        currentTPEl.className = currentTakeProfitPosition.tpPrice ? 'has-tp' : 'no-tp';
+        removeBtn.style.display = 'none';
+    }
+
+    // Clear input
+    document.getElementById('newTakeProfitPrice').value = '';
+
+    // Show hint based on position side
+    const hintEl = document.getElementById('tpHint');
+    if (currentTakeProfitPosition.side === 'LONG') {
+        hintEl.innerHTML = `<span class="hint-success">For LONG position, take profit should be <strong>above</strong> entry price ($${currentTakeProfitPosition.entryPrice.toFixed(2)})</span>`;
+    } else {
+        hintEl.innerHTML = `<span class="hint-success">For SHORT position, take profit should be <strong>below</strong> entry price ($${currentTakeProfitPosition.entryPrice.toFixed(2)})</span>`;
+    }
+
+    // Show modal
+    document.getElementById('editTakeProfitModal').classList.add('active');
+}
+
+function setupEditTakeProfitModal() {
+    const modal = document.getElementById('editTakeProfitModal');
+    if (!modal) return;
+
+    const closeBtn = document.getElementById('closeEditTakeProfitModal');
+    const cancelBtn = document.getElementById('cancelEditTakeProfitBtn');
+    const confirmBtn = document.getElementById('confirmEditTakeProfitBtn');
+    const removeBtn = document.getElementById('removeTakeProfitBtn');
+
+    // Close modal handlers
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            modal.classList.remove('active');
+            currentTakeProfitPosition = null;
+        });
+    }
+
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+            modal.classList.remove('active');
+            currentTakeProfitPosition = null;
+        });
+    }
+
+    // Close on overlay click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.classList.remove('active');
+            currentTakeProfitPosition = null;
+        }
+    });
+
+    // Confirm button
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', updateTakeProfit);
+    }
+
+    // Remove button
+    if (removeBtn) {
+        removeBtn.addEventListener('click', removeTakeProfit);
+    }
+}
+
+async function updateTakeProfit() {
+    if (!currentTakeProfitPosition) return;
+
+    const newTPPrice = parseFloat(document.getElementById('newTakeProfitPrice').value);
+
+    if (!newTPPrice || newTPPrice <= 0) {
+        showToast('Please enter a valid take profit price', 'error');
+        return;
+    }
+
+    // Validate TP price direction
+    if (currentTakeProfitPosition.side === 'LONG' && newTPPrice <= currentTakeProfitPosition.markPrice) {
+        showToast('Take profit for LONG position should be above current price', 'error');
+        return;
+    }
+    if (currentTakeProfitPosition.side === 'SHORT' && newTPPrice >= currentTakeProfitPosition.markPrice) {
+        showToast('Take profit for SHORT position should be below current price', 'error');
+        return;
+    }
+
+    const confirmBtn = document.getElementById('confirmEditTakeProfitBtn');
+    const btnText = confirmBtn.querySelector('.btn-text');
+    const btnLoading = confirmBtn.querySelector('.btn-loading');
+
+    btnText.style.display = 'none';
+    btnLoading.style.display = 'flex';
+    confirmBtn.disabled = true;
+
+    try {
+        const response = await fetch(`/api/accounts/${ACCOUNT_ID}/update-take-profit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol: currentTakeProfitPosition.symbol,
+                position_side: currentTakeProfitPosition.side,
+                tp_price: newTPPrice,
+                old_order_id: currentTakeProfitPosition.tpOrderId
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showToast(`Take profit set at $${newTPPrice.toFixed(4)}`, 'success');
+            document.getElementById('editTakeProfitModal').classList.remove('active');
+            currentTakeProfitPosition = null;
+            // Refresh both positions and orders
+            await loadPositions();
+            loadOrders();
+        } else {
+            showToast(data.error || 'Failed to update take profit', 'error');
+        }
+    } catch (error) {
+        console.error('Error updating take profit:', error);
+        showToast('Failed to update take profit', 'error');
+    } finally {
+        btnText.style.display = 'inline';
+        btnLoading.style.display = 'none';
+        confirmBtn.disabled = false;
+    }
+}
+
+async function removeTakeProfit() {
+    if (!currentTakeProfitPosition || !currentTakeProfitPosition.tpOrderId) return;
+
+    const removeBtn = document.getElementById('removeTakeProfitBtn');
+    removeBtn.disabled = true;
+    removeBtn.textContent = 'Removing...';
+
+    try {
+        const response = await fetch(`/api/accounts/${ACCOUNT_ID}/cancel-take-profit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol: currentTakeProfitPosition.symbol,
+                order_id: currentTakeProfitPosition.tpOrderId
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showToast('Take profit removed', 'success');
+            document.getElementById('editTakeProfitModal').classList.remove('active');
+            currentTakeProfitPosition = null;
+            // Refresh both positions and orders
+            await loadPositions();
+            loadOrders();
+        } else {
+            showToast(data.error || 'Failed to remove take profit', 'error');
+        }
+    } catch (error) {
+        console.error('Error removing take profit:', error);
+        showToast('Failed to remove take profit', 'error');
+    } finally {
+        removeBtn.disabled = false;
+        removeBtn.textContent = 'Remove TP';
     }
 }
 

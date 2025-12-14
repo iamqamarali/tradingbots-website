@@ -1722,9 +1722,9 @@ def api_add_to_position(account_id):
 
 @app.route('/api/accounts/<int:account_id>/update-stop-loss', methods=['POST'])
 def api_update_stop_loss(account_id):
-    """Update or create a stop-loss order for a position."""
+    """Update or create a stop-loss order for a position (closes entire position)."""
     print(f"=== UPDATE STOP-LOSS for account_id: {account_id} ===")
-    
+
     if not BINANCE_AVAILABLE:
         return jsonify({'error': 'Binance API not available'}), 500
 
@@ -1736,12 +1736,11 @@ def api_update_stop_loss(account_id):
     symbol = data.get('symbol')
     position_side = data.get('position_side')  # LONG or SHORT
     stop_price = float(data.get('stop_price', 0))
-    quantity = float(data.get('quantity', 0))
     old_order_id = data.get('old_order_id')  # Existing stop order to cancel
 
-    print(f"  Symbol: {symbol}, Side: {position_side}, Stop: {stop_price}, Qty: {quantity}")
+    print(f"  Symbol: {symbol}, Side: {position_side}, Stop: {stop_price}")
 
-    if not symbol or not position_side or stop_price <= 0 or quantity <= 0:
+    if not symbol or not position_side or stop_price <= 0:
         return jsonify({'error': 'Invalid parameters'}), 400
 
     try:
@@ -1749,7 +1748,7 @@ def api_update_stop_loss(account_id):
         if account['is_testnet']:
             client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
 
-        # Get symbol precision info
+        # Get symbol precision info for price
         exchange_info = client.futures_exchange_info()
         symbol_info = None
         for s in exchange_info['symbols']:
@@ -1757,23 +1756,13 @@ def api_update_stop_loss(account_id):
                 symbol_info = s
                 break
 
-        # Adjust quantity precision
-        step_size = 0.001  # Default
+        # Get price tick size
         price_tick = 0.01  # Default
         if symbol_info:
             for f in symbol_info.get('filters', []):
-                if f['filterType'] == 'LOT_SIZE':
-                    step_size = float(f['stepSize'])
-                elif f['filterType'] == 'PRICE_FILTER':
+                if f['filterType'] == 'PRICE_FILTER':
                     price_tick = float(f['tickSize'])
-
-        # Round quantity down to nearest valid step size
-        quantity = math.floor(quantity / step_size) * step_size
-        if step_size >= 1:
-            qty_precision = 0
-        else:
-            qty_precision = int(round(-math.log10(step_size)))
-        quantity = round(quantity, qty_precision)
+                    break
 
         # Round price to valid tick size
         if price_tick >= 1:
@@ -1781,9 +1770,6 @@ def api_update_stop_loss(account_id):
         else:
             price_precision = int(round(-math.log10(price_tick)))
         stop_price = round(stop_price, price_precision)
-
-        if quantity <= 0:
-            return jsonify({'error': 'Quantity too small after precision adjustment'}), 400
 
         # Cancel existing stop order if provided
         if old_order_id:
@@ -1796,15 +1782,14 @@ def api_update_stop_loss(account_id):
         # For LONG position, stop-loss is a SELL; for SHORT, it's a BUY
         order_side = 'SELL' if position_side == 'LONG' else 'BUY'
 
-        # Create new stop-loss order
-        print(f"  Creating STOP_MARKET order: {order_side} {quantity} @ stop {stop_price} (step={step_size}, tick={price_tick})")
+        # Create new stop-loss order with closePosition=true to close entire position
+        print(f"  Creating STOP_MARKET order: {order_side} @ stop {stop_price} (closePosition=true)")
         order = client.futures_create_order(
             symbol=symbol,
             side=order_side,
             type='STOP_MARKET',
             stopPrice=str(stop_price),
-            quantity=quantity,
-            reduceOnly='true'
+            closePosition='true'
         )
 
         print(f"  Stop-loss order created: {order['orderId']}")
@@ -1815,7 +1800,7 @@ def api_update_stop_loss(account_id):
                 'symbol': order['symbol'],
                 'side': order['side'],
                 'stopPrice': stop_price,
-                'quantity': order['origQty'],
+                'closePosition': True,
                 'status': order['status']
             }
         })
@@ -1854,6 +1839,139 @@ def api_cancel_stop_loss(account_id):
             client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
 
         print(f"  Cancelling stop order {order_id} for {symbol}")
+        result = client.futures_cancel_order(symbol=symbol, orderId=order_id)
+
+        return jsonify({
+            'success': True,
+            'cancelled_order_id': order_id
+        })
+    except BinanceAPIException as e:
+        print(f"BinanceAPIException: {e}")
+        return jsonify({'error': f'Binance error: {e.message}'}), 500
+    except Exception as e:
+        print(f"Exception: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/accounts/<int:account_id>/update-take-profit', methods=['POST'])
+def api_update_take_profit(account_id):
+    """Update or create a take-profit order for a position (closes entire position)."""
+    print(f"=== UPDATE TAKE-PROFIT for account_id: {account_id} ===")
+
+    if not BINANCE_AVAILABLE:
+        return jsonify({'error': 'Binance API not available'}), 500
+
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    data = request.get_json()
+    symbol = data.get('symbol')
+    position_side = data.get('position_side')  # LONG or SHORT
+    tp_price = float(data.get('tp_price', 0))
+    old_order_id = data.get('old_order_id')  # Existing TP order to cancel
+
+    print(f"  Symbol: {symbol}, Side: {position_side}, TP: {tp_price}")
+
+    if not symbol or not position_side or tp_price <= 0:
+        return jsonify({'error': 'Invalid parameters'}), 400
+
+    try:
+        client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
+        if account['is_testnet']:
+            client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+
+        # Get symbol precision info for price
+        exchange_info = client.futures_exchange_info()
+        symbol_info = None
+        for s in exchange_info['symbols']:
+            if s['symbol'] == symbol:
+                symbol_info = s
+                break
+
+        # Get price tick size
+        price_tick = 0.01  # Default
+        if symbol_info:
+            for f in symbol_info.get('filters', []):
+                if f['filterType'] == 'PRICE_FILTER':
+                    price_tick = float(f['tickSize'])
+                    break
+
+        # Round price to valid tick size
+        if price_tick >= 1:
+            price_precision = 0
+        else:
+            price_precision = int(round(-math.log10(price_tick)))
+        tp_price = round(tp_price, price_precision)
+
+        # Cancel existing TP order if provided
+        if old_order_id:
+            try:
+                print(f"  Cancelling old TP order: {old_order_id}")
+                client.futures_cancel_order(symbol=symbol, orderId=old_order_id)
+            except Exception as e:
+                print(f"  Warning: Could not cancel old TP order: {e}")
+
+        # For LONG position, take-profit is a SELL; for SHORT, it's a BUY
+        order_side = 'SELL' if position_side == 'LONG' else 'BUY'
+
+        # Create new take-profit order with closePosition=true to close entire position
+        print(f"  Creating TAKE_PROFIT_MARKET order: {order_side} @ TP {tp_price} (closePosition=true)")
+        order = client.futures_create_order(
+            symbol=symbol,
+            side=order_side,
+            type='TAKE_PROFIT_MARKET',
+            stopPrice=str(tp_price),
+            closePosition='true'
+        )
+
+        print(f"  Take-profit order created: {order['orderId']}")
+        return jsonify({
+            'success': True,
+            'order': {
+                'orderId': order['orderId'],
+                'symbol': order['symbol'],
+                'side': order['side'],
+                'stopPrice': tp_price,
+                'closePosition': True,
+                'status': order['status']
+            }
+        })
+    except BinanceAPIException as e:
+        print(f"BinanceAPIException: {e}")
+        return jsonify({'error': f'Binance error: {e.message}'}), 500
+    except Exception as e:
+        print(f"Exception: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/accounts/<int:account_id>/cancel-take-profit', methods=['POST'])
+def api_cancel_take_profit(account_id):
+    """Cancel a take-profit order."""
+    print(f"=== CANCEL TAKE-PROFIT for account_id: {account_id} ===")
+
+    if not BINANCE_AVAILABLE:
+        return jsonify({'error': 'Binance API not available'}), 500
+
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    data = request.get_json()
+    symbol = data.get('symbol')
+    order_id = data.get('order_id')
+
+    if not symbol or not order_id:
+        return jsonify({'error': 'Invalid parameters'}), 400
+
+    try:
+        client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
+        if account['is_testnet']:
+            client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+
+        print(f"  Cancelling TP order {order_id} for {symbol}")
         result = client.futures_cancel_order(symbol=symbol, orderId=order_id)
 
         return jsonify({

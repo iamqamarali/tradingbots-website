@@ -178,6 +178,44 @@
         </div>
     </div>
 
+    <!-- Edit Take Profit Modal -->
+    <div class="modal-overlay" id="editTakeProfitModal">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3>Edit Take Profit</h3>
+                <button class="modal-close" id="editTakeProfitModalClose">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="position-info">
+                    <span class="position-symbol" id="tpSymbol">BTCUSDT</span>
+                    <span class="position-side" id="tpSide">LONG</span>
+                    <span class="position-account" id="tpAccount"></span>
+                </div>
+                <div class="form-group">
+                    <label>Current Take Profit</label>
+                    <p id="tpCurrentTP" class="no-tp">None</p>
+                </div>
+                <div class="form-group">
+                    <label for="newTakeProfitPrice">New Take Profit Price</label>
+                    <input type="number" id="newTakeProfitPrice" step="any" placeholder="Enter take profit price">
+                    <p class="take-profit-hint">
+                        <span class="hint-success" id="tpHint"></span>
+                    </p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="removeTakeProfitBtn" style="margin-right: auto;">Remove TP</button>
+                <button class="btn-secondary" id="cancelEditTakeProfit">Cancel</button>
+                <button class="btn-primary" id="confirmEditTakeProfit">Update Take Profit</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/script.js"></script>
     <script>
         // User dropdown toggle

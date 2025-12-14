@@ -2020,9 +2020,30 @@ body {
 }
 
 .edit-sl-btn:hover {
-    background: rgba(245, 158, 11, 0.2);
-    border-color: var(--accent-primary);
-    color: var(--accent-primary);
+    background: rgba(248, 113, 113, 0.2);
+    border-color: #f87171;
+    color: #f87171;
+}
+
+.edit-tp-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    margin-left: auto;
+}
+
+.edit-tp-btn:hover {
+    background: rgba(74, 222, 128, 0.2);
+    border-color: #4ade80;
+    color: #4ade80;
 }
 
 .actions-cell {
@@ -2256,6 +2277,36 @@ body {
 #removeStopLossBtn:hover {
     background: rgba(239, 68, 68, 0.2);
     border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* Take Profit Modal Styles */
+.take-profit-hint {
+    margin-top: 8px;
+    font-size: 0.8rem;
+}
+
+.hint-success {
+    color: #4ade80;
+}
+
+#tpCurrentTP.has-tp {
+    color: #4ade80;
+    font-weight: 500;
+}
+
+#tpCurrentTP.no-tp {
+    color: var(--text-muted);
+}
+
+#removeTakeProfitBtn {
+    background: rgba(74, 222, 128, 0.1);
+    border: 1px solid rgba(74, 222, 128, 0.3);
+    color: #4ade80;
+}
+
+#removeTakeProfitBtn:hover {
+    background: rgba(74, 222, 128, 0.2);
+    border-color: rgba(74, 222, 128, 0.5);
 }
 
 /* Responsive for positions section */

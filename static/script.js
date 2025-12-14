@@ -41,7 +41,19 @@ const positionElements = {
     slHint: document.getElementById('slHint'),
     removeStopLossBtn: document.getElementById('removeStopLossBtn'),
     cancelEditStopLoss: document.getElementById('cancelEditStopLoss'),
-    confirmEditStopLoss: document.getElementById('confirmEditStopLoss')
+    confirmEditStopLoss: document.getElementById('confirmEditStopLoss'),
+    // Take profit modal
+    editTakeProfitModal: document.getElementById('editTakeProfitModal'),
+    editTakeProfitModalClose: document.getElementById('editTakeProfitModalClose'),
+    tpSymbol: document.getElementById('tpSymbol'),
+    tpSide: document.getElementById('tpSide'),
+    tpAccount: document.getElementById('tpAccount'),
+    tpCurrentTP: document.getElementById('tpCurrentTP'),
+    newTakeProfitPrice: document.getElementById('newTakeProfitPrice'),
+    tpHint: document.getElementById('tpHint'),
+    removeTakeProfitBtn: document.getElementById('removeTakeProfitBtn'),
+    cancelEditTakeProfit: document.getElementById('cancelEditTakeProfit'),
+    confirmEditTakeProfit: document.getElementById('confirmEditTakeProfit')
 };
 
 // Load all positions on page load (uses server-side cache)
@@ -110,6 +122,25 @@ function setupPositionEventListeners() {
             if (e.target === positionElements.editStopLossModal) closeEditStopLossModal();
         });
     }
+
+    // Take profit modal
+    if (positionElements.editTakeProfitModalClose) {
+        positionElements.editTakeProfitModalClose.addEventListener('click', closeEditTakeProfitModal);
+    }
+    if (positionElements.cancelEditTakeProfit) {
+        positionElements.cancelEditTakeProfit.addEventListener('click', closeEditTakeProfitModal);
+    }
+    if (positionElements.confirmEditTakeProfit) {
+        positionElements.confirmEditTakeProfit.addEventListener('click', executeUpdateTakeProfit);
+    }
+    if (positionElements.removeTakeProfitBtn) {
+        positionElements.removeTakeProfitBtn.addEventListener('click', executeRemoveTakeProfit);
+    }
+    if (positionElements.editTakeProfitModal) {
+        positionElements.editTakeProfitModal.addEventListener('click', (e) => {
+            if (e.target === positionElements.editTakeProfitModal) closeEditTakeProfitModal();
+        });
+    }
 }
 
 // Load all positions from all accounts
@@ -173,11 +204,17 @@ function renderPositions() {
                     <div class="sl-tp-row">
                         <span class="sl-label">SL:</span>
                         <span class="${pos.stop_price ? 'has-sl' : 'no-sl'}">${pos.stop_price ? formatPrice(pos.stop_price) : '—'}</span>
+                        <button class="edit-sl-btn" onclick="openEditStopLossModal(${pos.account_id}, '${pos.symbol}', '${pos.side}', ${pos.quantity}, ${pos.stop_price || 'null'}, ${pos.stop_order_id || 'null'}, '${escapeHtml(pos.account_name)}')" title="Edit Stop Loss">
+                            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                            </svg>
+                        </button>
                     </div>
                     <div class="sl-tp-row">
                         <span class="tp-label">TP:</span>
                         <span class="${pos.tp_price ? 'has-tp' : 'no-tp'}">${pos.tp_price ? formatPrice(pos.tp_price) : '—'}</span>
-                        <button class="edit-sl-btn" onclick="openEditStopLossModal(${pos.account_id}, '${pos.symbol}', '${pos.side}', ${pos.quantity}, ${pos.stop_price || 'null'}, ${pos.stop_order_id || 'null'}, '${escapeHtml(pos.account_name)}')" title="Edit Stop Loss">
+                        <button class="edit-tp-btn" onclick="openEditTakeProfitModal(${pos.account_id}, '${pos.symbol}', '${pos.side}', ${pos.quantity}, ${pos.tp_price || 'null'}, ${pos.tp_order_id || 'null'}, '${escapeHtml(pos.account_name)}')" title="Edit Take Profit">
                             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
@@ -329,7 +366,6 @@ async function executeUpdateStopLoss() {
                 symbol: currentPositionData.symbol,
                 position_side: currentPositionData.side,
                 stop_price: newPrice,
-                quantity: currentPositionData.quantity,
                 old_order_id: currentPositionData.stopOrderId
             })
         });
@@ -427,6 +463,125 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// ==================== TAKE PROFIT FUNCTIONS ====================
+
+// Open edit take profit modal
+function openEditTakeProfitModal(accountId, symbol, side, quantity, tpPrice, tpOrderId, accountName) {
+    currentPositionData = { accountId, symbol, side, quantity, tpPrice, tpOrderId, accountName };
+
+    positionElements.tpSymbol.textContent = symbol;
+    positionElements.tpSide.textContent = side;
+    positionElements.tpSide.className = `position-side ${side.toLowerCase()}`;
+    positionElements.tpAccount.textContent = accountName;
+
+    if (tpPrice && tpOrderId) {
+        positionElements.tpCurrentTP.textContent = formatPrice(tpPrice);
+        positionElements.tpCurrentTP.className = 'has-tp';
+        positionElements.removeTakeProfitBtn.style.display = 'block';
+    } else {
+        positionElements.tpCurrentTP.textContent = tpPrice ? formatPrice(tpPrice) : 'None';
+        positionElements.tpCurrentTP.className = tpPrice ? 'has-tp' : 'no-tp';
+        positionElements.removeTakeProfitBtn.style.display = 'none';
+    }
+
+    positionElements.newTakeProfitPrice.value = '';
+    positionElements.tpHint.textContent = side === 'LONG' ? 'Set above entry price' : 'Set below entry price';
+
+    positionElements.editTakeProfitModal.classList.add('active');
+}
+
+// Close edit take profit modal
+function closeEditTakeProfitModal() {
+    positionElements.editTakeProfitModal.classList.remove('active');
+    currentPositionData = null;
+}
+
+// Execute update take profit
+async function executeUpdateTakeProfit() {
+    if (!currentPositionData) return;
+
+    const newPrice = parseFloat(positionElements.newTakeProfitPrice.value);
+    if (!newPrice || isNaN(newPrice)) {
+        showToast('Please enter a valid take profit price', 'error');
+        return;
+    }
+
+    positionElements.confirmEditTakeProfit.disabled = true;
+    positionElements.confirmEditTakeProfit.innerHTML = '<span class="btn-loading"><span class="btn-spinner"></span>Updating...</span>';
+
+    try {
+        const response = await fetch(`/api/accounts/${currentPositionData.accountId}/update-take-profit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol: currentPositionData.symbol,
+                position_side: currentPositionData.side,
+                tp_price: newPrice,
+                old_order_id: currentPositionData.tpOrderId
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showToast('Take profit updated', 'success');
+            closeEditTakeProfitModal();
+            loadAllPositions(true);  // Force refresh to get updated data
+        } else {
+            showToast(data.error || 'Failed to update take profit', 'error');
+        }
+    } catch (error) {
+        console.error('Error updating take profit:', error);
+        showToast('Failed to update take profit', 'error');
+    } finally {
+        positionElements.confirmEditTakeProfit.disabled = false;
+        positionElements.confirmEditTakeProfit.innerHTML = 'Update Take Profit';
+    }
+}
+
+// Execute remove take profit
+async function executeRemoveTakeProfit() {
+    if (!currentPositionData) {
+        showToast('No position selected', 'error');
+        return;
+    }
+    if (!currentPositionData.tpOrderId) {
+        showToast('No take profit order to remove', 'error');
+        return;
+    }
+
+    positionElements.removeTakeProfitBtn.disabled = true;
+    positionElements.removeTakeProfitBtn.innerHTML = 'Removing...';
+
+    try {
+        const response = await fetch(`/api/accounts/${currentPositionData.accountId}/cancel-take-profit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol: currentPositionData.symbol,
+                order_id: currentPositionData.tpOrderId
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showToast('Take profit removed', 'success');
+            closeEditTakeProfitModal();
+            loadAllPositions(true);  // Force refresh to get updated data
+        } else {
+            showToast(data.error || 'Failed to remove take profit', 'error');
+        }
+    } catch (error) {
+        console.error('Error removing take profit:', error);
+        showToast('Failed to remove take profit', 'error');
+    } finally {
+        positionElements.removeTakeProfitBtn.disabled = false;
+        positionElements.removeTakeProfitBtn.innerHTML = 'Remove TP';
+    }
+}
+
 // Expose functions to global scope
 window.openClosePositionModal = openClosePositionModal;
 window.openEditStopLossModal = openEditStopLossModal;
+window.openEditTakeProfitModal = openEditTakeProfitModal;
