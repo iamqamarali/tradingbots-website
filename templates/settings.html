@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - Trading Bot Manager</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        .settings-main {
+            max-width: 800px;
+            padding: 2rem;
+        }
+
+        .settings-section {
+            background: rgba(18, 18, 26, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .settings-section h2 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .settings-section h2 svg {
+            width: 20px;
+            height: 20px;
+            color: #fbbf24;
+        }
+
+        .setting-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .setting-item:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        .setting-info h3 {
+            font-size: 0.95rem;
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+        }
+
+        .setting-info p {
+            font-size: 0.8rem;
+            color: #71717a;
+        }
+
+        .lock-registration-btn {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 16px;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 8px;
+            color: #f87171;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .lock-registration-btn:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.5);
+        }
+
+        .lock-registration-btn svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .lock-registration-btn.locked {
+            background: rgba(74, 222, 128, 0.1);
+            border-color: rgba(74, 222, 128, 0.3);
+            color: #4ade80;
+        }
+
+        .lock-registration-btn.locked:hover {
+            background: rgba(74, 222, 128, 0.2);
+            border-color: rgba(74, 222, 128, 0.5);
+        }
+
+        @media (max-width: 768px) {
+            .settings-main {
+                padding: 1rem;
+            }
+
+            .setting-item {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 1rem;
+            }
+
+            .lock-registration-btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        {% include 'includes/sidebar.html' %}
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="main-header">
+                <div class="header-left">
+                    <h1>Settings</h1>
+                </div>
+            </header>
+
+            <!-- Settings Main -->
+            <div class="settings-main">
+                <!-- Security Section -->
+                <section class="settings-section">
+                    <h2>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                        </svg>
+                        Security
+                    </h2>
+                    <div class="setting-item">
+                        <div class="setting-info">
+                            <h3>Registration Lock</h3>
+                            <p>Prevent new users from registering accounts on this instance.</p>
+                        </div>
+                        <button class="lock-registration-btn" id="lockRegistrationBtn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                            </svg>
+                            <span>Lock Registration</span>
+                        </button>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        // Check registration status on load
+        async function checkRegistrationStatus() {
+            try {
+                const response = await fetch('/api/auth/registration-status');
+                const data = await response.json();
+                updateLockButton(data.locked);
+            } catch (error) {
+                console.error('Error checking registration status:', error);
+            }
+        }
+
+        function updateLockButton(isLocked) {
+            const btn = document.getElementById('lockRegistrationBtn');
+            if (isLocked) {
+                btn.classList.add('locked');
+                btn.innerHTML = `
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                        <path d="M7 11V7a5 5 0 0 1 5 5"/>
+                    </svg>
+                    <span>Registration Locked</span>
+                `;
+            } else {
+                btn.classList.remove('locked');
+                btn.innerHTML = `
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                    <span>Lock Registration</span>
+                `;
+            }
+        }
+
+        async function toggleRegistrationLock() {
+            try {
+                const response = await fetch('/api/auth/toggle-registration-lock', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    updateLockButton(data.locked);
+                    showToast(data.locked ? 'Registration locked' : 'Registration unlocked', 'success');
+                } else {
+                    showToast(data.error || 'Failed to toggle lock', 'error');
+                }
+            } catch (error) {
+                showToast('Failed to toggle registration lock', 'error');
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.classList.add('show');
+            }, 10);
+
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Event listeners
+        document.getElementById('lockRegistrationBtn').addEventListener('click', toggleRegistrationLock);
+
+        // User dropdown toggle
+        const userAvatarBtn = document.getElementById('userAvatarBtn');
+        const userDropdown = document.getElementById('userDropdown');
+
+        if (userAvatarBtn && userDropdown) {
+            userAvatarBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                userDropdown.classList.toggle('active');
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!userDropdown.contains(e.target) && !userAvatarBtn.contains(e.target)) {
+                    userDropdown.classList.remove('active');
+                }
+            });
+        }
+
+        // Mobile menu toggle
+        const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+        const sidebar = document.querySelector('.sidebar');
+        const mobileOverlay = document.getElementById('mobileOverlay');
+
+        if (mobileMenuBtn && sidebar && mobileOverlay) {
+            mobileMenuBtn.addEventListener('click', () => {
+                sidebar.classList.toggle('open');
+                mobileOverlay.classList.toggle('active');
+            });
+
+            mobileOverlay.addEventListener('click', () => {
+                sidebar.classList.remove('open');
+                mobileOverlay.classList.remove('active');
+            });
+        }
+
+        // Init
+        checkRegistrationStatus();
+    </script>
+</body>
+</html>

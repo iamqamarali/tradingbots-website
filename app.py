@@ -346,6 +346,20 @@ def logout():
     return redirect(url_for('login_page'))
 
 
+@app.route('/settings')
+@login_required
+def settings_page():
+    """Render the settings page."""
+    return render_template('settings.html', active_page='settings')
+
+
+@app.route('/scripts')
+@login_required
+def scripts_page():
+    """Render the scripts management page."""
+    return render_template('scripts.html', active_page='scripts')
+
+
 @app.route('/api/auth/login', methods=['POST'])
 def api_login():
     """Authenticate user and create session."""
@@ -417,14 +431,14 @@ def api_open_registration():
 
 @app.route('/')
 def index():
-    """Render the main page."""
-    return render_template('index.html')
+    """Render the main dashboard page."""
+    return render_template('index.html', active_page='dashboard')
 
 
 @app.route('/logs')
 def logs_page():
     """Render the logs page."""
-    return render_template('logs.html')
+    return render_template('logs.html', active_page='logs')
 
 
 @app.route('/api/scripts', methods=['GET'])
@@ -839,7 +853,7 @@ def get_status():
 @app.route('/accounts')
 def accounts_page():
     """Render the accounts page."""
-    return render_template('accounts.html')
+    return render_template('accounts.html', active_page='accounts')
 
 
 @app.route('/accounts/<int:account_id>')
@@ -848,7 +862,7 @@ def account_detail_page(account_id):
     account = db.get_account(account_id)
     if not account:
         return "Account not found", 404
-    return render_template('account_detail.html', account_id=account_id)
+    return render_template('account_detail.html', account_id=account_id, active_page='accounts')
 
 
 # ==================== ACCOUNTS API ====================

@@ -1,0 +1,125 @@
+/* ========================================
+   Scripts Page - Dual Sidebar Layout
+======================================== */
+
+/* Scripts Secondary Sidebar */
+.scripts-sidebar {
+    width: 260px;
+    background: var(--bg-tertiary);
+    border-right: 1px solid var(--border-primary);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.scripts-sidebar-header {
+    padding: 20px;
+    border-bottom: 1px solid var(--border-primary);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg-elevated);
+}
+
+.scripts-sidebar-header .section-title {
+    margin: 0;
+}
+
+.scripts-sidebar .scripts-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+}
+
+/* Ensure the add button in scripts sidebar is styled correctly */
+.scripts-sidebar .add-script-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: var(--radius-sm);
+    border: 2px dashed var(--border-primary);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+}
+
+.scripts-sidebar .add-script-btn:hover {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+    background: rgba(245, 158, 11, 0.1);
+}
+
+.scripts-sidebar .add-script-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* Adjust main content for scripts page */
+.scripts-page .main-content {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Mobile Responsive */
+@media (max-width: 1024px) {
+    .scripts-sidebar {
+        width: 220px;
+    }
+}
+
+@media (max-width: 768px) {
+    .scripts-sidebar {
+        display: none;
+    }
+
+    /* Show scripts list in a different way on mobile - as a collapsible panel */
+    .scripts-sidebar.mobile-open {
+        display: flex;
+        position: fixed;
+        top: 0;
+        left: var(--sidebar-width);
+        height: 100vh;
+        z-index: 95;
+        box-shadow: 4px 0 20px rgba(0, 0, 0, 0.5);
+    }
+
+    .main-header {
+        padding-left: 16px;
+    }
+}
+
+/* Scripts page welcome screen adjustment */
+.scripts-page .welcome-screen {
+    justify-content: center;
+    padding-top: 0;
+}
+
+.scripts-page .welcome-content {
+    margin-bottom: 0;
+}
+
+/* Empty scripts list */
+.empty-scripts {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    text-align: center;
+}
+
+.empty-scripts svg {
+    width: 48px;
+    height: 48px;
+    color: var(--text-muted);
+    opacity: 0.5;
+    margin-bottom: 15px;
+}
+
+.empty-scripts p {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}

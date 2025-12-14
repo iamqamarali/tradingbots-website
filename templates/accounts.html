@@ -9,122 +9,107 @@
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="accounts-page">
-        <!-- Header -->
-        <header class="page-header">
-            <div class="header-left">
-                <a href="/" class="back-btn">
+    <div class="app-container">
+        {% include 'includes/sidebar.html' %}
+
+        <!-- Main Content -->
+        <main class="main-content accounts-page-content">
+            <!-- Header -->
+            <header class="page-header">
+                <div class="header-left">
+                    <h1>Trading Accounts</h1>
+                </div>
+                <button class="add-account-btn" id="addAccountBtn">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="19" y1="12" x2="5" y2="12"></line>
-                        <polyline points="12 19 5 12 12 5"></polyline>
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
                     </svg>
-                </a>
-                <a href="/" class="logo">
-                    <div class="logo-icon">
+                    Add Account
+                </button>
+            </header>
+
+            <!-- Stats Overview -->
+            <section class="stats-overview">
+                <div class="stat-card">
+                    <div class="stat-icon accounts-icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                             <circle cx="12" cy="7" r="4"/>
                         </svg>
                     </div>
-                    <span class="logo-text">Trading <span class="accent">Accounts</span></span>
-                </a>
-            </div>
-            <div class="header-nav">
-                <a href="/" class="nav-link">Dashboard</a>
-                <a href="/logs" class="nav-link">Logs</a>
-                <a href="/accounts" class="nav-link active">Accounts</a>
-                <a href="/logout" class="nav-link logout">Logout</a>
-            </div>
-            <button class="add-account-btn" id="addAccountBtn">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-                Add Account
-            </button>
-        </header>
+                    <div class="stat-content">
+                        <span class="stat-value" id="totalAccounts">0</span>
+                        <span class="stat-label">Total Accounts</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon trades-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                        </svg>
+                    </div>
+                    <div class="stat-content">
+                        <span class="stat-value" id="totalTrades">0</span>
+                        <span class="stat-label">Total Trades</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon pnl-icon" id="pnlIconCard">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="1" x2="12" y2="23"/>
+                            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                        </svg>
+                    </div>
+                    <div class="stat-content">
+                        <span class="stat-value" id="totalPnL">$0.00</span>
+                        <span class="stat-label">Total PnL</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon commission-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/>
+                            <path d="M12 18V6"/>
+                        </svg>
+                    </div>
+                    <div class="stat-content">
+                        <span class="stat-value" id="totalCommission">$0.00</span>
+                        <span class="stat-label">Total Fees</span>
+                    </div>
+                </div>
+            </section>
 
-        <!-- Stats Overview -->
-        <section class="stats-overview">
-            <div class="stat-card">
-                <div class="stat-icon accounts-icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <!-- Accounts Grid -->
+            <div class="accounts-main">
+                <div class="section-header">
+                    <h2>Your Accounts</h2>
+                    <span class="account-count" id="accountCount">0 accounts</span>
+                </div>
+
+                <div class="accounts-grid" id="accountsGrid">
+                    <!-- Account cards will be inserted here -->
+                    <div class="loading-state" id="loadingState">
+                        <div class="spinner"></div>
+                        <p>Loading accounts...</p>
+                    </div>
+                </div>
+
+                <div class="empty-state" id="emptyState" style="display: none;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                         <circle cx="12" cy="7" r="4"/>
                     </svg>
+                    <h3>No Accounts Yet</h3>
+                    <p>Add your Binance API credentials to start syncing trades and monitoring positions.</p>
+                    <button class="btn-primary" onclick="document.getElementById('addAccountBtn').click()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        Add Your First Account
+                    </button>
                 </div>
-                <div class="stat-content">
-                    <span class="stat-value" id="totalAccounts">0</span>
-                    <span class="stat-label">Total Accounts</span>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon trades-icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-                    </svg>
-                </div>
-                <div class="stat-content">
-                    <span class="stat-value" id="totalTrades">0</span>
-                    <span class="stat-label">Total Trades</span>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon pnl-icon" id="pnlIconCard">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="12" y1="1" x2="12" y2="23"/>
-                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-                    </svg>
-                </div>
-                <div class="stat-content">
-                    <span class="stat-value" id="totalPnL">$0.00</span>
-                    <span class="stat-label">Total PnL</span>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon commission-icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"/>
-                        <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/>
-                        <path d="M12 18V6"/>
-                    </svg>
-                </div>
-                <div class="stat-content">
-                    <span class="stat-value" id="totalCommission">$0.00</span>
-                    <span class="stat-label">Total Fees</span>
-                </div>
-            </div>
-        </section>
-
-        <!-- Accounts Grid -->
-        <main class="accounts-main">
-            <div class="section-header">
-                <h2>Your Accounts</h2>
-                <span class="account-count" id="accountCount">0 accounts</span>
-            </div>
-            
-            <div class="accounts-grid" id="accountsGrid">
-                <!-- Account cards will be inserted here -->
-                <div class="loading-state" id="loadingState">
-                    <div class="spinner"></div>
-                    <p>Loading accounts...</p>
-                </div>
-            </div>
-
-            <div class="empty-state" id="emptyState" style="display: none;">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                    <circle cx="12" cy="7" r="4"/>
-                </svg>
-                <h3>No Accounts Yet</h3>
-                <p>Add your Binance API credentials to start syncing trades and monitoring positions.</p>
-                <button class="btn-primary" onclick="document.getElementById('addAccountBtn').click()">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="12" y1="5" x2="12" y2="19"></line>
-                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                    </svg>
-                    Add Your First Account
-                </button>
             </div>
         </main>
     </div>
@@ -224,6 +209,40 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <script src="/static/accounts.js"></script>
+    <script>
+        // User dropdown toggle
+        const userAvatarBtn = document.getElementById('userAvatarBtn');
+        const userDropdown = document.getElementById('userDropdown');
+
+        if (userAvatarBtn && userDropdown) {
+            userAvatarBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                userDropdown.classList.toggle('active');
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!userDropdown.contains(e.target) && !userAvatarBtn.contains(e.target)) {
+                    userDropdown.classList.remove('active');
+                }
+            });
+        }
+
+        // Mobile menu toggle
+        const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+        const sidebar = document.querySelector('.sidebar');
+        const mobileOverlay = document.getElementById('mobileOverlay');
+
+        if (mobileMenuBtn && sidebar && mobileOverlay) {
+            mobileMenuBtn.addEventListener('click', () => {
+                sidebar.classList.toggle('open');
+                mobileOverlay.classList.toggle('active');
+            });
+
+            mobileOverlay.addEventListener('click', () => {
+                sidebar.classList.remove('open');
+                mobileOverlay.classList.remove('active');
+            });
+        }
+    </script>
 </body>
 </html>
-
