@@ -182,7 +182,6 @@ function renderAccounts() {
     if (accountsData.length === 0) {
         grid.style.display = 'none';
         emptyState.style.display = 'flex';
-        renderAttachedBots(); // Still render bots section (will be hidden if none)
         return;
     }
 
@@ -220,56 +219,6 @@ function renderAccounts() {
             showDeleteModal(accountId, accountName);
         });
     });
-
-    // Render attached bots section
-    renderAttachedBots();
-}
-
-function renderAttachedBots() {
-    const section = document.getElementById('attachedBotsSection');
-    const grid = document.getElementById('attachedBotsGrid');
-    const countEl = document.getElementById('botsCount');
-
-    // Collect all scripts from all accounts
-    const allBots = [];
-    accountsData.forEach(account => {
-        if (account.scripts && account.scripts.length > 0) {
-            account.scripts.forEach(script => {
-                allBots.push({
-                    ...script,
-                    accountId: account.id,
-                    accountName: account.name
-                });
-            });
-        }
-    });
-
-    if (allBots.length === 0) {
-        section.style.display = 'none';
-        return;
-    }
-
-    section.style.display = 'block';
-    countEl.textContent = `${allBots.length} bot${allBots.length !== 1 ? 's' : ''}`;
-
-    grid.innerHTML = allBots.map(bot => `
-        <a href="/scripts?open=${bot.id}" class="attached-bot-card" title="Open ${escapeHtml(bot.name)}">
-            <div class="bot-card-header">
-                <span class="bot-status-indicator ${bot.status}"></span>
-                <span class="bot-name">${escapeHtml(bot.name)}</span>
-            </div>
-            <div class="bot-card-account">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                    <circle cx="12" cy="7" r="4"/>
-                </svg>
-                <span>${escapeHtml(bot.accountName)}</span>
-            </div>
-            <div class="bot-card-status">
-                <span class="status-badge ${bot.status}">${bot.status}</span>
-            </div>
-        </a>
-    `).join('');
 }
 
 function createAccountCard(account) {
@@ -576,19 +525,50 @@ async function loadAccountDetails() {
             window.location.href = '/accounts';
             return;
         }
-        
+
         const account = await response.json();
-        
+
         document.getElementById('accountName').textContent = account.name;
         document.getElementById('accountKey').textContent = `API Key: ${account.api_key}`;
-        
+
         if (account.is_testnet) {
             document.getElementById('testnetBadge').style.display = 'inline';
         }
+
+        // Render attached bots
+        renderAttachedBots(account.scripts || []);
     } catch (error) {
         console.error('Error loading account:', error);
         showToast('Failed to load account details', 'error');
     }
+}
+
+function renderAttachedBots(scripts) {
+    const section = document.getElementById('attachedBotsSection');
+    const grid = document.getElementById('attachedBotsGrid');
+    const countEl = document.getElementById('botsCount');
+
+    if (!section || !grid) return;
+
+    if (!scripts || scripts.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+
+    section.style.display = 'block';
+    countEl.textContent = `${scripts.length} bot${scripts.length !== 1 ? 's' : ''}`;
+
+    grid.innerHTML = scripts.map(bot => `
+        <a href="/scripts?open=${bot.id}" class="attached-bot-card" title="Open ${escapeHtml(bot.name)}">
+            <div class="bot-card-header">
+                <span class="bot-status-indicator ${bot.status}"></span>
+                <span class="bot-name">${escapeHtml(bot.name)}</span>
+            </div>
+            <div class="bot-card-status">
+                <span class="status-badge ${bot.status}">${bot.status}</span>
+            </div>
+        </a>
+    `).join('');
 }
 
 async function loadBalance() {

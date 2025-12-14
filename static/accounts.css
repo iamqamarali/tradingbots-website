@@ -2168,7 +2168,11 @@
 
 /* Attached Bots Section */
 .attached-bots-section {
-    padding: 0 2rem 2rem;
+    margin: 0 2rem 2rem;
+    background: rgba(24, 24, 32, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 16px;
+    padding: 1rem 1.5rem;
 }
 
 .attached-bots-section .section-header {
@@ -2299,15 +2303,22 @@
 
 @media (max-width: 768px) {
     .attached-bots-section {
-        padding: 0 1rem 1rem;
+        margin: 0 1rem 1rem;
+        padding: 0.75rem 1rem;
     }
 
     .attached-bots-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr 1fr;
     }
 
     .attached-bot-card {
-        padding: 0.875rem 1rem;
+        padding: 0.75rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .attached-bots-grid {
+        grid-template-columns: 1fr;
     }
 }
 

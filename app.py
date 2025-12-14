@@ -1010,12 +1010,27 @@ def api_create_account():
 
 @app.route('/api/accounts/<int:account_id>', methods=['GET'])
 def api_get_account(account_id):
-    """Get a specific account."""
+    """Get a specific account with attached scripts."""
     account = db.get_account(account_id)
     if account:
         # Mask the secrets
         account['api_key'] = account['api_key'][:8] + '...' if account['api_key'] else ''
         del account['api_secret']
+
+        # Get attached scripts for this account
+        metadata = load_metadata()
+        scripts = []
+        for script_id, script_info in metadata.items():
+            if script_info.get('account_id') == account_id:
+                with process_lock:
+                    is_running = script_id in running_processes and running_processes[script_id].poll() is None
+                scripts.append({
+                    'id': script_id,
+                    'name': script_info.get('name', script_id),
+                    'status': 'running' if is_running else 'stopped'
+                })
+        account['scripts'] = scripts
+
         return jsonify(account)
     return jsonify({'error': 'Account not found'}), 404
 
