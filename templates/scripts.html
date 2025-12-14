@@ -43,6 +43,12 @@
                     </div>
                 </div>
                 <div class="header-actions" id="headerActions" style="display: none;">
+                    <div class="account-selector" id="accountSelector">
+                        <label class="account-label">Account:</label>
+                        <select id="scriptAccountSelect" class="account-select" title="Connect to trading account">
+                            <option value="">None</option>
+                        </select>
+                    </div>
                     <div class="auto-restart-toggle" id="autoRestartToggle" title="Auto-restart on server startup">
                         <label class="toggle-switch">
                             <input type="checkbox" id="autoRestartCheckbox">
@@ -169,6 +175,14 @@
                 <div class="form-group">
                     <label for="scriptDescription">Description (optional)</label>
                     <input type="text" id="scriptDescription" placeholder="e.g., Scalps BTC/USDT on 1m timeframe">
+                </div>
+                <div class="form-group">
+                    <label for="scriptAccount">Connect to Account (optional)</label>
+                    <select id="scriptAccount" class="form-select">
+                        <option value="">No account</option>
+                        <!-- Accounts will be loaded dynamically -->
+                    </select>
+                    <span class="help-text">Link this script to a trading account</span>
                 </div>
                 <div class="form-group">
                     <label for="scriptContent">Python Code</label>

@@ -6,6 +6,7 @@
 // State management
 let currentScript = null;
 let scripts = [];
+let accounts = [];  // Available trading accounts
 let logsInterval = null;
 let displayedLogCount = 0;
 
@@ -42,14 +43,26 @@ const elements = {
     logsPanel: document.getElementById('logsPanel'),
     welcomeTitle: document.getElementById('welcomeTitle'),
     welcomeDescription: document.getElementById('welcomeDescription'),
-    welcomeBtnText: document.getElementById('welcomeBtnText')
+    welcomeBtnText: document.getElementById('welcomeBtnText'),
+    scriptAccount: document.getElementById('scriptAccount'),  // Modal account dropdown
+    scriptAccountSelect: document.getElementById('scriptAccountSelect')  // Editor account dropdown
 };
 
 // Initialize the application
-document.addEventListener('DOMContentLoaded', () => {
-    loadScripts();
+document.addEventListener('DOMContentLoaded', async () => {
+    loadAccounts();  // Load accounts first
+    await loadScripts();
     setupEventListeners();
     updateLineNumbers();
+
+    // Check for ?open=scriptId query parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const openScriptId = urlParams.get('open');
+    if (openScriptId) {
+        selectScript(openScriptId);
+        // Clean up URL without reloading
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
 });
 
 // Setup all event listeners
@@ -96,6 +109,11 @@ function setupEventListeners() {
         elements.autoRestartCheckbox.addEventListener('change', toggleAutoRestart);
     }
 
+    // Account selector in editor
+    if (elements.scriptAccountSelect) {
+        elements.scriptAccountSelect.addEventListener('change', updateScriptAccount);
+    }
+
     // Editor
     if (elements.codeEditor) {
         elements.codeEditor.addEventListener('input', updateLineNumbers);
@@ -122,6 +140,34 @@ function setupEventListeners() {
             if (currentScript) saveCurrentScript();
         }
     });
+}
+
+// Load all accounts from the server
+async function loadAccounts() {
+    try {
+        const response = await fetch('/api/accounts');
+        accounts = await response.json();
+        populateAccountDropdowns();
+    } catch (error) {
+        console.error('Failed to load accounts:', error);
+    }
+}
+
+// Populate account dropdowns (modal and editor)
+function populateAccountDropdowns() {
+    const accountOptions = accounts.map(acc =>
+        `<option value="${acc.id}">${escapeHtml(acc.name)}${acc.is_testnet ? ' (Testnet)' : ''}</option>`
+    ).join('');
+
+    // Modal dropdown
+    if (elements.scriptAccount) {
+        elements.scriptAccount.innerHTML = `<option value="">No account</option>${accountOptions}`;
+    }
+
+    // Editor dropdown
+    if (elements.scriptAccountSelect) {
+        elements.scriptAccountSelect.innerHTML = `<option value="">None</option>${accountOptions}`;
+    }
 }
 
 // Load all scripts from the server
@@ -166,7 +212,10 @@ function renderScriptsList() {
                     ${script.status}
                 </span>
             </div>
-            <div class="script-meta">${script.created}</div>
+            <div class="script-meta">
+                ${script.account_name ? `<span class="script-account-badge" title="Connected to ${escapeHtml(script.account_name)}">${escapeHtml(script.account_name)}</span>` : ''}
+                ${script.created}
+            </div>
         </div>
     `).join('');
 }
@@ -190,6 +239,11 @@ async function selectScript(scriptId) {
 
         // Update auto-restart checkbox
         elements.autoRestartCheckbox.checked = currentScript.auto_restart || false;
+
+        // Update account selector
+        if (elements.scriptAccountSelect) {
+            elements.scriptAccountSelect.value = currentScript.account_id || '';
+        }
 
         elements.codeEditor.value = currentScript.content;
         updateLineNumbers();
@@ -338,6 +392,49 @@ async function deleteCurrentScript() {
     }
 }
 
+// Update script's connected account
+async function updateScriptAccount() {
+    if (!currentScript) return;
+
+    const accountId = elements.scriptAccountSelect.value || null;
+
+    try {
+        const response = await fetch(`/api/scripts/${currentScript.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account_id: accountId })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            currentScript.account_id = data.account_id;
+            currentScript.account_name = data.account_name;
+
+            // Update in local scripts list
+            const script = scripts.find(s => s.id === currentScript.id);
+            if (script) {
+                script.account_id = data.account_id;
+                script.account_name = data.account_name;
+            }
+
+            renderScriptsList();
+            showToast(
+                data.account_name ? `Connected to ${data.account_name}` : 'Disconnected from account',
+                'success'
+            );
+        } else {
+            // Revert dropdown on error
+            elements.scriptAccountSelect.value = currentScript.account_id || '';
+            showToast(data.error || 'Failed to update account', 'error');
+        }
+    } catch (error) {
+        // Revert dropdown on error
+        elements.scriptAccountSelect.value = currentScript.account_id || '';
+        showToast('Failed to update account', 'error');
+    }
+}
+
 // Toggle auto-restart setting
 async function toggleAutoRestart() {
     if (!currentScript) return;
@@ -390,6 +487,9 @@ function openModal() {
     elements.scriptName.value = '';
     elements.scriptDescription.value = '';
     elements.scriptContent.value = '';
+    if (elements.scriptAccount) {
+        elements.scriptAccount.value = '';  // Reset account dropdown
+    }
     elements.scriptName.focus();
 }
 
@@ -403,6 +503,7 @@ async function submitNewScript() {
     const name = elements.scriptName.value.trim();
     const content = elements.scriptContent.value.trim();
     const description = elements.scriptDescription.value.trim();
+    const accountId = elements.scriptAccount ? elements.scriptAccount.value : '';
 
     if (!name) {
         showToast('Please enter a bot name', 'error');
@@ -417,10 +518,15 @@ async function submitNewScript() {
     }
 
     try {
+        const payload = { name, content, description };
+        if (accountId) {
+            payload.account_id = accountId;
+        }
+
         const response = await fetch('/api/scripts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, content, description })
+            body: JSON.stringify(payload)
         });
 
         const data = await response.json();

@@ -166,9 +166,10 @@ function renderAccounts() {
     // Attach event listeners
     grid.querySelectorAll('.account-card').forEach(card => {
         card.addEventListener('click', (e) => {
-            // Don't navigate if clicking delete button
+            // Don't navigate if clicking delete button or script link
             if (e.target.closest('.delete-account-btn')) return;
-            
+            if (e.target.closest('.account-script-link')) return;
+
             const accountId = card.dataset.accountId;
             window.location.href = `/accounts/${accountId}`;
         });
@@ -207,6 +208,27 @@ function createAccountCard(account) {
         })
         : 'Never';
 
+    // Generate attached scripts HTML
+    const scripts = account.scripts || [];
+    const scriptsHtml = scripts.length > 0 ? `
+        <div class="account-scripts">
+            <div class="account-scripts-label">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+                </svg>
+                <span>Bots</span>
+            </div>
+            <div class="account-scripts-list">
+                ${scripts.map(script => `
+                    <a href="/scripts?open=${script.id}" class="account-script-link" data-script-id="${script.id}" title="Open ${escapeHtml(script.name)}">
+                        <span class="script-status-dot ${script.status}"></span>
+                        <span class="script-link-name">${escapeHtml(script.name)}</span>
+                    </a>
+                `).join('')}
+            </div>
+        </div>
+    ` : '';
+
     return `
         <div class="account-card" data-account-id="${account.id}">
             <div class="account-card-header">
@@ -229,6 +251,7 @@ function createAccountCard(account) {
                     </button>
                 </div>
             </div>
+            ${scriptsHtml}
             <div class="account-card-stats">
                 <div class="account-stat">
                     <span class="account-stat-value">${account.total_trades || 0}</span>

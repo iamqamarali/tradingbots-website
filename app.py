@@ -175,15 +175,22 @@ def get_all_scripts():
     """Get all scripts with their metadata and running status."""
     metadata = load_metadata()
     scripts = []
-    
+
+    # Get all accounts for name lookup
+    all_accounts = {acc['id']: acc['name'] for acc in db.get_all_accounts()}
+
     for filename in os.listdir(SCRIPTS_FOLDER):
         if filename.endswith('.py'):
             script_id = filename[:-3]  # Remove .py extension
             script_info = metadata.get(script_id, {})
-            
+
             with process_lock:
                 is_running = script_id in running_processes and running_processes[script_id].poll() is None
-            
+
+            # Get account info if connected
+            account_id = script_info.get('account_id')
+            account_name = all_accounts.get(account_id) if account_id else None
+
             scripts.append({
                 'id': script_id,
                 'name': script_info.get('name', filename),
@@ -191,9 +198,11 @@ def get_all_scripts():
                 'status': 'running' if is_running else 'stopped',
                 'created': script_info.get('created', 'Unknown'),
                 'description': script_info.get('description', ''),
-                'auto_restart': script_info.get('auto_restart', False)
+                'auto_restart': script_info.get('auto_restart', False),
+                'account_id': account_id,
+                'account_name': account_name
             })
-    
+
     return scripts
 
 
@@ -461,26 +470,36 @@ def get_scripts():
 def upload_script():
     """Upload a new script."""
     data = request.json
-    
+
     if not data:
         return jsonify({'error': 'No data provided'}), 400
-    
+
     script_name = data.get('name', 'Untitled Script')
     script_content = data.get('content', '')
     description = data.get('description', '')
-    
+    account_id = data.get('account_id')  # Optional account connection
+
     if not script_content.strip():
         return jsonify({'error': 'Script content is empty'}), 400
-    
+
+    # Validate account_id if provided
+    account_name = None
+    if account_id:
+        account_id = int(account_id)
+        account = db.get_account(account_id)
+        if not account:
+            return jsonify({'error': 'Account not found'}), 404
+        account_name = account['name']
+
     # Generate unique ID
     script_id = str(uuid.uuid4())[:8]
     filename = f"{script_id}.py"
     filepath = os.path.join(SCRIPTS_FOLDER, filename)
-    
+
     # Save script file
     with open(filepath, 'w', encoding='utf-8') as f:
         f.write(script_content)
-    
+
     # Update metadata
     metadata = load_metadata()
     metadata[script_id] = {
@@ -488,8 +507,10 @@ def upload_script():
         'description': description,
         'created': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     }
+    if account_id:
+        metadata[script_id]['account_id'] = account_id
     save_metadata(metadata)
-    
+
     return jsonify({
         'success': True,
         'script': {
@@ -498,7 +519,9 @@ def upload_script():
             'filename': filename,
             'status': 'stopped',
             'created': metadata[script_id]['created'],
-            'description': description
+            'description': description,
+            'account_id': account_id,
+            'account_name': account_name
         }
     })
 
@@ -508,26 +531,36 @@ def get_script(script_id):
     """Get a specific script's content."""
     filename = f"{script_id}.py"
     filepath = os.path.join(SCRIPTS_FOLDER, filename)
-    
+
     if not os.path.exists(filepath):
         return jsonify({'error': 'Script not found'}), 404
-    
+
     with open(filepath, 'r', encoding='utf-8') as f:
         content = f.read()
-    
+
     metadata = load_metadata()
     script_info = metadata.get(script_id, {})
-    
+
     with process_lock:
         is_running = script_id in running_processes and running_processes[script_id].poll() is None
-    
+
+    # Get account info if connected
+    account_id = script_info.get('account_id')
+    account_name = None
+    if account_id:
+        account = db.get_account(account_id)
+        if account:
+            account_name = account['name']
+
     return jsonify({
         'id': script_id,
         'name': script_info.get('name', filename),
         'content': content,
         'description': script_info.get('description', ''),
         'status': 'running' if is_running else 'stopped',
-        'auto_restart': script_info.get('auto_restart', False)
+        'auto_restart': script_info.get('auto_restart', False),
+        'account_id': account_id,
+        'account_name': account_name
     })
 
 
@@ -537,28 +570,55 @@ def update_script(script_id):
     data = request.json
     filename = f"{script_id}.py"
     filepath = os.path.join(SCRIPTS_FOLDER, filename)
-    
+
     if not os.path.exists(filepath):
         return jsonify({'error': 'Script not found'}), 404
-    
+
     # Update content if provided
     if 'content' in data:
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(data['content'])
-    
+
     # Update metadata
     metadata = load_metadata()
     if script_id not in metadata:
         metadata[script_id] = {}
-    
+
     if 'name' in data:
         metadata[script_id]['name'] = data['name']
     if 'description' in data:
         metadata[script_id]['description'] = data['description']
-    
+
+    # Handle account_id update (can be set to null to disconnect)
+    if 'account_id' in data:
+        account_id = data['account_id']
+        if account_id is None:
+            # Disconnect from account
+            if 'account_id' in metadata[script_id]:
+                del metadata[script_id]['account_id']
+        else:
+            # Connect to account - validate it exists
+            account_id = int(account_id)
+            account = db.get_account(account_id)
+            if not account:
+                return jsonify({'error': 'Account not found'}), 404
+            metadata[script_id]['account_id'] = account_id
+
     save_metadata(metadata)
-    
-    return jsonify({'success': True})
+
+    # Return updated account info
+    account_id = metadata[script_id].get('account_id')
+    account_name = None
+    if account_id:
+        account = db.get_account(account_id)
+        if account:
+            account_name = account['name']
+
+    return jsonify({
+        'success': True,
+        'account_id': account_id,
+        'account_name': account_name
+    })
 
 
 @app.route('/api/scripts/<script_id>', methods=['DELETE'])
@@ -881,10 +941,33 @@ def account_detail_page(account_id):
 def api_get_accounts():
     """Get all accounts."""
     accounts = db.get_all_accounts()
+
+    # Load scripts metadata to get attached scripts for each account
+    metadata = load_metadata()
+    scripts_by_account = {}
+    for script_id, script_info in metadata.items():
+        account_id = script_info.get('account_id')
+        if account_id:
+            if account_id not in scripts_by_account:
+                scripts_by_account[account_id] = []
+
+            # Check if script is running
+            with process_lock:
+                is_running = script_id in running_processes and running_processes[script_id].poll() is None
+
+            scripts_by_account[account_id].append({
+                'id': script_id,
+                'name': script_info.get('name', script_id),
+                'status': 'running' if is_running else 'stopped'
+            })
+
     # Don't expose full API keys/secrets in list view
     for acc in accounts:
         del acc['api_key_full']
         del acc['api_secret']
+        # Add attached scripts
+        acc['scripts'] = scripts_by_account.get(acc['id'], [])
+
     return jsonify(accounts)
 
 
