@@ -45,7 +45,8 @@ const elements = {
     welcomeDescription: document.getElementById('welcomeDescription'),
     welcomeBtnText: document.getElementById('welcomeBtnText'),
     scriptAccount: document.getElementById('scriptAccount'),  // Modal account dropdown
-    scriptAccountSelect: document.getElementById('scriptAccountSelect')  // Editor account dropdown
+    scriptAccountSelect: document.getElementById('scriptAccountSelect'),  // Editor account dropdown
+    headerOptions: document.getElementById('headerOptions')  // Header options row (account selector, auto-restart)
 };
 
 // Initialize the application
@@ -233,6 +234,9 @@ async function selectScript(scriptId) {
         elements.welcomeScreen.style.display = 'none';
         elements.editorScreen.style.display = 'flex';
         elements.headerActions.style.display = 'flex';
+        if (elements.headerOptions) {
+            elements.headerOptions.style.display = 'flex';
+        }
 
         elements.currentScriptName.textContent = currentScript.name;
         updateScriptStatus();
@@ -378,6 +382,9 @@ async function deleteCurrentScript() {
             elements.welcomeScreen.style.display = 'flex';
             elements.editorScreen.style.display = 'none';
             elements.headerActions.style.display = 'none';
+            if (elements.headerOptions) {
+                elements.headerOptions.style.display = 'none';
+            }
             elements.currentScriptName.textContent = 'Select a Script';
             elements.currentScriptStatus.textContent = '';
 

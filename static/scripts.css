@@ -124,14 +124,143 @@
     color: var(--text-muted);
 }
 
+/* Script Header - Two Row Layout */
+.script-header {
+    flex-direction: column;
+    gap: 0;
+    padding: 12px 20px;
+}
+
+.script-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.header-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.header-title h1 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 300px;
+}
+
+.script-status {
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: 10px;
+    white-space: nowrap;
+}
+
+.script-status.running {
+    background: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+}
+
+.script-status.stopped {
+    background: rgba(113, 113, 122, 0.15);
+    color: #71717a;
+}
+
+/* Header Action Buttons */
+.header-buttons {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.header-buttons .action-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-primary);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+}
+
+.header-buttons .action-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.header-buttons .action-btn:hover {
+    border-color: var(--accent-primary);
+    color: var(--text-primary);
+}
+
+.header-buttons .run-btn:hover {
+    background: rgba(34, 197, 94, 0.1);
+    border-color: #22c55e;
+    color: #22c55e;
+}
+
+.header-buttons .stop-btn {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
+.header-buttons .stop-btn:hover {
+    background: rgba(239, 68, 68, 0.2);
+}
+
+.header-buttons .save-btn:hover {
+    background: rgba(59, 130, 246, 0.1);
+    border-color: #3b82f6;
+    color: #3b82f6;
+}
+
+.header-buttons .delete-btn:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
+/* Header Options Row */
+.script-header-options {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding-top: 10px;
+    margin-top: 10px;
+    border-top: 1px solid var(--border-primary);
+    width: 100%;
+}
+
 /* Account Selector in Header */
 .account-selector {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 0 12px;
-    border-right: 1px solid var(--border-primary);
-    margin-right: 8px;
+}
+
+.account-selector svg {
+    width: 16px;
+    height: 16px;
+    color: var(--text-muted);
+    flex-shrink: 0;
 }
 
 .account-label {
@@ -139,6 +268,67 @@
     color: var(--text-muted);
     font-weight: 500;
     white-space: nowrap;
+}
+
+/* Auto-restart Toggle */
+.auto-restart-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 36px;
+    height: 20px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    transition: 0.3s;
+    border-radius: 20px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 14px;
+    width: 14px;
+    left: 2px;
+    bottom: 2px;
+    background-color: var(--text-muted);
+    transition: 0.3s;
+    border-radius: 50%;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background-color: rgba(34, 197, 94, 0.2);
+    border-color: #22c55e;
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+    transform: translateX(16px);
+    background-color: #22c55e;
+}
+
+.toggle-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-weight: 500;
 }
 
 .account-select {
@@ -217,15 +407,10 @@
     margin-top: 6px;
 }
 
-/* Responsive adjustments for account selector */
+/* Responsive adjustments for script header */
 @media (max-width: 1200px) {
-    .account-selector {
-        padding: 0 8px;
-        margin-right: 4px;
-    }
-
-    .account-label {
-        display: none;
+    .header-title h1 {
+        max-width: 200px;
     }
 
     .account-select {
@@ -234,7 +419,31 @@
 }
 
 @media (max-width: 768px) {
-    .account-selector {
-        display: none;
+    .script-header {
+        padding: 10px 16px;
+    }
+
+    .header-title h1 {
+        max-width: 150px;
+        font-size: 1rem;
+    }
+
+    .header-buttons .action-btn {
+        width: 32px;
+        height: 32px;
+    }
+
+    .header-buttons .action-btn svg {
+        width: 14px;
+        height: 14px;
+    }
+
+    .script-header-options {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .toggle-label {
+        font-size: 0.75rem;
     }
 }
