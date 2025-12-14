@@ -183,21 +183,20 @@
 .header-buttons {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
 }
 
 .header-buttons .action-btn {
-    width: 34px;
-    height: 34px;
+    width: 36px;
+    height: 36px;
+    padding: 0;
     border-radius: var(--radius-sm);
-    border: 1px solid var(--border-primary);
-    background: var(--bg-tertiary);
-    color: var(--text-secondary);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: all var(--transition-fast);
+    box-shadow: none;
 }
 
 .header-buttons .action-btn svg {
@@ -206,34 +205,51 @@
 }
 
 .header-buttons .action-btn:hover {
-    border-color: var(--accent-primary);
-    color: var(--text-primary);
+    transform: translateY(-1px);
+}
+
+/* Run button - green */
+.header-buttons .run-btn {
+    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+    border: none;
+    color: white;
 }
 
 .header-buttons .run-btn:hover {
-    background: rgba(34, 197, 94, 0.1);
-    border-color: #22c55e;
-    color: #22c55e;
+    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4);
 }
 
+/* Stop button - red */
 .header-buttons .stop-btn {
-    background: rgba(239, 68, 68, 0.1);
-    border-color: #ef4444;
-    color: #ef4444;
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    border: none;
+    color: white;
 }
 
 .header-buttons .stop-btn:hover {
-    background: rgba(239, 68, 68, 0.2);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+
+/* Save button - blue */
+.header-buttons .save-btn {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    border: none;
+    color: white;
 }
 
 .header-buttons .save-btn:hover {
-    background: rgba(59, 130, 246, 0.1);
-    border-color: #3b82f6;
-    color: #3b82f6;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+/* Delete button - gray/red */
+.header-buttons .delete-btn {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-primary);
+    color: var(--text-secondary);
 }
 
 .header-buttons .delete-btn:hover {
-    background: rgba(239, 68, 68, 0.1);
+    background: rgba(239, 68, 68, 0.15);
     border-color: #ef4444;
     color: #ef4444;
 }
