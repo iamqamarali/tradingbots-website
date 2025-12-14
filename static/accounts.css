@@ -55,10 +55,18 @@
     height: 20px;
 }
 
+/* Mobile logo - hidden on desktop, shown on mobile */
+.mobile-logo {
+    display: none;
+    text-decoration: none;
+}
+
 .logo {
     display: flex;
     align-items: center;
     gap: 0.75rem;
+    text-decoration: none;
+    color: inherit;
 }
 
 .logo-icon {
@@ -1417,25 +1425,52 @@
 @media (max-width: 768px) {
     .page-header {
         flex-direction: column;
-        gap: 1rem;
+        gap: 0.75rem;
         padding: 1rem;
         position: sticky;
         top: 0;
         z-index: 100;
     }
-    
+
     .header-left {
         width: 100%;
-        justify-content: space-between;
+        justify-content: flex-start;
+        gap: 0.75rem;
     }
-    
+
+    /* Show mobile logo on mobile */
+    .mobile-logo {
+        display: flex;
+    }
+
+    .mobile-logo .logo-icon {
+        width: 36px;
+        height: 36px;
+    }
+
+    .account-header-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .account-header-info h1 {
+        font-size: 1rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .account-key {
+        font-size: 0.7rem;
+    }
+
     .header-nav {
         width: 100%;
         justify-content: center;
         flex-wrap: wrap;
         gap: 0.5rem;
     }
-    
+
     .nav-link {
         padding: 0.4rem 0.75rem;
         font-size: 0.8rem;
@@ -1526,44 +1561,97 @@
     .trades-table-wrapper {
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
+        position: relative;
     }
-    
+
+    /* Scroll hint gradient */
+    .positions-table-wrapper::after,
+    .trades-table-wrapper::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 30px;
+        height: 100%;
+        background: linear-gradient(to left, rgba(18, 18, 26, 0.9), transparent);
+        pointer-events: none;
+    }
+
     .positions-table,
     .trades-table {
-        min-width: 700px;
+        min-width: 650px;
     }
-    
+
     .positions-table th,
     .positions-table td,
     .trades-table th,
     .trades-table td {
-        padding: 0.75rem 1rem;
-        font-size: 0.8rem;
+        padding: 0.6rem 0.75rem;
+        font-size: 0.75rem;
+        white-space: nowrap;
     }
-    
+
+    .actions-cell {
+        display: flex;
+        gap: 0.4rem;
+    }
+
+    .add-position-btn,
+    .close-position-btn {
+        padding: 0.3rem 0.5rem;
+        font-size: 0.7rem;
+    }
+
     .header-actions {
         width: 100%;
         justify-content: center;
         flex-wrap: wrap;
         gap: 0.5rem;
     }
-    
+
     .action-btn {
         padding: 0.5rem 0.75rem;
         font-size: 0.75rem;
+        flex: 1;
+        min-width: 0;
+        justify-content: center;
     }
-    
+
     .action-btn span {
         display: none;
     }
-    
+
     .add-account-btn {
         padding: 0.5rem 1rem;
         font-size: 0.8rem;
     }
-    
+
     .add-account-btn span {
         display: none;
+    }
+
+    /* Section header improvements */
+    .section-header h2 {
+        font-size: 1rem;
+    }
+
+    .section-header h2 svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    .section-actions button {
+        padding: 0.4rem 0.6rem;
+        font-size: 0.7rem;
+    }
+
+    .refresh-btn {
+        padding: 0.35rem;
+    }
+
+    .refresh-btn svg {
+        width: 14px;
+        height: 14px;
     }
     
     /* Modal on mobile */
