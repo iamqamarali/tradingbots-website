@@ -311,35 +311,36 @@ async function createAccount() {
     const apiKey = document.getElementById('apiKey').value.trim();
     const apiSecret = document.getElementById('apiSecret').value.trim();
     const isTestnet = document.getElementById('isTestnet').checked;
-    
+
     if (!name || !apiKey || !apiSecret) {
         showToast('Please fill in all required fields', 'error');
         return;
     }
-    
+
     const submitBtn = document.getElementById('submitAccount');
     const btnText = submitBtn.querySelector('.btn-text');
     const btnLoading = submitBtn.querySelector('.btn-loading');
-    
+
     // Show loading state
     btnText.style.display = 'none';
     btnLoading.style.display = 'flex';
     submitBtn.disabled = true;
-    
+
     try {
         const response = await fetch('/api/accounts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name, api_key: apiKey, api_secret: apiSecret, is_testnet: isTestnet })
         });
-        
+
         const data = await response.json();
-        
+
         if (response.ok) {
-            showToast(`Account "${name}" created successfully`, 'success');
             document.getElementById('addAccountModal').classList.remove('active');
             clearAddAccountForm();
-            loadAccounts();
+            // Wait for accounts to load before showing success
+            await loadAccounts();
+            showToast(`Account "${name}" created successfully`, 'success');
         } else {
             showToast(data.error || 'Failed to create account', 'error');
         }
@@ -443,6 +444,7 @@ function initDetailPage() {
     loadAccountDetails();
     loadBalance();
     loadPositions();
+    loadOrders();
     loadTrades();
     loadStats();
     loadEquityCurve();
@@ -450,6 +452,7 @@ function initDetailPage() {
     setupClosePositionModal();
     setupEditStopLossModal();
     setupAddToPositionModal();
+    setupSectionTabs();
 }
 
 function setupDetailPageEventListeners() {
@@ -500,7 +503,10 @@ function setupDetailPageEventListeners() {
     
     const refreshPositionsBtn = document.getElementById('refreshPositionsBtn');
     if (refreshPositionsBtn) {
-        refreshPositionsBtn.addEventListener('click', loadPositions);
+        refreshPositionsBtn.addEventListener('click', () => {
+            loadPositions();
+            loadOrders();
+        });
     }
     
     const refreshTradesBtn = document.getElementById('refreshTradesBtn');
@@ -609,18 +615,22 @@ async function loadPositions() {
     const table = document.getElementById('positionsTable');
     const empty = document.getElementById('emptyPositions');
     const tbody = document.getElementById('positionsBody');
-    
+    const countEl = document.getElementById('positionsCount');
+
     if (refreshBtn) refreshBtn.classList.add('loading');
     if (loading) loading.style.display = 'flex';
     if (table) table.style.display = 'none';
     if (empty) empty.style.display = 'none';
-    
+
     try {
         const response = await fetch(`/api/accounts/${ACCOUNT_ID}/positions`);
         const positions = await response.json();
-        
+
         if (loading) loading.style.display = 'none';
-        
+
+        // Update count badge
+        if (countEl) countEl.textContent = positions.length || 0;
+
         if (response.ok && positions.length > 0) {
             if (table) table.style.display = 'table';
 
@@ -711,6 +721,134 @@ async function loadPositions() {
     } finally {
         if (refreshBtn) refreshBtn.classList.remove('loading');
     }
+}
+
+async function loadOrders() {
+    const loading = document.getElementById('ordersLoading');
+    const table = document.getElementById('ordersTable');
+    const empty = document.getElementById('emptyOrders');
+    const tbody = document.getElementById('ordersBody');
+    const countEl = document.getElementById('ordersCount');
+
+    if (!tbody) return; // Not on detail page
+
+    if (loading) loading.style.display = 'flex';
+    if (table) table.style.display = 'none';
+    if (empty) empty.style.display = 'none';
+
+    try {
+        const response = await fetch(`/api/accounts/${ACCOUNT_ID}/orders`);
+        const orders = await response.json();
+
+        if (loading) loading.style.display = 'none';
+
+        // Update count badge
+        if (countEl) countEl.textContent = orders.length || 0;
+
+        if (response.ok && orders.length > 0) {
+            if (table) table.style.display = 'table';
+
+            tbody.innerHTML = orders.map(order => {
+                const orderTime = new Date(order.time).toLocaleString();
+                const typeClass = getOrderTypeClass(order.type);
+                const priceDisplay = order.price > 0 ? `$${order.price.toFixed(4)}` : 'Market';
+                const stopPriceDisplay = order.stop_price ? `$${order.stop_price.toFixed(4)}` : '-';
+
+                return `
+                <tr>
+                    <td class="order-time">${orderTime}</td>
+                    <td class="symbol">${order.symbol}</td>
+                    <td><span class="order-type ${typeClass}">${formatOrderType(order.type)}</span></td>
+                    <td><span class="side ${order.side.toLowerCase()}">${order.side}</span></td>
+                    <td>${order.quantity}</td>
+                    <td>${priceDisplay}</td>
+                    <td>${stopPriceDisplay}</td>
+                    <td>${order.reduce_only ? 'Yes' : 'No'}</td>
+                    <td>
+                        <button class="cancel-order-btn"
+                            data-order-id="${order.order_id}"
+                            data-symbol="${order.symbol}">
+                            Cancel
+                        </button>
+                    </td>
+                </tr>
+            `}).join('');
+
+            // Add event listeners for cancel buttons
+            tbody.querySelectorAll('.cancel-order-btn').forEach(btn => {
+                btn.addEventListener('click', () => cancelOrder(btn.dataset.orderId, btn.dataset.symbol));
+            });
+        } else {
+            if (empty) empty.style.display = 'flex';
+        }
+    } catch (error) {
+        console.error('Error loading orders:', error);
+        if (loading) loading.style.display = 'none';
+        if (empty) empty.style.display = 'flex';
+    }
+}
+
+function getOrderTypeClass(type) {
+    if (type.includes('LIMIT')) return 'limit';
+    if (type.includes('MARKET')) return 'market';
+    if (type.includes('STOP')) return 'stop';
+    if (type.includes('TAKE_PROFIT')) return 'take-profit';
+    return '';
+}
+
+function formatOrderType(type) {
+    return type.replace(/_/g, ' ');
+}
+
+async function cancelOrder(orderId, symbol) {
+    if (!confirm(`Are you sure you want to cancel this order?`)) return;
+
+    try {
+        const response = await fetch(`/api/accounts/${ACCOUNT_ID}/orders/${orderId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbol })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showToast('Order cancelled', 'success');
+            loadOrders();
+            loadPositions(); // Refresh positions too as SL/TP might have changed
+        } else {
+            showToast(data.error || 'Failed to cancel order', 'error');
+        }
+    } catch (error) {
+        console.error('Error cancelling order:', error);
+        showToast('Failed to cancel order', 'error');
+    }
+}
+
+function setupSectionTabs() {
+    const tabs = document.querySelectorAll('.section-tab');
+    const positionsTab = document.getElementById('positionsTab');
+    const ordersTab = document.getElementById('ordersTab');
+
+    if (!tabs.length) return;
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            // Update active tab
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+
+            // Show corresponding content
+            const tabName = tab.dataset.tab;
+            if (tabName === 'positions') {
+                if (positionsTab) positionsTab.classList.add('active');
+                if (ordersTab) ordersTab.classList.remove('active');
+            } else if (tabName === 'orders') {
+                if (positionsTab) positionsTab.classList.remove('active');
+                if (ordersTab) ordersTab.classList.add('active');
+            }
+        });
+    });
 }
 
 async function loadTrades() {
@@ -1220,7 +1358,7 @@ function openEditStopLossModal(posData) {
         entryPrice: parseFloat(posData.entryPrice),
         markPrice: parseFloat(posData.markPrice),
         stopPrice: posData.stopPrice ? parseFloat(posData.stopPrice) : null,
-        stopOrderId: posData.stopOrderId || null
+        stopOrderId: posData.stopOrderId ? parseInt(posData.stopOrderId) : null
     };
 
     // Update modal content
@@ -1350,7 +1488,9 @@ async function updateStopLoss() {
             showToast(`Stop loss set at $${newStopPrice.toFixed(4)}`, 'success');
             document.getElementById('editStopLossModal').classList.remove('active');
             currentStopLossPosition = null;
-            loadPositions();
+            // Refresh both positions and orders
+            await loadPositions();
+            loadOrders();
         } else {
             showToast(data.error || 'Failed to update stop loss', 'error');
         }
@@ -1387,7 +1527,9 @@ async function removeStopLoss() {
             showToast('Stop loss removed', 'success');
             document.getElementById('editStopLossModal').classList.remove('active');
             currentStopLossPosition = null;
-            loadPositions();
+            // Refresh both positions and orders
+            await loadPositions();
+            loadOrders();
         } else {
             showToast(data.error || 'Failed to remove stop loss', 'error');
         }

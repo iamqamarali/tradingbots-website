@@ -1276,6 +1276,89 @@ def api_get_account_positions(account_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/accounts/<int:account_id>/orders', methods=['GET'])
+def api_get_account_orders(account_id):
+    """Get all open orders from Binance."""
+    print(f"=== GET OPEN ORDERS for account_id: {account_id} ===")
+
+    if not BINANCE_AVAILABLE:
+        return jsonify({'error': 'Binance API not available'}), 500
+
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    try:
+        client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
+        if account['is_testnet']:
+            client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+
+        all_orders = client.futures_get_open_orders()
+        print(f"Got {len(all_orders)} open orders")
+
+        orders = []
+        for order in all_orders:
+            orders.append({
+                'order_id': order['orderId'],
+                'symbol': order['symbol'],
+                'side': order['side'],
+                'type': order['type'],
+                'quantity': float(order.get('origQty', 0)),
+                'price': float(order.get('price', 0)),
+                'stop_price': float(order.get('stopPrice', 0)) if order.get('stopPrice') else None,
+                'status': order.get('status', ''),
+                'time': order.get('time', 0),
+                'reduce_only': order.get('reduceOnly', False)
+            })
+
+        # Sort by time descending (newest first)
+        orders.sort(key=lambda x: x['time'], reverse=True)
+
+        print(f"Returning {len(orders)} open orders")
+        return jsonify(orders)
+    except BinanceAPIException as e:
+        print(f"BinanceAPIException: {e}")
+        return jsonify({'error': f'Binance error: {e.message}'}), 500
+    except Exception as e:
+        print(f"Exception: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/accounts/<int:account_id>/orders/<int:order_id>', methods=['DELETE'])
+def api_cancel_order(account_id, order_id):
+    """Cancel an open order."""
+    print(f"=== CANCEL ORDER {order_id} for account_id: {account_id} ===")
+
+    if not BINANCE_AVAILABLE:
+        return jsonify({'error': 'Binance API not available'}), 500
+
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    data = request.json or {}
+    symbol = data.get('symbol')
+    if not symbol:
+        return jsonify({'error': 'Symbol is required'}), 400
+
+    try:
+        client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
+        if account['is_testnet']:
+            client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+
+        result = client.futures_cancel_order(symbol=symbol, orderId=order_id)
+        print(f"Order {order_id} cancelled successfully")
+        return jsonify({'success': True, 'order_id': order_id})
+    except BinanceAPIException as e:
+        print(f"BinanceAPIException: {e}")
+        return jsonify({'error': f'Binance error: {e.message}'}), 500
+    except Exception as e:
+        print(f"Exception: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # Cache settings for positions
 POSITIONS_CACHE_DURATION = 15 * 60  # 15 minutes in seconds
 

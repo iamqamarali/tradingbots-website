@@ -286,13 +286,13 @@ function openEditStopLossModal(accountId, symbol, side, quantity, stopPrice, sto
     positionElements.slSide.className = `position-side ${side.toLowerCase()}`;
     positionElements.slAccount.textContent = accountName;
 
-    if (stopPrice) {
+    if (stopPrice && stopOrderId) {
         positionElements.slCurrentStop.textContent = formatPrice(stopPrice);
         positionElements.slCurrentStop.className = 'has-sl';
         positionElements.removeStopLossBtn.style.display = 'block';
     } else {
-        positionElements.slCurrentStop.textContent = 'None';
-        positionElements.slCurrentStop.className = 'no-sl';
+        positionElements.slCurrentStop.textContent = stopPrice ? formatPrice(stopPrice) : 'None';
+        positionElements.slCurrentStop.className = stopPrice ? 'has-sl' : 'no-sl';
         positionElements.removeStopLossBtn.style.display = 'none';
     }
 
@@ -339,7 +339,7 @@ async function executeUpdateStopLoss() {
         if (response.ok) {
             showToast('Stop loss updated', 'success');
             closeEditStopLossModal();
-            loadAllPositions();
+            loadAllPositions(true);  // Force refresh to get updated data
         } else {
             showToast(data.error || 'Failed to update stop loss', 'error');
         }
@@ -354,7 +354,14 @@ async function executeUpdateStopLoss() {
 
 // Execute remove stop loss
 async function executeRemoveStopLoss() {
-    if (!currentPositionData || !currentPositionData.stopOrderId) return;
+    if (!currentPositionData) {
+        showToast('No position selected', 'error');
+        return;
+    }
+    if (!currentPositionData.stopOrderId) {
+        showToast('No stop loss order to remove', 'error');
+        return;
+    }
 
     positionElements.removeStopLossBtn.disabled = true;
     positionElements.removeStopLossBtn.innerHTML = 'Removing...';
@@ -374,7 +381,7 @@ async function executeRemoveStopLoss() {
         if (response.ok) {
             showToast('Stop loss removed', 'success');
             closeEditStopLossModal();
-            loadAllPositions();
+            loadAllPositions(true);  // Force refresh to get updated data
         } else {
             showToast(data.error || 'Failed to remove stop loss', 'error');
         }

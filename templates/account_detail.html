@@ -187,15 +187,28 @@
             </div>
         </section>
 
-        <!-- Open Positions Section -->
-        <section class="positions-section">
+        <!-- Open Positions & Orders Section -->
+        <section class="positions-orders-section">
             <div class="section-header">
-                <h2>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-                    </svg>
-                    Open Positions
-                </h2>
+                <div class="section-tabs">
+                    <button class="section-tab active" data-tab="positions">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                        </svg>
+                        Open Positions
+                        <span class="tab-count" id="positionsCount">0</span>
+                    </button>
+                    <button class="section-tab" data-tab="orders">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/>
+                            <line x1="16" y1="17" x2="8" y2="17"/>
+                        </svg>
+                        Open Orders
+                        <span class="tab-count" id="ordersCount">0</span>
+                    </button>
+                </div>
                 <button class="refresh-btn" id="refreshPositionsBtn">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="23 4 23 10 17 10"/>
@@ -204,40 +217,82 @@
                     Refresh
                 </button>
             </div>
-            
-            <div class="positions-container">
-                <div class="positions-table-wrapper">
-                    <table class="positions-table" id="positionsTable">
-                        <thead>
-                            <tr>
-                                <th>Symbol</th>
-                                <th>Side</th>
-                                <th>Size ($)</th>
-                                <th>Entry Price</th>
-                                <th>Mark Price</th>
-                                <th>SL / TP</th>
-                                <th>Unrealized PnL</th>
-                                <th>Leverage</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="positionsBody">
-                            <!-- Positions will be inserted here -->
-                        </tbody>
-                    </table>
+
+            <!-- Positions Tab Content -->
+            <div class="tab-content active" id="positionsTab">
+                <div class="positions-container">
+                    <div class="positions-table-wrapper">
+                        <table class="positions-table" id="positionsTable">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Side</th>
+                                    <th>Size ($)</th>
+                                    <th>Entry Price</th>
+                                    <th>Mark Price</th>
+                                    <th>SL / TP</th>
+                                    <th>Unrealized PnL</th>
+                                    <th>Leverage</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="positionsBody">
+                                <!-- Positions will be inserted here -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="loading-state" id="positionsLoading" style="display: none;">
+                        <div class="spinner"></div>
+                        <p>Loading positions...</p>
+                    </div>
+
+                    <div class="empty-positions" id="emptyPositions" style="display: none;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M8 12h8"/>
+                        </svg>
+                        <p>No open positions</p>
+                    </div>
                 </div>
-                
-                <div class="loading-state" id="positionsLoading" style="display: none;">
-                    <div class="spinner"></div>
-                    <p>Loading positions...</p>
-                </div>
-                
-                <div class="empty-positions" id="emptyPositions" style="display: none;">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                        <circle cx="12" cy="12" r="10"/>
-                        <path d="M8 12h8"/>
-                    </svg>
-                    <p>No open positions</p>
+            </div>
+
+            <!-- Orders Tab Content -->
+            <div class="tab-content" id="ordersTab">
+                <div class="orders-container">
+                    <div class="orders-table-wrapper">
+                        <table class="orders-table" id="ordersTable">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Symbol</th>
+                                    <th>Type</th>
+                                    <th>Side</th>
+                                    <th>Quantity</th>
+                                    <th>Price</th>
+                                    <th>Stop Price</th>
+                                    <th>Reduce Only</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ordersBody">
+                                <!-- Orders will be inserted here -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="loading-state" id="ordersLoading" style="display: none;">
+                        <div class="spinner"></div>
+                        <p>Loading orders...</p>
+                    </div>
+
+                    <div class="empty-orders" id="emptyOrders" style="display: none;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M8 12h8"/>
+                        </svg>
+                        <p>No open orders</p>
+                    </div>
                 </div>
             </div>
         </section>
