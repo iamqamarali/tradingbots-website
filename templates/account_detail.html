@@ -446,6 +446,58 @@
         </div>
     </div>
 
+    <!-- Add to Position Modal -->
+    <div class="modal-overlay" id="addToPositionModal">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3>Add to Position</h3>
+                <button class="modal-close" id="closeAddToPositionModal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="position-info">
+                    <span class="position-symbol" id="addPosSymbol">BTCUSDT</span>
+                    <span class="position-side" id="addPosSide">LONG</span>
+                </div>
+                <div class="position-details">
+                    <div class="detail-row">
+                        <span>Current Size:</span>
+                        <span id="addPosCurrentSize">0.00</span>
+                    </div>
+                    <div class="detail-row">
+                        <span>Entry Price:</span>
+                        <span id="addPosEntryPrice">$0.00</span>
+                    </div>
+                    <div class="detail-row">
+                        <span>Mark Price:</span>
+                        <span id="addPosMarkPrice">$0.00</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="addPosQuantity">Quantity to Add</label>
+                    <input type="number" id="addPosQuantity" step="any" placeholder="Enter quantity...">
+                    <div class="add-pos-hint">
+                        This will place a market order to increase your position size
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelAddToPositionBtn">Cancel</button>
+                <button class="btn-primary" id="confirmAddToPositionBtn">
+                    <span class="btn-text">Add to Position</span>
+                    <span class="btn-loading" style="display: none;">
+                        <div class="btn-spinner"></div>
+                        Adding...
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Sync Progress Modal -->
     <div class="modal-overlay" id="syncModal">
         <div class="modal modal-small">

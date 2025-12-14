@@ -1051,6 +1051,24 @@
     color: #52525b;
 }
 
+.form-group input[type="number"] {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #e4e4e7;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+}
+
+.form-group input[type="number"]:focus {
+    outline: none;
+    border-color: #fbbf24;
+    background: rgba(245, 158, 11, 0.05);
+}
+
 .toggle-password {
     position: absolute;
     right: 12px;
@@ -1604,6 +1622,23 @@
 }
 
 /* Close Position Button */
+.add-position-btn {
+    padding: 0.4rem 0.8rem;
+    background: rgba(74, 222, 128, 0.2);
+    color: #4ade80;
+    border: 1px solid rgba(74, 222, 128, 0.3);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.add-position-btn:hover {
+    background: rgba(74, 222, 128, 0.3);
+    border-color: rgba(74, 222, 128, 0.5);
+}
+
 .close-position-btn {
     padding: 0.4rem 0.8rem;
     background: rgba(239, 68, 68, 0.2);
@@ -1619,6 +1654,12 @@
 .close-position-btn:hover {
     background: rgba(239, 68, 68, 0.3);
     border-color: rgba(239, 68, 68, 0.5);
+}
+
+.add-pos-hint {
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    color: #71717a;
 }
 
 /* Stop Loss / Take Profit Cell Styles */

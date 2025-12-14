@@ -1412,6 +1412,90 @@ def api_close_position(account_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/accounts/<int:account_id>/add-to-position', methods=['POST'])
+def api_add_to_position(account_id):
+    """Add size to an existing position."""
+    if not BINANCE_AVAILABLE:
+        return jsonify({'error': 'Binance API not available'}), 500
+
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    data = request.get_json()
+    symbol = data.get('symbol')
+    side = data.get('side')  # Current position side (LONG/SHORT)
+    quantity = float(data.get('quantity', 0))
+
+    if not symbol or not side or quantity <= 0:
+        return jsonify({'error': 'Invalid parameters'}), 400
+
+    try:
+        client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
+        if account['is_testnet']:
+            client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+
+        # Get symbol precision info
+        exchange_info = client.futures_exchange_info()
+        symbol_info = None
+        for s in exchange_info['symbols']:
+            if s['symbol'] == symbol:
+                symbol_info = s
+                break
+
+        # Determine quantity precision from symbol info
+        step_size = 0.001  # Default
+        if symbol_info:
+            for f in symbol_info.get('filters', []):
+                if f['filterType'] == 'LOT_SIZE':
+                    step_size = float(f['stepSize'])
+                    break
+
+        # Round to nearest valid step size
+        quantity = math.floor(quantity / step_size) * step_size
+
+        # Calculate decimal precision from step_size
+        if step_size >= 1:
+            precision = 0
+        else:
+            precision = int(round(-math.log10(step_size)))
+        quantity = round(quantity, precision)
+
+        if quantity <= 0:
+            return jsonify({'error': 'Quantity too small after precision adjustment'}), 400
+
+        # To add to position, place order in SAME direction
+        # If LONG, we BUY more
+        # If SHORT, we SELL more
+        add_side = 'BUY' if side == 'LONG' else 'SELL'
+
+        print(f"Adding to position: {symbol} {side} qty={quantity} -> {add_side}")
+
+        order = client.futures_create_order(
+            symbol=symbol,
+            side=add_side,
+            type='MARKET',
+            quantity=quantity
+        )
+
+        return jsonify({
+            'success': True,
+            'order': {
+                'orderId': order['orderId'],
+                'symbol': order['symbol'],
+                'side': order['side'],
+                'quantity': order['origQty'],
+                'status': order['status']
+            }
+        })
+    except BinanceAPIException as e:
+        print(f"BinanceAPIException adding to position: {e}")
+        return jsonify({'error': f'Binance error: {e.message}'}), 500
+    except Exception as e:
+        print(f"Exception adding to position: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/accounts/<int:account_id>/update-stop-loss', methods=['POST'])
 def api_update_stop_loss(account_id):
     """Update or create a stop-loss order for a position."""

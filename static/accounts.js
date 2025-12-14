@@ -355,6 +355,7 @@ function initDetailPage() {
     setupDetailPageEventListeners();
     setupClosePositionModal();
     setupEditStopLossModal();
+    setupAddToPositionModal();
 }
 
 function setupDetailPageEventListeners() {
@@ -541,6 +542,14 @@ async function loadPositions() {
                     </td>
                     <td><span class="leverage-badge">${pos.leverage}x</span></td>
                     <td class="actions-cell">
+                        <button class="add-position-btn"
+                            data-symbol="${pos.symbol}"
+                            data-side="${pos.side}"
+                            data-quantity="${pos.quantity}"
+                            data-entry-price="${pos.entry_price}"
+                            data-mark-price="${pos.mark_price}">
+                            Add
+                        </button>
                         <button class="close-position-btn"
                             data-symbol="${pos.symbol}"
                             data-side="${pos.side}"
@@ -556,7 +565,12 @@ async function loadPositions() {
             tbody.querySelectorAll('.close-position-btn').forEach(btn => {
                 btn.addEventListener('click', () => openClosePositionModal(btn.dataset));
             });
-            
+
+            // Add event listeners for add-to-position buttons
+            tbody.querySelectorAll('.add-position-btn').forEach(btn => {
+                btn.addEventListener('click', () => openAddToPositionModal(btn.dataset));
+            });
+
             // Add event listeners for edit stop-loss buttons
             tbody.querySelectorAll('.edit-sl-btn').forEach(btn => {
                 btn.addEventListener('click', () => openEditStopLossModal(btn.dataset));
@@ -1411,5 +1425,122 @@ function renderEquityChart(data) {
     ctx.fillStyle = '#71717a';
     ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
     ctx.fillText(`${points.length} trades`, canvas.width - padding.right - 60, padding.top + 20);
+}
+
+// ==================== ADD TO POSITION ====================
+
+let currentAddPosition = null;
+
+function openAddToPositionModal(posData) {
+    currentAddPosition = {
+        symbol: posData.symbol,
+        side: posData.side,
+        quantity: parseFloat(posData.quantity),
+        entryPrice: parseFloat(posData.entryPrice),
+        markPrice: parseFloat(posData.markPrice)
+    };
+
+    // Update modal content
+    document.getElementById('addPosSymbol').textContent = currentAddPosition.symbol;
+    const sideEl = document.getElementById('addPosSide');
+    sideEl.textContent = currentAddPosition.side;
+    sideEl.className = `position-side ${currentAddPosition.side.toLowerCase()}`;
+
+    document.getElementById('addPosCurrentSize').textContent = currentAddPosition.quantity;
+    document.getElementById('addPosEntryPrice').textContent = `$${currentAddPosition.entryPrice.toFixed(4)}`;
+    document.getElementById('addPosMarkPrice').textContent = `$${currentAddPosition.markPrice.toFixed(4)}`;
+
+    // Clear quantity input
+    document.getElementById('addPosQuantity').value = '';
+
+    // Show modal
+    document.getElementById('addToPositionModal').classList.add('active');
+}
+
+function setupAddToPositionModal() {
+    const modal = document.getElementById('addToPositionModal');
+    if (!modal) return;
+
+    const closeBtn = document.getElementById('closeAddToPositionModal');
+    const cancelBtn = document.getElementById('cancelAddToPositionBtn');
+    const confirmBtn = document.getElementById('confirmAddToPositionBtn');
+
+    // Close modal handlers
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            modal.classList.remove('active');
+            currentAddPosition = null;
+        });
+    }
+
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+            modal.classList.remove('active');
+            currentAddPosition = null;
+        });
+    }
+
+    // Close on overlay click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.classList.remove('active');
+            currentAddPosition = null;
+        }
+    });
+
+    // Confirm add to position
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', addToPosition);
+    }
+}
+
+async function addToPosition() {
+    if (!currentAddPosition) return;
+
+    const quantityToAdd = parseFloat(document.getElementById('addPosQuantity').value);
+
+    if (!quantityToAdd || quantityToAdd <= 0) {
+        showToast('Please enter a valid quantity', 'error');
+        return;
+    }
+
+    const confirmBtn = document.getElementById('confirmAddToPositionBtn');
+    const btnText = confirmBtn.querySelector('.btn-text');
+    const btnLoading = confirmBtn.querySelector('.btn-loading');
+
+    btnText.style.display = 'none';
+    btnLoading.style.display = 'flex';
+    confirmBtn.disabled = true;
+
+    try {
+        const response = await fetch(`/api/accounts/${ACCOUNT_ID}/add-to-position`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol: currentAddPosition.symbol,
+                side: currentAddPosition.side,
+                quantity: quantityToAdd
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showToast(`Added ${quantityToAdd} to ${currentAddPosition.symbol} position`, 'success');
+            document.getElementById('addToPositionModal').classList.remove('active');
+            currentAddPosition = null;
+            loadPositions();
+            loadBalance();
+        } else {
+            showToast(data.error || 'Failed to add to position', 'error');
+        }
+    } catch (error) {
+        console.error('Error adding to position:', error);
+        showToast('Failed to add to position', 'error');
+    } finally {
+        btnText.style.display = 'inline';
+        btnLoading.style.display = 'none';
+        confirmBtn.disabled = false;
+    }
 }
 
