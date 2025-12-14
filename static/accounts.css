@@ -1662,6 +1662,45 @@
     color: #71717a;
 }
 
+.calculated-qty {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: #a1a1aa;
+}
+
+.calculated-qty span {
+    color: #fbbf24;
+    font-weight: 500;
+}
+
+.usdc-input-section {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.usdc-input-section label {
+    display: block;
+    font-size: 0.8rem;
+    color: #a1a1aa;
+    margin-bottom: 0.5rem;
+}
+
+.usdc-input-section input {
+    width: 100%;
+    padding: 0.6rem 0.8rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: #e4e4e7;
+    font-size: 0.9rem;
+}
+
+.usdc-input-section input:focus {
+    outline: none;
+    border-color: #fbbf24;
+}
+
 /* Stop Loss / Take Profit Cell Styles */
 .sl-tp-cell {
     min-width: 140px;

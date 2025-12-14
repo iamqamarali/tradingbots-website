@@ -554,7 +554,8 @@ async function loadPositions() {
                             data-symbol="${pos.symbol}"
                             data-side="${pos.side}"
                             data-quantity="${pos.quantity}"
-                            data-pnl="${pos.unrealized_pnl}">
+                            data-pnl="${pos.unrealized_pnl}"
+                            data-mark-price="${pos.mark_price}">
                             Close
                         </button>
                     </td>
@@ -886,7 +887,8 @@ function openClosePositionModal(posData) {
         symbol: posData.symbol,
         side: posData.side,
         quantity: parseFloat(posData.quantity),
-        pnl: parseFloat(posData.pnl)
+        pnl: parseFloat(posData.pnl),
+        markPrice: parseFloat(posData.markPrice)
     };
 
     // Update modal content
@@ -902,6 +904,9 @@ function openClosePositionModal(posData) {
     // Reset slider to 100%
     document.getElementById('closePercentSlider').value = 100;
     document.getElementById('closePercentValue').textContent = '100';
+
+    // Clear USDC input
+    document.getElementById('closeUsdc').value = '';
     updateCloseQuantity(100);
 
     // Reset percentage buttons
@@ -971,12 +976,27 @@ function setupClosePositionModal() {
             const pct = btn.dataset.pct;
             slider.value = pct;
             document.getElementById('closePercentValue').textContent = pct;
+            document.getElementById('closeUsdc').value = ''; // Clear USDC input
             updateCloseQuantity(pct);
 
             pctBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
         });
     });
+
+    // USDC input - calculate quantity from USDC
+    const usdcInput = document.getElementById('closeUsdc');
+    if (usdcInput) {
+        usdcInput.addEventListener('input', () => {
+            if (!currentPosition) return;
+            const usdc = parseFloat(usdcInput.value) || 0;
+            const qty = usdc / currentPosition.markPrice;
+            document.getElementById('closeQuantityValue').textContent = qty.toFixed(6);
+
+            // Clear percentage selection when using USDC
+            pctBtns.forEach(b => b.classList.remove('active'));
+        });
+    }
 
     // Confirm close
     if (confirmBtn) {
@@ -990,8 +1010,20 @@ async function closePosition() {
     const confirmBtn = document.getElementById('confirmClosePositionBtn');
     const btnText = confirmBtn.querySelector('.btn-text');
     const btnLoading = confirmBtn.querySelector('.btn-loading');
-    const percent = parseInt(document.getElementById('closePercentSlider').value);
-    const quantityToClose = (currentPosition.quantity * percent / 100);
+
+    // Check if USDC was entered, otherwise use percentage
+    const usdcValue = parseFloat(document.getElementById('closeUsdc').value);
+    let quantityToClose;
+    let closeMessage;
+
+    if (usdcValue && usdcValue > 0) {
+        quantityToClose = usdcValue / currentPosition.markPrice;
+        closeMessage = `Closed $${usdcValue.toFixed(2)} of ${currentPosition.symbol} position`;
+    } else {
+        const percent = parseInt(document.getElementById('closePercentSlider').value);
+        quantityToClose = (currentPosition.quantity * percent / 100);
+        closeMessage = `Closed ${percent}% of ${currentPosition.symbol} position`;
+    }
 
     btnText.style.display = 'none';
     btnLoading.style.display = 'flex';
@@ -1011,7 +1043,7 @@ async function closePosition() {
         const data = await response.json();
 
         if (response.ok) {
-            showToast(`Closed ${percent}% of ${currentPosition.symbol} position`, 'success');
+            showToast(closeMessage, 'success');
             document.getElementById('closePositionModal').classList.remove('active');
             currentPosition = null;
             loadPositions();
@@ -1450,8 +1482,9 @@ function openAddToPositionModal(posData) {
     document.getElementById('addPosEntryPrice').textContent = `$${currentAddPosition.entryPrice.toFixed(4)}`;
     document.getElementById('addPosMarkPrice').textContent = `$${currentAddPosition.markPrice.toFixed(4)}`;
 
-    // Clear quantity input
-    document.getElementById('addPosQuantity').value = '';
+    // Clear USDC input and calculated qty
+    document.getElementById('addPosUsdc').value = '';
+    document.getElementById('addPosCalcQty').textContent = '0.00';
 
     // Show modal
     document.getElementById('addToPositionModal').classList.add('active');
@@ -1464,6 +1497,7 @@ function setupAddToPositionModal() {
     const closeBtn = document.getElementById('closeAddToPositionModal');
     const cancelBtn = document.getElementById('cancelAddToPositionBtn');
     const confirmBtn = document.getElementById('confirmAddToPositionBtn');
+    const usdcInput = document.getElementById('addPosUsdc');
 
     // Close modal handlers
     if (closeBtn) {
@@ -1488,6 +1522,16 @@ function setupAddToPositionModal() {
         }
     });
 
+    // USDC input - calculate quantity
+    if (usdcInput) {
+        usdcInput.addEventListener('input', () => {
+            if (!currentAddPosition) return;
+            const usdc = parseFloat(usdcInput.value) || 0;
+            const qty = usdc / currentAddPosition.markPrice;
+            document.getElementById('addPosCalcQty').textContent = qty.toFixed(6);
+        });
+    }
+
     // Confirm add to position
     if (confirmBtn) {
         confirmBtn.addEventListener('click', addToPosition);
@@ -1497,12 +1541,15 @@ function setupAddToPositionModal() {
 async function addToPosition() {
     if (!currentAddPosition) return;
 
-    const quantityToAdd = parseFloat(document.getElementById('addPosQuantity').value);
+    const usdcAmount = parseFloat(document.getElementById('addPosUsdc').value);
 
-    if (!quantityToAdd || quantityToAdd <= 0) {
-        showToast('Please enter a valid quantity', 'error');
+    if (!usdcAmount || usdcAmount <= 0) {
+        showToast('Please enter a valid USDC amount', 'error');
         return;
     }
+
+    // Calculate quantity from USDC
+    const quantityToAdd = usdcAmount / currentAddPosition.markPrice;
 
     const confirmBtn = document.getElementById('confirmAddToPositionBtn');
     const btnText = confirmBtn.querySelector('.btn-text');

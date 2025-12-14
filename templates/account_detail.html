@@ -368,6 +368,10 @@
                         <input type="range" id="closePercentSlider" min="1" max="100" value="100" class="percentage-slider">
                         <div class="slider-value"><span id="closePercentValue">100</span>%</div>
                     </div>
+                    <div class="usdc-input-section">
+                        <label for="closeUsdc">Or enter USDC amount:</label>
+                        <input type="number" id="closeUsdc" step="any" placeholder="Enter USDC...">
+                    </div>
                     <div class="close-quantity">
                         <span>Quantity to close:</span>
                         <span id="closeQuantityValue">0.00</span>
@@ -478,8 +482,11 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label for="addPosQuantity">Quantity to Add</label>
-                    <input type="number" id="addPosQuantity" step="any" placeholder="Enter quantity...">
+                    <label for="addPosUsdc">Size to Add (USDC)</label>
+                    <input type="number" id="addPosUsdc" step="any" placeholder="Enter USDC amount...">
+                    <div class="calculated-qty">
+                        Quantity: <span id="addPosCalcQty">0.00</span>
+                    </div>
                     <div class="add-pos-hint">
                         This will place a market order to increase your position size
                     </div>
