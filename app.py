@@ -1877,11 +1877,12 @@ def api_update_stop_loss(account_id):
         # Log the full response for debugging
         print(f"  Binance order response: {order}")
 
-        # Get orderId safely
-        order_id = order.get('orderId')
+        # Get orderId safely - check multiple possible key names
+        order_id = order.get('orderId') or order.get('orderID') or order.get('order_id') or order.get('id')
         if not order_id:
             print(f"  ERROR: No orderId in response. Full response: {order}")
-            return jsonify({'error': 'Binance returned order without orderId'}), 500
+            # Return the actual response so we can debug on frontend
+            return jsonify({'error': f'No orderId in response. Binance returned: {str(order)[:500]}'}), 500
 
         print(f"  Stop-loss order created: {order_id}")
         return jsonify({
@@ -2024,11 +2025,12 @@ def api_update_take_profit(account_id):
         # Log the full response for debugging
         print(f"  Binance order response: {order}")
 
-        # Get orderId safely
-        order_id = order.get('orderId')
+        # Get orderId safely - check multiple possible key names
+        order_id = order.get('orderId') or order.get('orderID') or order.get('order_id') or order.get('id')
         if not order_id:
             print(f"  ERROR: No orderId in response. Full response: {order}")
-            return jsonify({'error': 'Binance returned order without orderId'}), 500
+            # Return the actual response so we can debug on frontend
+            return jsonify({'error': f'No orderId in response. Binance returned: {str(order)[:500]}'}), 500
 
         print(f"  Take-profit order created: {order_id}")
         return jsonify({
