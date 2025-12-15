@@ -5,6 +5,11 @@ let accountToDelete = null;
 let accountToEdit = null;
 let availableBalance = 0;  // Store available balance for Add to Position modal
 
+// Pagination state for trades
+let tradesPage = 1;
+const tradesPerPage = 40;
+let totalTrades = 0;
+
 // Check if we're on detail page or list page
 const isDetailPage = typeof ACCOUNT_ID !== 'undefined';
 

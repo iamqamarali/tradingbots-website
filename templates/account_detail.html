@@ -237,7 +237,24 @@
                         </tbody>
                     </table>
                 </div>
-                
+
+                <!-- Pagination Controls -->
+                <div class="pagination-controls" id="tradesPagination" style="display: none;">
+                    <button class="pagination-btn" id="prevPageBtn" disabled>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="15 18 9 12 15 6"/>
+                        </svg>
+                        Previous
+                    </button>
+                    <span class="pagination-info" id="paginationInfo">Page 1 of 1</span>
+                    <button class="pagination-btn" id="nextPageBtn">
+                        Next
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                    </button>
+                </div>
+
                 <div class="loading-state" id="tradesLoading" style="display: none;">
                     <div class="spinner"></div>
                     <p>Loading trades...</p>
