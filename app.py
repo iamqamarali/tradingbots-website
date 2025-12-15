@@ -92,6 +92,43 @@ def fetch_algo_orders(api_key, api_secret, testnet=False):
 
     return all_orders
 
+
+def cancel_algo_order(api_key, api_secret, algo_id, testnet=False):
+    """Cancel an algo/conditional order using DELETE /fapi/v1/algoOrder.
+
+    See: https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/Cancel-Algo-Order
+    """
+    if testnet:
+        base_url = 'https://testnet.binancefuture.com'
+    else:
+        base_url = 'https://fapi.binance.com'
+
+    endpoint = '/fapi/v1/algoOrder'
+    timestamp = int(time.time() * 1000)
+    recv_window = 5000
+    query_string = f'algoId={algo_id}&recvWindow={recv_window}&timestamp={timestamp}'
+
+    # Create signature
+    signature = hmac.new(
+        api_secret.encode('utf-8'),
+        query_string.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+
+    url = f'{base_url}{endpoint}?{query_string}&signature={signature}'
+    headers = {'X-MBX-APIKEY': api_key}
+
+    print(f"  Cancelling algo order {algo_id} via DELETE {base_url}{endpoint}")
+
+    response = requests.delete(url, headers=headers, timeout=10)
+    print(f"  Cancel algo order response: {response.status_code} - {response.text}")
+
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Failed to cancel algo order: {response.status_code} - {response.text}")
+
+
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 
@@ -1577,7 +1614,7 @@ def api_get_account_orders(account_id):
 
 @app.route('/api/accounts/<int:account_id>/orders/<int:order_id>', methods=['DELETE'])
 def api_cancel_order(account_id, order_id):
-    """Cancel an open order."""
+    """Cancel an open order (supports both regular and algo/conditional orders)."""
     print(f"=== CANCEL ORDER {order_id} for account_id: {account_id} ===")
 
     if not BINANCE_AVAILABLE:
@@ -1589,16 +1626,31 @@ def api_cancel_order(account_id, order_id):
 
     data = request.json or {}
     symbol = data.get('symbol')
+    is_algo = data.get('is_algo', False)  # Flag to indicate if this is an algo/conditional order
+
     if not symbol:
         return jsonify({'error': 'Symbol is required'}), 400
 
-    try:
-        client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
-        if account['is_testnet']:
-            client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+    print(f"  Symbol: {symbol}, is_algo: {is_algo}")
 
-        result = client.futures_cancel_order(symbol=symbol, orderId=order_id)
-        print(f"Order {order_id} cancelled successfully")
+    try:
+        if is_algo:
+            # Algo/Conditional orders need DELETE /fapi/v1/algoOrder
+            result = cancel_algo_order(
+                account['api_key'],
+                account['api_secret'],
+                order_id,
+                account['is_testnet']
+            )
+            print(f"Algo order {order_id} cancelled successfully")
+        else:
+            # Regular orders use the standard cancel endpoint
+            client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
+            if account['is_testnet']:
+                client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+            result = client.futures_cancel_order(symbol=symbol, orderId=order_id)
+            print(f"Regular order {order_id} cancelled successfully")
+
         return jsonify({'success': True, 'order_id': order_id})
     except BinanceAPIException as e:
         print(f"BinanceAPIException: {e}")
@@ -2088,11 +2140,16 @@ def api_update_stop_loss(account_id):
             price_precision = int(round(-math.log10(price_tick)))
         stop_price = round(stop_price, price_precision)
 
-        # Cancel existing stop order if provided
+        # Cancel existing stop order if provided (try algo cancel first, then regular)
         if old_order_id:
             try:
                 print(f"  Cancelling old stop order: {old_order_id}")
-                client.futures_cancel_order(symbol=symbol, orderId=old_order_id)
+                try:
+                    cancel_algo_order(account['api_key'], account['api_secret'], old_order_id, account['is_testnet'])
+                    print(f"  Old algo stop order cancelled")
+                except:
+                    client.futures_cancel_order(symbol=symbol, orderId=old_order_id)
+                    print(f"  Old regular stop order cancelled")
             except Exception as e:
                 print(f"  Warning: Could not cancel old stop order: {e}")
 
@@ -2150,9 +2207,9 @@ def api_update_stop_loss(account_id):
 
 @app.route('/api/accounts/<int:account_id>/cancel-stop-loss', methods=['POST'])
 def api_cancel_stop_loss(account_id):
-    """Cancel a stop-loss order."""
+    """Cancel a stop-loss order (supports both regular and algo/conditional orders)."""
     print(f"=== CANCEL STOP-LOSS for account_id: {account_id} ===")
-    
+
     if not BINANCE_AVAILABLE:
         return jsonify({'error': 'Binance API not available'}), 500
 
@@ -2167,14 +2224,33 @@ def api_cancel_stop_loss(account_id):
     if not symbol or not order_id:
         return jsonify({'error': 'Invalid parameters'}), 400
 
+    print(f"  Cancelling stop order {order_id} for {symbol}")
+
+    # Try algo cancel first (for conditional orders created with closePosition=true)
+    # If that fails, fall back to regular cancel
+    try:
+        result = cancel_algo_order(
+            account['api_key'],
+            account['api_secret'],
+            order_id,
+            account['is_testnet']
+        )
+        print(f"  Algo stop order {order_id} cancelled successfully")
+        return jsonify({
+            'success': True,
+            'cancelled_order_id': order_id
+        })
+    except Exception as algo_error:
+        print(f"  Algo cancel failed: {algo_error}, trying regular cancel...")
+
+    # Fall back to regular cancel
     try:
         client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
         if account['is_testnet']:
             client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
 
-        print(f"  Cancelling stop order {order_id} for {symbol}")
         result = client.futures_cancel_order(symbol=symbol, orderId=order_id)
-
+        print(f"  Regular stop order {order_id} cancelled successfully")
         return jsonify({
             'success': True,
             'cancelled_order_id': order_id
@@ -2238,11 +2314,16 @@ def api_update_take_profit(account_id):
             price_precision = int(round(-math.log10(price_tick)))
         tp_price = round(tp_price, price_precision)
 
-        # Cancel existing TP order if provided
+        # Cancel existing TP order if provided (try algo cancel first, then regular)
         if old_order_id:
             try:
                 print(f"  Cancelling old TP order: {old_order_id}")
-                client.futures_cancel_order(symbol=symbol, orderId=old_order_id)
+                try:
+                    cancel_algo_order(account['api_key'], account['api_secret'], old_order_id, account['is_testnet'])
+                    print(f"  Old algo TP order cancelled")
+                except:
+                    client.futures_cancel_order(symbol=symbol, orderId=old_order_id)
+                    print(f"  Old regular TP order cancelled")
             except Exception as e:
                 print(f"  Warning: Could not cancel old TP order: {e}")
 
@@ -2300,7 +2381,7 @@ def api_update_take_profit(account_id):
 
 @app.route('/api/accounts/<int:account_id>/cancel-take-profit', methods=['POST'])
 def api_cancel_take_profit(account_id):
-    """Cancel a take-profit order."""
+    """Cancel a take-profit order (supports both regular and algo/conditional orders)."""
     print(f"=== CANCEL TAKE-PROFIT for account_id: {account_id} ===")
 
     if not BINANCE_AVAILABLE:
@@ -2317,14 +2398,33 @@ def api_cancel_take_profit(account_id):
     if not symbol or not order_id:
         return jsonify({'error': 'Invalid parameters'}), 400
 
+    print(f"  Cancelling TP order {order_id} for {symbol}")
+
+    # Try algo cancel first (for conditional orders created with closePosition=true)
+    # If that fails, fall back to regular cancel
+    try:
+        result = cancel_algo_order(
+            account['api_key'],
+            account['api_secret'],
+            order_id,
+            account['is_testnet']
+        )
+        print(f"  Algo TP order {order_id} cancelled successfully")
+        return jsonify({
+            'success': True,
+            'cancelled_order_id': order_id
+        })
+    except Exception as algo_error:
+        print(f"  Algo cancel failed: {algo_error}, trying regular cancel...")
+
+    # Fall back to regular cancel
     try:
         client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
         if account['is_testnet']:
             client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
 
-        print(f"  Cancelling TP order {order_id} for {symbol}")
         result = client.futures_cancel_order(symbol=symbol, orderId=order_id)
-
+        print(f"  Regular TP order {order_id} cancelled successfully")
         return jsonify({
             'success': True,
             'cancelled_order_id': order_id

@@ -820,7 +820,8 @@ async function loadOrders() {
                     <td>
                         <button class="cancel-order-btn"
                             data-order-id="${order.order_id}"
-                            data-symbol="${order.symbol}">
+                            data-symbol="${order.symbol}"
+                            data-is-algo="${order.is_algo || false}">
                             Cancel
                         </button>
                     </td>
@@ -829,7 +830,8 @@ async function loadOrders() {
 
             // Add event listeners for cancel buttons
             tbody.querySelectorAll('.cancel-order-btn').forEach(btn => {
-                btn.addEventListener('click', () => cancelOrder(btn.dataset.orderId, btn.dataset.symbol));
+                const isAlgo = btn.dataset.isAlgo === 'true';
+                btn.addEventListener('click', () => cancelOrder(btn.dataset.orderId, btn.dataset.symbol, isAlgo));
             });
         } else {
             if (empty) empty.style.display = 'flex';
@@ -853,14 +855,14 @@ function formatOrderType(type) {
     return type.replace(/_/g, ' ');
 }
 
-async function cancelOrder(orderId, symbol) {
+async function cancelOrder(orderId, symbol, isAlgo = false) {
     if (!confirm(`Are you sure you want to cancel this order?`)) return;
 
     try {
         const response = await fetch(`/api/accounts/${ACCOUNT_ID}/orders/${orderId}`, {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ symbol })
+            body: JSON.stringify({ symbol, is_algo: isAlgo })
         });
 
         const data = await response.json();
