@@ -142,34 +142,48 @@ async function loadAccounts() {
     try {
         const response = await fetch('/api/accounts');
         accountsData = await response.json();
-        
+
         updateStats();
         renderAccounts();
+
+        // Load balances for each account asynchronously
+        loadAccountBalances();
     } catch (error) {
         console.error('Error loading accounts:', error);
         showToast('Failed to load accounts', 'error');
     }
 }
 
+async function loadAccountBalances() {
+    // Fetch balances for all accounts in parallel
+    const balancePromises = accountsData.map(async (account) => {
+        try {
+            const response = await fetch(`/api/accounts/${account.id}/balance`);
+            if (response.ok) {
+                const data = await response.json();
+                return { accountId: account.id, balance: data.balance || 0 };
+            }
+        } catch (error) {
+            console.error(`Error loading balance for account ${account.id}:`, error);
+        }
+        return { accountId: account.id, balance: null };
+    });
+
+    const results = await Promise.all(balancePromises);
+
+    // Update the balance displays
+    results.forEach(({ accountId, balance }) => {
+        const balanceEl = document.querySelector(`.account-balance[data-account-id="${accountId}"]`);
+        if (balanceEl && balance !== null) {
+            balanceEl.textContent = `$${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        } else if (balanceEl) {
+            balanceEl.textContent = 'N/A';
+        }
+    });
+}
+
 function updateStats() {
     const totalAccounts = accountsData.length;
-    const totalTrades = accountsData.reduce((sum, acc) => sum + (acc.total_trades || 0), 0);
-    const totalPnL = accountsData.reduce((sum, acc) => sum + (acc.total_pnl || 0), 0);
-    const totalCommission = accountsData.reduce((sum, acc) => sum + (acc.total_commission || 0), 0);
-    
-    document.getElementById('totalAccounts').textContent = totalAccounts;
-    document.getElementById('totalTrades').textContent = totalTrades;
-    
-    const pnlElement = document.getElementById('totalPnL');
-    pnlElement.textContent = `${totalPnL >= 0 ? '+' : ''}$${totalPnL.toFixed(2)}`;
-    pnlElement.className = `stat-value ${totalPnL >= 0 ? 'positive' : 'negative'}`;
-    
-    const pnlIcon = document.getElementById('pnlIconCard');
-    if (pnlIcon) {
-        pnlIcon.className = `stat-icon pnl-icon ${totalPnL < 0 ? 'negative' : ''}`;
-    }
-    
-    document.getElementById('totalCommission').textContent = `$${totalCommission.toFixed(2)}`;
     document.getElementById('accountCount').textContent = `${totalAccounts} account${totalAccounts !== 1 ? 's' : ''}`;
 }
 
@@ -223,37 +237,18 @@ function renderAccounts() {
 }
 
 function createAccountCard(account) {
-    const pnlClass = account.total_pnl >= 0 ? 'positive' : 'negative';
-    const pnlPrefix = account.total_pnl >= 0 ? '+' : '';
-    const winRate = account.win_rate || 0;
-    const winRateClass = winRate >= 50 ? 'positive' : (winRate > 0 ? 'negative' : '');
-
-    const createdDate = account.created_at
-        ? new Date(account.created_at).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric'
-        })
-        : 'Unknown';
-
-    const lastSync = account.last_sync_time
-        ? new Date(account.last_sync_time).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        })
-        : 'Never';
+    const balance = account.balance !== undefined ? account.balance : null;
+    const balanceDisplay = balance !== null ? `$${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Loading...';
 
     return `
-        <div class="account-card" data-account-id="${account.id}">
+        <div class="account-card account-card-simple" data-account-id="${account.id}">
             <div class="account-card-header">
                 <div class="account-info">
                     <div class="account-name-row">
                         <span class="account-name">${escapeHtml(account.name)}</span>
                         ${account.is_testnet ? '<span class="testnet-badge">TESTNET</span>' : ''}
                     </div>
-                    <span class="account-api-key">${account.api_key}</span>
+                    <span class="account-balance" data-account-id="${account.id}">${balanceDisplay}</span>
                 </div>
                 <div class="account-actions">
                     <button class="account-action-btn edit edit-account-btn"
@@ -275,33 +270,6 @@ function createAccountCard(account) {
                         </svg>
                     </button>
                 </div>
-            </div>
-            <div class="account-card-stats">
-                <div class="account-stat">
-                    <span class="account-stat-value">${account.total_trades || 0}</span>
-                    <span class="account-stat-label">Trades</span>
-                </div>
-                <div class="account-stat">
-                    <span class="account-stat-value ${winRateClass}">${winRate.toFixed(1)}%</span>
-                    <span class="account-stat-label">Win Rate</span>
-                </div>
-                <div class="account-stat">
-                    <span class="account-stat-value ${pnlClass}">${pnlPrefix}$${(account.total_pnl || 0).toFixed(2)}</span>
-                    <span class="account-stat-label">PnL</span>
-                </div>
-                <div class="account-stat">
-                    <span class="account-stat-value">$${(account.total_commission || 0).toFixed(2)}</span>
-                    <span class="account-stat-label">Fees</span>
-                </div>
-            </div>
-            <div class="account-card-footer">
-                <span class="account-date">Synced: ${lastSync}</span>
-                <button class="view-account-btn">
-                    View Details
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="9 18 15 12 9 6"/>
-                    </svg>
-                </button>
             </div>
         </div>
     `;
