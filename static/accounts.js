@@ -1586,7 +1586,8 @@ async function removeStopLoss() {
     removeBtn.textContent = 'Removing...';
 
     try {
-        console.log(`[Remove SL] Removing stop loss for ${currentStopLossPosition.symbol}, order_id: ${currentStopLossPosition.stopOrderId}`);
+        console.log(`%c[Remove SL] Removing stop loss for ${currentStopLossPosition.symbol}`, 'color: #3b82f6; font-weight: bold');
+        console.log(`  Order ID: ${currentStopLossPosition.stopOrderId}`);
         const response = await fetch(`/api/accounts/${ACCOUNT_ID}/cancel-stop-loss`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1598,26 +1599,26 @@ async function removeStopLoss() {
 
         const data = await response.json();
 
-        // Log debug info from server
-        if (data._debug) {
-            console.log('[Remove SL] Server debug log:');
-            data._debug.forEach(msg => console.log('  ', msg));
+        // Always log debug info from server
+        if (data._debug && data._debug.length > 0) {
+            console.log('%c[Remove SL] Server Debug Log:', 'color: #f59e0b; font-weight: bold');
+            console.table(data._debug.map((msg, i) => ({ step: i + 1, message: msg })));
         }
 
         if (response.ok) {
+            console.log('%c[Remove SL] SUCCESS', 'color: #22c55e; font-weight: bold');
             showToast('Stop loss removed', 'success');
             document.getElementById('editStopLossModal').classList.remove('active');
             currentStopLossPosition = null;
-            // Refresh both positions and orders
             await loadPositions();
             loadOrders();
         } else {
-            console.error('[Remove SL] Error:', data.error);
-            showToast(data.error || 'Failed to remove stop loss', 'error');
+            console.error('%c[Remove SL] FAILED:', 'color: #ef4444; font-weight: bold', data.error);
+            showToast(`Remove SL failed: ${data.error || 'Unknown error'}`, 'error');
         }
     } catch (error) {
-        console.error('[Remove SL] Exception:', error);
-        showToast('Failed to remove stop loss', 'error');
+        console.error('%c[Remove SL] EXCEPTION:', 'color: #ef4444; font-weight: bold', error);
+        showToast(`Remove SL failed: ${error.message}`, 'error');
     } finally {
         removeBtn.disabled = false;
         removeBtn.textContent = 'Remove SL';
@@ -1748,7 +1749,8 @@ async function updateTakeProfit() {
     confirmBtn.disabled = true;
 
     try {
-        console.log(`[Update TP] Updating take profit for ${currentTakeProfitPosition.symbol}, old_order_id: ${currentTakeProfitPosition.tpOrderId}`);
+        console.log(`%c[Update TP] Updating take profit for ${currentTakeProfitPosition.symbol}`, 'color: #3b82f6; font-weight: bold');
+        console.log(`  Old order ID: ${currentTakeProfitPosition.tpOrderId || 'none'}, New price: ${newTPPrice}`);
         const response = await fetch(`/api/accounts/${ACCOUNT_ID}/update-take-profit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1762,26 +1764,26 @@ async function updateTakeProfit() {
 
         const data = await response.json();
 
-        // Log debug info from server
-        if (data._debug) {
-            console.log('[Update TP] Server debug log:');
-            data._debug.forEach(msg => console.log('  ', msg));
+        // Always log debug info from server
+        if (data._debug && data._debug.length > 0) {
+            console.log('%c[Update TP] Server Debug Log:', 'color: #f59e0b; font-weight: bold');
+            console.table(data._debug.map((msg, i) => ({ step: i + 1, message: msg })));
         }
 
         if (response.ok) {
+            console.log('%c[Update TP] SUCCESS', 'color: #22c55e; font-weight: bold');
             showToast(`Take profit set at $${newTPPrice.toFixed(4)}`, 'success');
             document.getElementById('editTakeProfitModal').classList.remove('active');
             currentTakeProfitPosition = null;
-            // Refresh both positions and orders
             await loadPositions();
             loadOrders();
         } else {
-            console.error('[Update TP] Error:', data.error);
-            showToast(data.error || 'Failed to update take profit', 'error');
+            console.error('%c[Update TP] FAILED:', 'color: #ef4444; font-weight: bold', data.error);
+            showToast(`Update TP failed: ${data.error || 'Unknown error'}`, 'error');
         }
     } catch (error) {
-        console.error('[Update TP] Exception:', error);
-        showToast('Failed to update take profit', 'error');
+        console.error('%c[Update TP] EXCEPTION:', 'color: #ef4444; font-weight: bold', error);
+        showToast(`Update TP failed: ${error.message}`, 'error');
     } finally {
         btnText.style.display = 'inline';
         btnLoading.style.display = 'none';
@@ -1797,7 +1799,8 @@ async function removeTakeProfit() {
     removeBtn.textContent = 'Removing...';
 
     try {
-        console.log(`[Remove TP] Removing take profit for ${currentTakeProfitPosition.symbol}, order_id: ${currentTakeProfitPosition.tpOrderId}`);
+        console.log(`%c[Remove TP] Removing take profit for ${currentTakeProfitPosition.symbol}`, 'color: #3b82f6; font-weight: bold');
+        console.log(`  Order ID: ${currentTakeProfitPosition.tpOrderId}`);
         const response = await fetch(`/api/accounts/${ACCOUNT_ID}/cancel-take-profit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1809,26 +1812,26 @@ async function removeTakeProfit() {
 
         const data = await response.json();
 
-        // Log debug info from server
-        if (data._debug) {
-            console.log('[Remove TP] Server debug log:');
-            data._debug.forEach(msg => console.log('  ', msg));
+        // Always log debug info from server
+        if (data._debug && data._debug.length > 0) {
+            console.log('%c[Remove TP] Server Debug Log:', 'color: #f59e0b; font-weight: bold');
+            console.table(data._debug.map((msg, i) => ({ step: i + 1, message: msg })));
         }
 
         if (response.ok) {
+            console.log('%c[Remove TP] SUCCESS', 'color: #22c55e; font-weight: bold');
             showToast('Take profit removed', 'success');
             document.getElementById('editTakeProfitModal').classList.remove('active');
             currentTakeProfitPosition = null;
-            // Refresh both positions and orders
             await loadPositions();
             loadOrders();
         } else {
-            console.error('[Remove TP] Error:', data.error);
-            showToast(data.error || 'Failed to remove take profit', 'error');
+            console.error('%c[Remove TP] FAILED:', 'color: #ef4444; font-weight: bold', data.error);
+            showToast(`Remove TP failed: ${data.error || 'Unknown error'}`, 'error');
         }
     } catch (error) {
-        console.error('[Remove TP] Exception:', error);
-        showToast('Failed to remove take profit', 'error');
+        console.error('%c[Remove TP] EXCEPTION:', 'color: #ef4444; font-weight: bold', error);
+        showToast(`Remove TP failed: ${error.message}`, 'error');
     } finally {
         removeBtn.disabled = false;
         removeBtn.textContent = 'Remove TP';
