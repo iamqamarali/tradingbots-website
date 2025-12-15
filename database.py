@@ -520,6 +520,30 @@ def get_trades(account_id=None, symbol=None, limit=100, offset=0):
         return trades
 
 
+def get_trades_count(account_id=None, symbol=None):
+    """Get total count of trades for pagination."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        query = 'SELECT COUNT(*) as count FROM trades WHERE 1=1'
+        params = []
+
+        if account_id:
+            query += ' AND account_id = ?'
+            params.append(account_id)
+
+        if symbol:
+            query += ' AND symbol = ?'
+            params.append(symbol)
+
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+        conn.close()
+
+        return row['count'] if row else 0
+
+
 def get_trade_stats(account_id=None):
     """Get aggregated trade statistics."""
     with db_lock:

@@ -2734,20 +2734,30 @@ def api_execute_trade(account_id):
 
         debug_log.append(f"Symbol info: price_precision={price_precision}, qty_precision={qty_precision}")
 
+        # Set margin type FIRST (must be done before leverage)
+        debug_log.append(f"Setting margin type to {margin_type}")
+        try:
+            client.futures_change_margin_type(symbol=symbol, marginType=margin_type)
+            debug_log.append(f"Margin type set to {margin_type} successfully")
+        except Exception as e:
+            error_msg = str(e)
+            # "No need to change margin type" means it's already set - this is fine
+            if "No need to change margin type" in error_msg:
+                debug_log.append(f"Margin type already set to {margin_type}")
+            # Position exists - can't change margin type
+            elif "position" in error_msg.lower() or "order" in error_msg.lower():
+                debug_log.append(f"Cannot change margin type: {error_msg}")
+                # Continue anyway - will use current margin type
+            else:
+                debug_log.append(f"Margin type warning: {error_msg}")
+
         # Set leverage
         debug_log.append(f"Setting leverage to {leverage}x")
         try:
             client.futures_change_leverage(symbol=symbol, leverage=leverage)
+            debug_log.append(f"Leverage set to {leverage}x successfully")
         except Exception as e:
             debug_log.append(f"Leverage change warning: {str(e)}")
-
-        # Set margin type
-        debug_log.append(f"Setting margin type to {margin_type}")
-        try:
-            client.futures_change_margin_type(symbol=symbol, marginType=margin_type)
-        except Exception as e:
-            # Margin type might already be set
-            debug_log.append(f"Margin type warning: {str(e)}")
 
         # Get current price to calculate quantity
         ticker = client.futures_symbol_ticker(symbol=symbol)
@@ -2971,7 +2981,7 @@ def api_sync_account_trades(account_id):
                     symbol=symbol,
                     startTime=start_time,
                     endTime=end_time,
-                    limit=1000
+                    limit=100  # Limit to 100 trades per symbol
                 )
 
                 for trade in trades:
@@ -3052,11 +3062,18 @@ def api_get_trades():
     """Get all trades with optional filters."""
     account_id = request.args.get('account_id', None, type=int)
     symbol = request.args.get('symbol', None)
-    limit = request.args.get('limit', 100, type=int)
+    limit = request.args.get('limit', 40, type=int)
     offset = request.args.get('offset', 0, type=int)
-    
+
     trades = db.get_trades(account_id=account_id, symbol=symbol, limit=limit, offset=offset)
-    return jsonify(trades)
+    total = db.get_trades_count(account_id=account_id, symbol=symbol)
+
+    return jsonify({
+        'trades': trades,
+        'total': total,
+        'limit': limit,
+        'offset': offset
+    })
 
 
 @app.route('/api/trades/<int:trade_id>', methods=['DELETE'])

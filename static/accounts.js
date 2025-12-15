@@ -2284,14 +2284,6 @@ function setupTradeModal() {
         });
     });
 
-    // BBO button (Best Bid/Offer)
-    const bboBtn = document.getElementById('bboBtn');
-    bboBtn?.addEventListener('click', () => {
-        if (tradeState.currentPrice > 0) {
-            document.getElementById('tradePrice').value = tradeState.currentPrice.toFixed(2);
-        }
-    });
-
     // Size slider
     const sizeSlider = document.getElementById('tradeSizeSlider');
     const sizeInput = document.getElementById('tradeSize');
