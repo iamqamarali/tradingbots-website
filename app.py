@@ -1044,6 +1044,15 @@ def account_detail_page(account_id):
     return render_template('account_detail.html', account_id=account_id, active_page='accounts')
 
 
+@app.route('/accounts/<int:account_id>/stats')
+def account_stats_page(account_id):
+    """Render the account stats page."""
+    account = db.get_account(account_id)
+    if not account:
+        return "Account not found", 404
+    return render_template('account_stats.html', account_id=account_id, active_page='accounts')
+
+
 # ==================== ACCOUNTS API ====================
 
 @app.route('/api/accounts', methods=['GET'])
@@ -3105,6 +3114,48 @@ def api_get_equity_curve(account_id):
         'starting_balance': starting_balance,
         'current_balance': account.get('current_balance', starting_balance + cumulative_pnl)
     })
+
+
+@app.route('/api/accounts/<int:account_id>/symbol-pnl', methods=['GET'])
+def api_get_symbol_pnl(account_id):
+    """Get PnL breakdown by symbol for an account."""
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    # Get all trades for this account
+    trades = db.get_trades(account_id=account_id, limit=10000)
+
+    if not trades:
+        return jsonify({'symbols': []})
+
+    # Aggregate PnL by symbol
+    symbol_data = {}
+    for trade in trades:
+        symbol = trade.get('symbol', 'UNKNOWN')
+        pnl = trade.get('realized_pnl', 0) or 0
+        commission = trade.get('commission', 0) or 0
+        net_pnl = pnl - commission
+
+        if symbol not in symbol_data:
+            symbol_data[symbol] = {'pnl': 0, 'trades': 0, 'volume': 0}
+
+        symbol_data[symbol]['pnl'] += net_pnl
+        symbol_data[symbol]['trades'] += 1
+        symbol_data[symbol]['volume'] += abs(trade.get('qty', 0) * trade.get('price', 0))
+
+    # Convert to list
+    symbols = [
+        {
+            'symbol': symbol,
+            'pnl': round(data['pnl'], 2),
+            'trades': data['trades'],
+            'volume': round(data['volume'], 2)
+        }
+        for symbol, data in symbol_data.items()
+    ]
+
+    return jsonify({'symbols': symbols})
 
 
 _cleanup_done = False

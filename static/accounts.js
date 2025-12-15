@@ -448,7 +448,6 @@ function initDetailPage() {
     loadOrders();
     loadTrades();
     loadStats();
-    loadEquityCurve();
     setupDetailPageEventListeners();
     setupClosePositionModal();
     setupEditStopLossModal();
