@@ -1179,33 +1179,40 @@ def api_get_account_positions(account_id):
         tp_orders_map = {}  # Track take-profit orders separately
         
         for order in all_open_orders:
-            symbol = order['symbol']
+            symbol = order.get('symbol')
+            order_id = order.get('orderId')
+            order_side = order.get('side')
             order_type = order.get('type', '')
             stop_price = float(order.get('stopPrice', 0)) if order.get('stopPrice') else 0
-            
+
+            # Skip orders with missing required fields
+            if not symbol or not order_id or not order_side:
+                print(f"  Warning: Skipping order with missing fields: {order}")
+                continue
+
             # Check for stop-loss orders
             if order_type in stop_order_types:
                 if symbol not in stop_orders_map:
                     stop_orders_map[symbol] = []
                 stop_orders_map[symbol].append({
-                    'order_id': order['orderId'],
+                    'order_id': order_id,
                     'type': order_type,
-                    'side': order['side'],
+                    'side': order_side,
                     'stop_price': stop_price,
                     'quantity': float(order.get('origQty', 0)),
                     'status': order.get('status', ''),
                     'activation_price': float(order.get('activatePrice', 0)) if order.get('activatePrice') else None
                 })
                 print(f"  Found stop order for {symbol}: {order_type} @ {stop_price}")
-            
+
             # Also track take-profit orders
             elif order_type in ['TAKE_PROFIT_MARKET', 'TAKE_PROFIT']:
                 if symbol not in tp_orders_map:
                     tp_orders_map[symbol] = []
                 tp_orders_map[symbol].append({
-                    'order_id': order['orderId'],
+                    'order_id': order_id,
                     'type': order_type,
-                    'side': order['side'],
+                    'side': order_side,
                     'stop_price': stop_price,
                     'quantity': float(order.get('origQty', 0)),
                     'status': order.get('status', '')
@@ -1215,54 +1222,62 @@ def api_get_account_positions(account_id):
         open_positions = []
 
         for pos in positions:
-            amt = float(pos['positionAmt'])
-            if amt != 0:
-                entry_price = float(pos['entryPrice'])
-                mark_price = float(pos['markPrice'])
-                unrealized_pnl = float(pos['unRealizedProfit'])
-                symbol = pos['symbol']
-                side = 'LONG' if amt > 0 else 'SHORT'
+            try:
+                amt = float(pos.get('positionAmt', 0))
+                if amt != 0:
+                    symbol = pos.get('symbol')
+                    if not symbol:
+                        print(f"  Warning: Skipping position with missing symbol: {pos}")
+                        continue
 
-                # Find stop-loss for this position
-                # For LONG, stop-loss is a SELL order; for SHORT, it's a BUY order
-                stop_price = None
-                stop_order_id = None
-                stop_type = None
-                stop_orders = stop_orders_map.get(symbol, [])
-                for stop in stop_orders:
-                    # LONG position needs SELL stop, SHORT position needs BUY stop
-                    if (side == 'LONG' and stop['side'] == 'SELL') or (side == 'SHORT' and stop['side'] == 'BUY'):
-                        stop_price = stop['stop_price']
-                        stop_order_id = stop['order_id']
-                        stop_type = stop['type']
-                        break
-                
-                # Find take-profit for this position
-                tp_price = None
-                tp_order_id = None
-                tp_orders = tp_orders_map.get(symbol, [])
-                for tp in tp_orders:
-                    # LONG position needs SELL TP, SHORT position needs BUY TP
-                    if (side == 'LONG' and tp['side'] == 'SELL') or (side == 'SHORT' and tp['side'] == 'BUY'):
-                        tp_price = tp['stop_price']
-                        tp_order_id = tp['order_id']
-                        break
+                    entry_price = float(pos.get('entryPrice', 0))
+                    mark_price = float(pos.get('markPrice', 0))
+                    unrealized_pnl = float(pos.get('unRealizedProfit', 0))
+                    side = 'LONG' if amt > 0 else 'SHORT'
 
-                print(f"  Open position: {symbol} {side} amt={amt} pnl={unrealized_pnl} SL={stop_price} TP={tp_price}")
-                open_positions.append({
-                    'symbol': symbol,
-                    'side': side,
-                    'quantity': abs(amt),
-                    'entry_price': entry_price,
-                    'mark_price': mark_price,
-                    'unrealized_pnl': round(unrealized_pnl, 2),
-                    'leverage': int(pos.get('leverage', 5)),
-                    'stop_price': stop_price,
-                    'stop_order_id': stop_order_id,
-                    'stop_type': stop_type,
-                    'tp_price': tp_price,
-                    'tp_order_id': tp_order_id
-                })
+                    # Find stop-loss for this position
+                    # For LONG, stop-loss is a SELL order; for SHORT, it's a BUY order
+                    stop_price = None
+                    stop_order_id = None
+                    stop_type = None
+                    stop_orders = stop_orders_map.get(symbol, [])
+                    for stop in stop_orders:
+                        # LONG position needs SELL stop, SHORT position needs BUY stop
+                        if (side == 'LONG' and stop.get('side') == 'SELL') or (side == 'SHORT' and stop.get('side') == 'BUY'):
+                            stop_price = stop.get('stop_price')
+                            stop_order_id = stop.get('order_id')
+                            stop_type = stop.get('type')
+                            break
+
+                    # Find take-profit for this position
+                    tp_price = None
+                    tp_order_id = None
+                    tp_orders = tp_orders_map.get(symbol, [])
+                    for tp in tp_orders:
+                        # LONG position needs SELL TP, SHORT position needs BUY TP
+                        if (side == 'LONG' and tp.get('side') == 'SELL') or (side == 'SHORT' and tp.get('side') == 'BUY'):
+                            tp_price = tp.get('stop_price')
+                            tp_order_id = tp.get('order_id')
+                            break
+
+                    print(f"  Open position: {symbol} {side} amt={amt} pnl={unrealized_pnl} SL={stop_price} TP={tp_price}")
+                    open_positions.append({
+                        'symbol': symbol,
+                        'side': side,
+                        'quantity': abs(amt),
+                        'entry_price': entry_price,
+                        'mark_price': mark_price,
+                        'unrealized_pnl': round(unrealized_pnl, 2),
+                        'leverage': int(pos.get('leverage', 5)),
+                        'stop_price': stop_price,
+                        'stop_order_id': stop_order_id,
+                        'stop_type': stop_type,
+                        'tp_price': tp_price,
+                        'tp_order_id': tp_order_id
+                    })
+            except (ValueError, TypeError) as e:
+                print(f"  Warning: Error processing position {pos}: {e}")
+                continue
 
         print(f"Returning {len(open_positions)} open positions")
         return jsonify(open_positions)
@@ -1298,11 +1313,21 @@ def api_get_account_orders(account_id):
 
         orders = []
         for order in all_orders:
+            order_id = order.get('orderId')
+            symbol = order.get('symbol')
+            side = order.get('side')
+            order_type = order.get('type')
+
+            # Skip orders with missing required fields
+            if not order_id or not symbol or not side or not order_type:
+                print(f"  Warning: Skipping order with missing fields: {order}")
+                continue
+
             orders.append({
-                'order_id': order['orderId'],
-                'symbol': order['symbol'],
-                'side': order['side'],
-                'type': order['type'],
+                'order_id': order_id,
+                'symbol': symbol,
+                'side': side,
+                'type': order_type,
                 'quantity': float(order.get('origQty', 0)),
                 'price': float(order.get('price', 0)),
                 'stop_price': float(order.get('stopPrice', 0)) if order.get('stopPrice') else None,
@@ -1319,11 +1344,16 @@ def api_get_account_orders(account_id):
     except BinanceAPIException as e:
         print(f"BinanceAPIException: {e}")
         return jsonify({'error': f'Binance error: {e.message}'}), 500
+    except KeyError as e:
+        print(f"KeyError accessing order data: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Missing field in order data: {e}'}), 500
     except Exception as e:
         print(f"Exception: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 
 @app.route('/api/accounts/<int:account_id>/orders/<int:order_id>', methods=['DELETE'])
@@ -1410,17 +1440,24 @@ def api_get_all_positions():
             tp_orders_map = {}
 
             for order in all_open_orders:
-                symbol = order['symbol']
+                symbol = order.get('symbol')
+                order_id = order.get('orderId')
+                order_side = order.get('side')
                 order_type = order.get('type', '')
                 stop_price = float(order.get('stopPrice', 0)) if order.get('stopPrice') else 0
+
+                # Skip orders with missing required fields
+                if not symbol or not order_id or not order_side:
+                    print(f"  Warning: Skipping order with missing fields: {order}")
+                    continue
 
                 if order_type in stop_order_types:
                     if symbol not in stop_orders_map:
                         stop_orders_map[symbol] = []
                     stop_orders_map[symbol].append({
-                        'order_id': order['orderId'],
+                        'order_id': order_id,
                         'type': order_type,
-                        'side': order['side'],
+                        'side': order_side,
                         'stop_price': stop_price,
                         'quantity': float(order.get('origQty', 0))
                     })
@@ -1428,59 +1465,67 @@ def api_get_all_positions():
                     if symbol not in tp_orders_map:
                         tp_orders_map[symbol] = []
                     tp_orders_map[symbol].append({
-                        'order_id': order['orderId'],
+                        'order_id': order_id,
                         'type': order_type,
-                        'side': order['side'],
+                        'side': order_side,
                         'stop_price': stop_price,
                         'quantity': float(order.get('origQty', 0))
                     })
 
             for pos in positions:
-                amt = float(pos['positionAmt'])
-                if amt != 0:
-                    entry_price = float(pos['entryPrice'])
-                    mark_price = float(pos['markPrice'])
-                    unrealized_pnl = float(pos['unRealizedProfit'])
-                    symbol = pos['symbol']
-                    side = 'LONG' if amt > 0 else 'SHORT'
+                try:
+                    amt = float(pos.get('positionAmt', 0))
+                    if amt != 0:
+                        symbol = pos.get('symbol')
+                        if not symbol:
+                            print(f"  Warning: Skipping position with missing symbol: {pos}")
+                            continue
 
-                    # Find stop-loss
-                    stop_price = None
-                    stop_order_id = None
-                    stop_type = None
-                    for stop in stop_orders_map.get(symbol, []):
-                        if (side == 'LONG' and stop['side'] == 'SELL') or (side == 'SHORT' and stop['side'] == 'BUY'):
-                            stop_price = stop['stop_price']
-                            stop_order_id = stop['order_id']
-                            stop_type = stop['type']
-                            break
+                        entry_price = float(pos.get('entryPrice', 0))
+                        mark_price = float(pos.get('markPrice', 0))
+                        unrealized_pnl = float(pos.get('unRealizedProfit', 0))
+                        side = 'LONG' if amt > 0 else 'SHORT'
 
-                    # Find take-profit
-                    tp_price = None
-                    tp_order_id = None
-                    for tp in tp_orders_map.get(symbol, []):
-                        if (side == 'LONG' and tp['side'] == 'SELL') or (side == 'SHORT' and tp['side'] == 'BUY'):
-                            tp_price = tp['stop_price']
-                            tp_order_id = tp['order_id']
-                            break
+                        # Find stop-loss
+                        stop_price = None
+                        stop_order_id = None
+                        stop_type = None
+                        for stop in stop_orders_map.get(symbol, []):
+                            if (side == 'LONG' and stop.get('side') == 'SELL') or (side == 'SHORT' and stop.get('side') == 'BUY'):
+                                stop_price = stop.get('stop_price')
+                                stop_order_id = stop.get('order_id')
+                                stop_type = stop.get('type')
+                                break
 
-                    all_positions.append({
-                        'account_id': account_id,
-                        'account_name': account_name,
-                        'is_testnet': account['is_testnet'],
-                        'symbol': symbol,
-                        'side': side,
-                        'quantity': abs(amt),
-                        'entry_price': entry_price,
-                        'mark_price': mark_price,
-                        'unrealized_pnl': round(unrealized_pnl, 2),
-                        'leverage': int(pos.get('leverage', 5)),
-                        'stop_price': stop_price,
-                        'stop_order_id': stop_order_id,
-                        'stop_type': stop_type,
-                        'tp_price': tp_price,
-                        'tp_order_id': tp_order_id
-                    })
+                        # Find take-profit
+                        tp_price = None
+                        tp_order_id = None
+                        for tp in tp_orders_map.get(symbol, []):
+                            if (side == 'LONG' and tp.get('side') == 'SELL') or (side == 'SHORT' and tp.get('side') == 'BUY'):
+                                tp_price = tp.get('stop_price')
+                                tp_order_id = tp.get('order_id')
+                                break
+
+                        all_positions.append({
+                            'account_id': account_id,
+                            'account_name': account_name,
+                            'is_testnet': account['is_testnet'],
+                            'symbol': symbol,
+                            'side': side,
+                            'quantity': abs(amt),
+                            'entry_price': entry_price,
+                            'mark_price': mark_price,
+                            'unrealized_pnl': round(unrealized_pnl, 2),
+                            'leverage': int(pos.get('leverage', 5)),
+                            'stop_price': stop_price,
+                            'stop_order_id': stop_order_id,
+                            'stop_type': stop_type,
+                            'tp_price': tp_price,
+                            'tp_order_id': tp_order_id
+                        })
+                except (ValueError, TypeError) as e:
+                    print(f"  Warning: Error processing position {pos}: {e}")
+                    continue
 
         except BinanceAPIException as e:
             print(f"BinanceAPIException for {account_name}: {e}")
@@ -1518,22 +1563,29 @@ def api_close_all_positions(account_id):
         errors = []
         
         for pos in positions:
-            amt = float(pos['positionAmt'])
-            if amt != 0:
-                symbol = pos['symbol']
-                try:
-                    # Close by placing opposite market order
-                    side = 'SELL' if amt > 0 else 'BUY'
-                    client.futures_create_order(
-                        symbol=symbol,
-                        side=side,
-                        type='MARKET',
-                        quantity=abs(amt),
-                        reduceOnly='true'
-                    )
-                    closed.append(symbol)
-                except Exception as e:
-                    errors.append(f'{symbol}: {str(e)}')
+            try:
+                amt = float(pos.get('positionAmt', 0))
+                if amt != 0:
+                    symbol = pos.get('symbol')
+                    if not symbol:
+                        print(f"  Warning: Skipping position with missing symbol: {pos}")
+                        continue
+                    try:
+                        # Close by placing opposite market order
+                        side = 'SELL' if amt > 0 else 'BUY'
+                        client.futures_create_order(
+                            symbol=symbol,
+                            side=side,
+                            type='MARKET',
+                            quantity=abs(amt),
+                            reduceOnly='true'
+                        )
+                        closed.append(symbol)
+                    except Exception as e:
+                        errors.append(f'{symbol}: {str(e)}')
+            except (ValueError, TypeError) as e:
+                print(f"  Warning: Error processing position {pos}: {e}")
+                continue
 
         return jsonify({
             'success': True,
@@ -1618,22 +1670,37 @@ def api_close_position(account_id):
             reduceOnly='true'
         )
 
+        # Log the full response for debugging
+        print(f"  Binance order response: {order}")
+
+        order_id = order.get('orderId')
+        if not order_id:
+            print(f"  ERROR: No orderId in response. Full response: {order}")
+            return jsonify({'error': 'Binance returned order without orderId'}), 500
+
         return jsonify({
             'success': True,
             'order': {
-                'orderId': order['orderId'],
-                'symbol': order['symbol'],
-                'side': order['side'],
-                'quantity': order['origQty'],
-                'status': order['status']
+                'orderId': order_id,
+                'symbol': order.get('symbol', symbol),
+                'side': order.get('side', close_side),
+                'quantity': order.get('origQty', quantity),
+                'status': order.get('status', 'NEW')
             }
         })
     except BinanceAPIException as e:
         print(f"BinanceAPIException closing position: {e}")
         return jsonify({'error': f'Binance error: {e.message}'}), 500
+    except KeyError as e:
+        print(f"KeyError accessing order response: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Missing field in Binance response: {e}'}), 500
     except Exception as e:
         print(f"Exception closing position: {e}")
-        return jsonify({'error': str(e)}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 
 @app.route('/api/accounts/<int:account_id>/add-to-position', methods=['POST'])
@@ -1702,22 +1769,37 @@ def api_add_to_position(account_id):
             quantity=quantity
         )
 
+        # Log the full response for debugging
+        print(f"  Binance order response: {order}")
+
+        order_id = order.get('orderId')
+        if not order_id:
+            print(f"  ERROR: No orderId in response. Full response: {order}")
+            return jsonify({'error': 'Binance returned order without orderId'}), 500
+
         return jsonify({
             'success': True,
             'order': {
-                'orderId': order['orderId'],
-                'symbol': order['symbol'],
-                'side': order['side'],
-                'quantity': order['origQty'],
-                'status': order['status']
+                'orderId': order_id,
+                'symbol': order.get('symbol', symbol),
+                'side': order.get('side', add_side),
+                'quantity': order.get('origQty', quantity),
+                'status': order.get('status', 'NEW')
             }
         })
     except BinanceAPIException as e:
         print(f"BinanceAPIException adding to position: {e}")
         return jsonify({'error': f'Binance error: {e.message}'}), 500
+    except KeyError as e:
+        print(f"KeyError accessing order response: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Missing field in Binance response: {e}'}), 500
     except Exception as e:
         print(f"Exception adding to position: {e}")
-        return jsonify({'error': str(e)}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 
 @app.route('/api/accounts/<int:account_id>/update-stop-loss', methods=['POST'])
@@ -1792,26 +1874,40 @@ def api_update_stop_loss(account_id):
             closePosition='true'
         )
 
-        print(f"  Stop-loss order created: {order['orderId']}")
+        # Log the full response for debugging
+        print(f"  Binance order response: {order}")
+
+        # Get orderId safely
+        order_id = order.get('orderId')
+        if not order_id:
+            print(f"  ERROR: No orderId in response. Full response: {order}")
+            return jsonify({'error': 'Binance returned order without orderId'}), 500
+
+        print(f"  Stop-loss order created: {order_id}")
         return jsonify({
             'success': True,
             'order': {
-                'orderId': order['orderId'],
-                'symbol': order['symbol'],
-                'side': order['side'],
+                'orderId': order_id,
+                'symbol': order.get('symbol', symbol),
+                'side': order.get('side', order_side),
                 'stopPrice': stop_price,
                 'closePosition': True,
-                'status': order['status']
+                'status': order.get('status', 'NEW')
             }
         })
     except BinanceAPIException as e:
         print(f"BinanceAPIException: {e}")
         return jsonify({'error': f'Binance error: {e.message}'}), 500
+    except KeyError as e:
+        print(f"KeyError accessing order response: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Missing field in Binance response: {e}'}), 500
     except Exception as e:
         print(f"Exception: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 
 @app.route('/api/accounts/<int:account_id>/cancel-stop-loss', methods=['POST'])
@@ -1925,26 +2021,40 @@ def api_update_take_profit(account_id):
             closePosition='true'
         )
 
-        print(f"  Take-profit order created: {order['orderId']}")
+        # Log the full response for debugging
+        print(f"  Binance order response: {order}")
+
+        # Get orderId safely
+        order_id = order.get('orderId')
+        if not order_id:
+            print(f"  ERROR: No orderId in response. Full response: {order}")
+            return jsonify({'error': 'Binance returned order without orderId'}), 500
+
+        print(f"  Take-profit order created: {order_id}")
         return jsonify({
             'success': True,
             'order': {
-                'orderId': order['orderId'],
-                'symbol': order['symbol'],
-                'side': order['side'],
+                'orderId': order_id,
+                'symbol': order.get('symbol', symbol),
+                'side': order.get('side', order_side),
                 'stopPrice': tp_price,
                 'closePosition': True,
-                'status': order['status']
+                'status': order.get('status', 'NEW')
             }
         })
     except BinanceAPIException as e:
         print(f"BinanceAPIException: {e}")
         return jsonify({'error': f'Binance error: {e.message}'}), 500
+    except KeyError as e:
+        print(f"KeyError accessing order response: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Missing field in Binance response: {e}'}), 500
     except Exception as e:
         print(f"Exception: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 
 @app.route('/api/accounts/<int:account_id>/cancel-take-profit', methods=['POST'])
@@ -2052,11 +2162,17 @@ def api_sync_account_trades(account_id):
         try:
             positions = client.futures_position_information()
             for pos in positions:
-                amt = float(pos['positionAmt'])
-                if amt != 0:
-                    symbols_to_sync.add(pos['symbol'])
-                    unrealized_pnl += float(pos['unRealizedProfit'])
-                    print(f"  Found open position in {pos['symbol']}")
+                try:
+                    amt = float(pos.get('positionAmt', 0))
+                    if amt != 0:
+                        symbol = pos.get('symbol')
+                        if symbol:
+                            symbols_to_sync.add(symbol)
+                            unrealized_pnl += float(pos.get('unRealizedProfit', 0))
+                            print(f"  Found open position in {symbol}")
+                except (ValueError, TypeError) as e:
+                    print(f"  Warning: Error processing position {pos}: {e}")
+                    continue
         except Exception as e:
             print(f"Warning: Could not fetch positions: {e}")
 
@@ -2086,23 +2202,37 @@ def api_sync_account_trades(account_id):
                 for trade in trades:
                     total_checked += 1
 
-                    # Insert trade (will skip if already exists based on exchange_trade_id)
-                    inserted = db.insert_trade(
-                        account_id=account_id,
-                        exchange_trade_id=trade['id'],
-                        order_id=trade['orderId'],
-                        symbol=trade['symbol'],
-                        side=trade['side'],
-                        quantity=float(trade['qty']),
-                        price=float(trade['price']),
-                        realized_pnl=float(trade['realizedPnl']),
-                        commission=float(trade['commission']),
-                        commission_asset=trade['commissionAsset'],
-                        trade_time=datetime.fromtimestamp(trade['time'] / 1000).isoformat()
-                    )
+                    try:
+                        # Get required fields safely
+                        trade_id = trade.get('id')
+                        order_id = trade.get('orderId')
+                        trade_symbol = trade.get('symbol')
+                        trade_side = trade.get('side')
 
-                    if inserted:
-                        new_trades += 1
+                        if not trade_id or not trade_symbol:
+                            print(f"  Warning: Skipping trade with missing fields: {trade}")
+                            continue
+
+                        # Insert trade (will skip if already exists based on exchange_trade_id)
+                        inserted = db.insert_trade(
+                            account_id=account_id,
+                            exchange_trade_id=trade_id,
+                            order_id=order_id,
+                            symbol=trade_symbol,
+                            side=trade_side or 'UNKNOWN',
+                            quantity=float(trade.get('qty', 0)),
+                            price=float(trade.get('price', 0)),
+                            realized_pnl=float(trade.get('realizedPnl', 0)),
+                            commission=float(trade.get('commission', 0)),
+                            commission_asset=trade.get('commissionAsset', ''),
+                            trade_time=datetime.fromtimestamp(trade.get('time', 0) / 1000).isoformat() if trade.get('time') else None
+                        )
+
+                        if inserted:
+                            new_trades += 1
+                    except (ValueError, TypeError, KeyError) as e:
+                        print(f"  Warning: Error processing trade {trade}: {e}")
+                        continue
 
             except BinanceAPIException as e:
                 if 'Invalid symbol' not in str(e):
@@ -2202,7 +2332,7 @@ def api_get_equity_curve(account_id):
         })
 
     # Sort trades by trade_time
-    trades.sort(key=lambda t: t['trade_time'])
+    trades.sort(key=lambda t: t.get('trade_time', ''))
 
     # Build equity curve - cumulative PnL over time
     equity_data = []
@@ -2215,11 +2345,11 @@ def api_get_equity_curve(account_id):
         cumulative_pnl += net_pnl
 
         equity_data.append({
-            'timestamp': trade['trade_time'],
+            'timestamp': trade.get('trade_time'),
             'pnl': round(cumulative_pnl, 2),
             'balance': round(starting_balance + cumulative_pnl, 2),
             'trade_pnl': round(net_pnl, 2),
-            'symbol': trade['symbol']
+            'symbol': trade.get('symbol', '')
         })
 
     return jsonify({
