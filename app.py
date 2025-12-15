@@ -3086,6 +3086,82 @@ def api_get_trade_stats():
     })
 
 
+@app.route('/api/accounts/<int:account_id>/stats', methods=['GET'])
+def api_get_account_stats(account_id):
+    """Get trade statistics for a specific account."""
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    stats = db.get_trade_stats(account_id=account_id)
+    if stats:
+        # Add streak information
+        trades = db.get_trades(account_id=account_id, limit=10000)
+        if trades:
+            # Sort by trade time
+            trades.sort(key=lambda t: t.get('trade_time', ''))
+
+            # Calculate streaks
+            current_streak = 0
+            max_win_streak = 0
+            max_loss_streak = 0
+            temp_win_streak = 0
+            temp_loss_streak = 0
+
+            for trade in trades:
+                pnl = trade.get('realized_pnl', 0) or 0
+                if pnl > 0:
+                    temp_win_streak += 1
+                    temp_loss_streak = 0
+                    if temp_win_streak > max_win_streak:
+                        max_win_streak = temp_win_streak
+                elif pnl < 0:
+                    temp_loss_streak += 1
+                    temp_win_streak = 0
+                    if temp_loss_streak > max_loss_streak:
+                        max_loss_streak = temp_loss_streak
+
+            # Current streak (positive for wins, negative for losses)
+            if temp_win_streak > 0:
+                current_streak = temp_win_streak
+            elif temp_loss_streak > 0:
+                current_streak = -temp_loss_streak
+
+            stats['current_streak'] = current_streak
+            stats['max_win_streak'] = max_win_streak
+            stats['max_loss_streak'] = max_loss_streak
+        else:
+            stats['current_streak'] = 0
+            stats['max_win_streak'] = 0
+            stats['max_loss_streak'] = 0
+
+        # Add total fees as alias for total_commission
+        stats['total_fees'] = stats.get('total_commission', 0)
+
+        return jsonify(stats)
+
+    return jsonify({
+        'total_trades': 0,
+        'symbols_traded': 0,
+        'winning_trades': 0,
+        'losing_trades': 0,
+        'breakeven_trades': 0,
+        'win_rate': 0,
+        'total_pnl': 0,
+        'total_commission': 0,
+        'total_fees': 0,
+        'total_volume': 0,
+        'avg_win': 0,
+        'avg_loss': 0,
+        'largest_win': 0,
+        'largest_loss': 0,
+        'profit_factor': 0,
+        'current_streak': 0,
+        'max_win_streak': 0,
+        'max_loss_streak': 0
+    })
+
+
 @app.route('/api/accounts/<int:account_id>/equity-curve', methods=['GET'])
 def api_get_equity_curve(account_id):
     """Get equity curve data for an account based on trade history."""
