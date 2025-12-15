@@ -894,22 +894,30 @@ function setupSectionTabs() {
     });
 }
 
-async function loadTrades() {
+async function loadTrades(page = 1) {
     const loading = document.getElementById('tradesLoading');
     const table = document.getElementById('tradesTable');
     const empty = document.getElementById('emptyTrades');
     const tbody = document.getElementById('tradesBody');
-    
+    const pagination = document.getElementById('tradesPagination');
+
+    tradesPage = page;
+    const offset = (page - 1) * tradesPerPage;
+
     if (loading) loading.style.display = 'flex';
     if (table) table.style.display = 'none';
     if (empty) empty.style.display = 'none';
-    
+    if (pagination) pagination.style.display = 'none';
+
     try {
-        const response = await fetch(`/api/trades?account_id=${ACCOUNT_ID}&limit=20`);
-        const trades = await response.json();
-        
+        const response = await fetch(`/api/trades?account_id=${ACCOUNT_ID}&limit=${tradesPerPage}&offset=${offset}`);
+        const data = await response.json();
+
         if (loading) loading.style.display = 'none';
-        
+
+        const trades = data.trades || [];
+        totalTrades = data.total || 0;
+
         if (trades.length > 0) {
             if (table) table.style.display = 'table';
 
@@ -941,6 +949,9 @@ async function loadTrades() {
                     </tr>
                 `;
             }).join('');
+
+            // Update pagination
+            updateTradesPagination();
         } else {
             if (empty) empty.style.display = 'flex';
         }
@@ -948,6 +959,57 @@ async function loadTrades() {
         console.error('Error loading trades:', error);
         if (loading) loading.style.display = 'none';
         if (empty) empty.style.display = 'flex';
+    }
+}
+
+function updateTradesPagination() {
+    const pagination = document.getElementById('tradesPagination');
+    const prevBtn = document.getElementById('prevPageBtn');
+    const nextBtn = document.getElementById('nextPageBtn');
+    const info = document.getElementById('paginationInfo');
+
+    const totalPages = Math.ceil(totalTrades / tradesPerPage);
+
+    if (totalPages <= 1) {
+        if (pagination) pagination.style.display = 'none';
+        return;
+    }
+
+    if (pagination) pagination.style.display = 'flex';
+
+    // Update info text
+    if (info) {
+        info.textContent = `Page ${tradesPage} of ${totalPages} (${totalTrades} trades)`;
+    }
+
+    // Update button states
+    if (prevBtn) {
+        prevBtn.disabled = tradesPage <= 1;
+    }
+    if (nextBtn) {
+        nextBtn.disabled = tradesPage >= totalPages;
+    }
+}
+
+function setupTradesPagination() {
+    const prevBtn = document.getElementById('prevPageBtn');
+    const nextBtn = document.getElementById('nextPageBtn');
+
+    if (prevBtn) {
+        prevBtn.addEventListener('click', () => {
+            if (tradesPage > 1) {
+                loadTrades(tradesPage - 1);
+            }
+        });
+    }
+
+    if (nextBtn) {
+        nextBtn.addEventListener('click', () => {
+            const totalPages = Math.ceil(totalTrades / tradesPerPage);
+            if (tradesPage < totalPages) {
+                loadTrades(tradesPage + 1);
+            }
+        });
     }
 }
 
