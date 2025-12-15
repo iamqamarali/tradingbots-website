@@ -2596,6 +2596,221 @@ def api_cancel_take_profit(account_id):
         return jsonify({'error': error_msg, '_debug': debug_log}), 500
 
 
+@app.route('/api/ticker/<symbol>', methods=['GET'])
+def api_get_ticker(symbol):
+    """Get current price for a symbol."""
+    if not BINANCE_AVAILABLE:
+        return jsonify({'error': 'Binance API not available'}), 500
+
+    try:
+        # Use testnet or mainnet based on first account (or default to mainnet)
+        accounts = db.get_all_accounts()
+        use_testnet = accounts[0]['is_testnet'] if accounts else False
+
+        if use_testnet:
+            base_url = 'https://testnet.binancefuture.com'
+        else:
+            base_url = 'https://fapi.binance.com'
+
+        # Get ticker price
+        response = requests.get(f'{base_url}/fapi/v1/ticker/price', params={'symbol': symbol}, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            return jsonify({'symbol': symbol, 'price': data.get('price', '0')})
+        else:
+            return jsonify({'error': f'Failed to get price: {response.text}'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/accounts/<int:account_id>/trade', methods=['POST'])
+def api_execute_trade(account_id):
+    """Execute a new trade (market/limit/stop order)."""
+    print(f"=== EXECUTE TRADE for account_id: {account_id} ===")
+
+    if not BINANCE_AVAILABLE:
+        return jsonify({'error': 'Binance API not available'}), 500
+
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    data = request.get_json()
+    symbol = data.get('symbol')
+    side = data.get('side')  # BUY or SELL
+    order_type = data.get('order_type', 'LIMIT')  # LIMIT, MARKET, STOP
+    price = data.get('price')
+    stop_price = data.get('stop_price')
+    quantity = data.get('quantity')  # In USDC (notional value)
+    leverage = data.get('leverage', 5)
+    margin_type = data.get('margin_type', 'CROSSED')
+    reduce_only = data.get('reduce_only', False)
+    time_in_force = data.get('time_in_force', 'GTC')
+    tp_price = data.get('tp_price')
+    sl_price = data.get('sl_price')
+
+    print(f"  Symbol: {symbol}, Side: {side}, Type: {order_type}")
+    print(f"  Price: {price}, Quantity (USDC): {quantity}, Leverage: {leverage}x")
+
+    debug_log = []
+
+    if not symbol or not side or not quantity:
+        return jsonify({'error': 'Missing required parameters'}), 400
+
+    try:
+        client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
+        if account['is_testnet']:
+            client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+
+        # Get symbol info for precision
+        exchange_info = client.futures_exchange_info()
+        symbol_info = None
+        for s in exchange_info['symbols']:
+            if s['symbol'] == symbol:
+                symbol_info = s
+                break
+
+        if not symbol_info:
+            return jsonify({'error': f'Symbol {symbol} not found'}), 400
+
+        # Get price and quantity precision
+        price_precision = 2
+        qty_precision = 3
+        for f in symbol_info.get('filters', []):
+            if f['filterType'] == 'PRICE_FILTER':
+                tick_size = float(f['tickSize'])
+                if tick_size >= 1:
+                    price_precision = 0
+                else:
+                    price_precision = int(round(-math.log10(tick_size)))
+            if f['filterType'] == 'LOT_SIZE':
+                step_size = float(f['stepSize'])
+                if step_size >= 1:
+                    qty_precision = 0
+                else:
+                    qty_precision = int(round(-math.log10(step_size)))
+
+        debug_log.append(f"Symbol info: price_precision={price_precision}, qty_precision={qty_precision}")
+
+        # Set leverage
+        debug_log.append(f"Setting leverage to {leverage}x")
+        try:
+            client.futures_change_leverage(symbol=symbol, leverage=leverage)
+        except Exception as e:
+            debug_log.append(f"Leverage change warning: {str(e)}")
+
+        # Set margin type
+        debug_log.append(f"Setting margin type to {margin_type}")
+        try:
+            client.futures_change_margin_type(symbol=symbol, marginType=margin_type)
+        except Exception as e:
+            # Margin type might already be set
+            debug_log.append(f"Margin type warning: {str(e)}")
+
+        # Get current price to calculate quantity
+        ticker = client.futures_symbol_ticker(symbol=symbol)
+        current_price = float(ticker['price'])
+        debug_log.append(f"Current price: {current_price}")
+
+        # Convert USDC notional to quantity (contracts)
+        # quantity_in_contracts = notional_value / price
+        use_price = float(price) if price and order_type != 'MARKET' else current_price
+        qty_in_contracts = float(quantity) / use_price
+        qty_in_contracts = round(qty_in_contracts, qty_precision)
+
+        debug_log.append(f"Quantity in contracts: {qty_in_contracts}")
+
+        # Build order parameters
+        order_params = {
+            'symbol': symbol,
+            'side': side,
+            'quantity': qty_in_contracts,
+        }
+
+        if order_type == 'MARKET':
+            order_params['type'] = 'MARKET'
+        elif order_type == 'LIMIT':
+            order_params['type'] = 'LIMIT'
+            order_params['price'] = round(float(price), price_precision)
+            order_params['timeInForce'] = time_in_force
+        elif order_type == 'STOP':
+            order_params['type'] = 'STOP'
+            order_params['price'] = round(float(price), price_precision)
+            order_params['stopPrice'] = round(float(stop_price), price_precision)
+            order_params['timeInForce'] = time_in_force
+
+        if reduce_only:
+            order_params['reduceOnly'] = 'true'
+
+        debug_log.append(f"Order params: {order_params}")
+
+        # Execute order
+        print(f"  Executing order: {order_params}")
+        order = client.futures_create_order(**order_params)
+
+        order_id = order.get('orderId') or order.get('algoId')
+        debug_log.append(f"Order created: {order_id}")
+        print(f"  Order created: {order_id}")
+
+        # Create TP/SL if specified
+        # TP uses LIMIT order with reduceOnly (sits in order book, executes at exact price)
+        if tp_price and float(tp_price) > 0:
+            try:
+                tp_side = 'SELL' if side == 'BUY' else 'BUY'
+                tp_order = client.futures_create_order(
+                    symbol=symbol,
+                    side=tp_side,
+                    type='LIMIT',
+                    price=str(round(float(tp_price), price_precision)),
+                    quantity=qty_in_contracts,
+                    reduceOnly='true',
+                    timeInForce='GTC'
+                )
+                debug_log.append(f"TP LIMIT order created: {tp_order.get('orderId')}")
+            except Exception as e:
+                debug_log.append(f"TP creation failed: {str(e)}")
+
+        if sl_price and float(sl_price) > 0:
+            try:
+                sl_side = 'SELL' if side == 'BUY' else 'BUY'
+                sl_order = client.futures_create_order(
+                    symbol=symbol,
+                    side=sl_side,
+                    type='STOP_MARKET',
+                    stopPrice=str(round(float(sl_price), price_precision)),
+                    closePosition='true',
+                    workingType='MARK_PRICE'
+                )
+                debug_log.append(f"SL order created: {sl_order.get('orderId') or sl_order.get('algoId')}")
+            except Exception as e:
+                debug_log.append(f"SL creation failed: {str(e)}")
+
+        return jsonify({
+            'success': True,
+            'order': {
+                'orderId': order_id,
+                'symbol': symbol,
+                'side': side,
+                'type': order_type,
+                'quantity': qty_in_contracts,
+                'price': price,
+                'status': order.get('status', 'NEW')
+            },
+            '_debug': debug_log
+        })
+
+    except BinanceAPIException as e:
+        print(f"BinanceAPIException: {e}")
+        debug_log.append(f"BinanceAPIException: {e.message}")
+        return jsonify({'error': f'Binance error: {e.message}', '_debug': debug_log}), 500
+    except Exception as e:
+        print(f"Exception: {e}")
+        import traceback
+        traceback.print_exc()
+        debug_log.append(f"Exception: {str(e)}")
+        return jsonify({'error': f'Server error: {str(e)}', '_debug': debug_log}), 500
+
+
 @app.route('/api/accounts/<int:account_id>/sync', methods=['POST'])
 def api_sync_account_trades(account_id):
     """Sync trades and balance from Binance."""

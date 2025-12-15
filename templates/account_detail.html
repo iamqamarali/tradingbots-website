@@ -32,6 +32,12 @@
                     </div>
                 </div>
                 <div class="header-actions">
+                    <button class="action-btn trade-btn" id="newTradeBtn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                        </svg>
+                        <span>New Trade</span>
+                    </button>
                     <button class="action-btn sync-btn" id="syncBtn">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="23 4 23 10 17 10"/>
@@ -645,6 +651,201 @@
                 <div class="progress-bar">
                     <div class="progress-fill" id="syncProgress"></div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Trade Modal -->
+    <div class="modal-overlay" id="newTradeModal">
+        <div class="modal trade-modal">
+            <div class="modal-header">
+                <h3>New Trade</h3>
+                <button class="modal-close" id="closeTradeModal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body trade-modal-body">
+                <!-- Symbol Selector -->
+                <div class="trade-symbol-selector">
+                    <label>Symbol</label>
+                    <select id="tradeSymbol" class="trade-select">
+                        <option value="SOLUSDC">SOL/USDC</option>
+                        <option value="ETHUSDC">ETH/USDC</option>
+                    </select>
+                </div>
+
+                <!-- Margin & Leverage Row -->
+                <div class="trade-settings-row">
+                    <div class="trade-toggle-group">
+                        <button class="trade-toggle active" data-margin="CROSSED" id="marginCross">Cross</button>
+                        <button class="trade-toggle" data-margin="ISOLATED" id="marginIsolated">Isolated</button>
+                    </div>
+                    <div class="leverage-selector">
+                        <button class="leverage-btn" id="leverageBtn">
+                            <span id="leverageValue">5</span>x
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Order Type Tabs -->
+                <div class="trade-order-tabs">
+                    <button class="order-tab active" data-type="LIMIT">Limit</button>
+                    <button class="order-tab" data-type="MARKET">Market</button>
+                    <button class="order-tab" data-type="STOP">Stop Limit</button>
+                </div>
+
+                <!-- Price Input (for Limit/Stop orders) -->
+                <div class="trade-input-group" id="priceInputGroup">
+                    <label>Price</label>
+                    <div class="trade-input-wrapper">
+                        <input type="number" id="tradePrice" placeholder="0.00" step="0.01">
+                        <span class="input-suffix">USDC</span>
+                        <button class="bbo-btn" id="bboBtn" title="Best Bid/Offer">BBO</button>
+                    </div>
+                </div>
+
+                <!-- Stop Price Input (for Stop Limit orders) -->
+                <div class="trade-input-group" id="stopPriceInputGroup" style="display: none;">
+                    <label>Stop Price</label>
+                    <div class="trade-input-wrapper">
+                        <input type="number" id="tradeStopPrice" placeholder="0.00" step="0.01">
+                        <span class="input-suffix">USDC</span>
+                    </div>
+                </div>
+
+                <!-- Size Input -->
+                <div class="trade-input-group">
+                    <label>Size</label>
+                    <div class="trade-input-wrapper">
+                        <input type="number" id="tradeSize" placeholder="0.00" step="0.001">
+                        <span class="input-suffix">USDC</span>
+                    </div>
+                </div>
+
+                <!-- Size Percentage Slider -->
+                <div class="trade-slider-group">
+                    <input type="range" id="tradeSizeSlider" min="0" max="100" value="0" step="25">
+                    <div class="slider-labels">
+                        <span data-value="0">0%</span>
+                        <span data-value="25">25%</span>
+                        <span data-value="50">50%</span>
+                        <span data-value="75">75%</span>
+                        <span data-value="100">100%</span>
+                    </div>
+                </div>
+
+                <!-- Options Row -->
+                <div class="trade-options-row">
+                    <label class="trade-checkbox">
+                        <input type="checkbox" id="tradeTpSl">
+                        <span class="checkmark"></span>
+                        TP/SL
+                    </label>
+                    <label class="trade-checkbox">
+                        <input type="checkbox" id="tradeReduceOnly">
+                        <span class="checkmark"></span>
+                        Reduce-Only
+                    </label>
+                    <div class="tif-selector">
+                        <span class="tif-label">TIF</span>
+                        <select id="tradeTif" class="tif-select">
+                            <option value="GTC">GTC</option>
+                            <option value="IOC">IOC</option>
+                            <option value="FOK">FOK</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- TP/SL Inputs (hidden by default) -->
+                <div class="trade-tpsl-group" id="tradeTpSlGroup" style="display: none;">
+                    <div class="trade-input-group">
+                        <label>Take Profit</label>
+                        <div class="trade-input-wrapper">
+                            <input type="number" id="tradeTpPrice" placeholder="0.00" step="0.01">
+                            <span class="input-suffix">USDC</span>
+                        </div>
+                    </div>
+                    <div class="trade-input-group">
+                        <label>Stop Loss</label>
+                        <div class="trade-input-wrapper">
+                            <input type="number" id="tradeSlPrice" placeholder="0.00" step="0.01">
+                            <span class="input-suffix">USDC</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="trade-buttons">
+                    <button class="trade-btn-long" id="tradeBuyBtn">
+                        <span class="btn-text">Buy/Long</span>
+                        <span class="btn-loading" style="display: none;">
+                            <svg class="spinner-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="31.4 31.4" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/></circle></svg>
+                        </span>
+                    </button>
+                    <button class="trade-btn-short" id="tradeSellBtn">
+                        <span class="btn-text">Sell/Short</span>
+                        <span class="btn-loading" style="display: none;">
+                            <svg class="spinner-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="31.4 31.4" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/></circle></svg>
+                        </span>
+                    </button>
+                </div>
+
+                <!-- Trade Info -->
+                <div class="trade-info-row">
+                    <div class="trade-info-item">
+                        <span class="info-label">Liq Price</span>
+                        <span class="info-value" id="tradeLiqPrice">-- USDC</span>
+                    </div>
+                    <div class="trade-info-item">
+                        <span class="info-label">Cost</span>
+                        <span class="info-value" id="tradeCost">0.00 USDC</span>
+                    </div>
+                    <div class="trade-info-item">
+                        <span class="info-label">Max</span>
+                        <span class="info-value" id="tradeMax">0.00 USDC</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leverage Slider Modal -->
+    <div class="modal-overlay" id="leverageModal">
+        <div class="modal modal-small leverage-modal">
+            <div class="modal-header">
+                <h3>Adjust Leverage</h3>
+                <button class="modal-close" id="closeLeverageModal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="leverage-display">
+                    <span id="leverageDisplayValue">5</span>x
+                </div>
+                <input type="range" id="leverageSlider" min="1" max="125" value="5" class="leverage-slider">
+                <div class="leverage-labels">
+                    <span>1x</span>
+                    <span>25x</span>
+                    <span>50x</span>
+                    <span>75x</span>
+                    <span>100x</span>
+                    <span>125x</span>
+                </div>
+                <div class="leverage-warning">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                        <line x1="12" y1="9" x2="12" y2="13"/>
+                        <line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                    <span>Higher leverage = Higher risk of liquidation</span>
+                </div>
+                <button class="btn-primary" id="confirmLeverageBtn">Confirm</button>
             </div>
         </div>
     </div>

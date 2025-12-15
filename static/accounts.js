@@ -2154,3 +2154,311 @@ async function addToPosition() {
     }
 }
 
+// ==================== NEW TRADE MODAL ====================
+
+let tradeState = {
+    symbol: 'SOLUSDC',
+    marginType: 'CROSSED',
+    leverage: 5,
+    orderType: 'LIMIT',
+    availableBalance: 0,
+    currentPrice: 0
+};
+
+function setupTradeModal() {
+    const newTradeBtn = document.getElementById('newTradeBtn');
+    const tradeModal = document.getElementById('newTradeModal');
+    const closeTradeModal = document.getElementById('closeTradeModal');
+    const leverageModal = document.getElementById('leverageModal');
+    const closeLeverageModal = document.getElementById('closeLeverageModal');
+
+    if (!newTradeBtn || !tradeModal) return;
+
+    // Open trade modal
+    newTradeBtn.addEventListener('click', () => {
+        tradeModal.classList.add('active');
+        fetchCurrentPrice();
+        updateTradeInfo();
+    });
+
+    // Close trade modal
+    closeTradeModal?.addEventListener('click', () => {
+        tradeModal.classList.remove('active');
+    });
+
+    tradeModal.addEventListener('click', (e) => {
+        if (e.target === tradeModal) {
+            tradeModal.classList.remove('active');
+        }
+    });
+
+    // Symbol selector
+    const symbolSelect = document.getElementById('tradeSymbol');
+    symbolSelect?.addEventListener('change', (e) => {
+        tradeState.symbol = e.target.value;
+        fetchCurrentPrice();
+        updateTradeInfo();
+    });
+
+    // Margin type toggles
+    const marginCross = document.getElementById('marginCross');
+    const marginIsolated = document.getElementById('marginIsolated');
+
+    marginCross?.addEventListener('click', () => {
+        marginCross.classList.add('active');
+        marginIsolated.classList.remove('active');
+        tradeState.marginType = 'CROSSED';
+    });
+
+    marginIsolated?.addEventListener('click', () => {
+        marginIsolated.classList.add('active');
+        marginCross.classList.remove('active');
+        tradeState.marginType = 'ISOLATED';
+    });
+
+    // Leverage button
+    const leverageBtn = document.getElementById('leverageBtn');
+    leverageBtn?.addEventListener('click', () => {
+        leverageModal.classList.add('active');
+        document.getElementById('leverageSlider').value = tradeState.leverage;
+        document.getElementById('leverageDisplayValue').textContent = tradeState.leverage;
+    });
+
+    // Close leverage modal
+    closeLeverageModal?.addEventListener('click', () => {
+        leverageModal.classList.remove('active');
+    });
+
+    leverageModal?.addEventListener('click', (e) => {
+        if (e.target === leverageModal) {
+            leverageModal.classList.remove('active');
+        }
+    });
+
+    // Leverage slider
+    const leverageSlider = document.getElementById('leverageSlider');
+    leverageSlider?.addEventListener('input', (e) => {
+        document.getElementById('leverageDisplayValue').textContent = e.target.value;
+    });
+
+    // Confirm leverage
+    const confirmLeverageBtn = document.getElementById('confirmLeverageBtn');
+    confirmLeverageBtn?.addEventListener('click', () => {
+        tradeState.leverage = parseInt(document.getElementById('leverageSlider').value);
+        document.getElementById('leverageValue').textContent = tradeState.leverage;
+        leverageModal.classList.remove('active');
+        updateTradeInfo();
+    });
+
+    // Order type tabs
+    const orderTabs = document.querySelectorAll('.order-tab');
+    orderTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            orderTabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            tradeState.orderType = tab.dataset.type;
+
+            // Show/hide price inputs based on order type
+            const priceGroup = document.getElementById('priceInputGroup');
+            const stopPriceGroup = document.getElementById('stopPriceInputGroup');
+
+            if (tradeState.orderType === 'MARKET') {
+                priceGroup.style.display = 'none';
+                stopPriceGroup.style.display = 'none';
+            } else if (tradeState.orderType === 'STOP') {
+                priceGroup.style.display = 'block';
+                stopPriceGroup.style.display = 'block';
+            } else {
+                priceGroup.style.display = 'block';
+                stopPriceGroup.style.display = 'none';
+            }
+        });
+    });
+
+    // BBO button (Best Bid/Offer)
+    const bboBtn = document.getElementById('bboBtn');
+    bboBtn?.addEventListener('click', () => {
+        if (tradeState.currentPrice > 0) {
+            document.getElementById('tradePrice').value = tradeState.currentPrice.toFixed(2);
+        }
+    });
+
+    // Size slider
+    const sizeSlider = document.getElementById('tradeSizeSlider');
+    const sizeInput = document.getElementById('tradeSize');
+
+    sizeSlider?.addEventListener('input', (e) => {
+        const pct = parseInt(e.target.value);
+        const maxSize = calculateMaxSize();
+        const size = (maxSize * pct / 100).toFixed(2);
+        sizeInput.value = size;
+        updateTradeInfo();
+    });
+
+    // Slider label clicks
+    document.querySelectorAll('.slider-labels span').forEach(label => {
+        label.addEventListener('click', () => {
+            const value = label.dataset.value;
+            sizeSlider.value = value;
+            sizeSlider.dispatchEvent(new Event('input'));
+        });
+    });
+
+    // Size input change
+    sizeInput?.addEventListener('input', () => {
+        updateTradeInfo();
+    });
+
+    // TP/SL checkbox
+    const tpslCheckbox = document.getElementById('tradeTpSl');
+    const tpslGroup = document.getElementById('tradeTpSlGroup');
+
+    tpslCheckbox?.addEventListener('change', () => {
+        tpslGroup.style.display = tpslCheckbox.checked ? 'grid' : 'none';
+    });
+
+    // Trade buttons
+    const buyBtn = document.getElementById('tradeBuyBtn');
+    const sellBtn = document.getElementById('tradeSellBtn');
+
+    buyBtn?.addEventListener('click', () => executeTrade('BUY'));
+    sellBtn?.addEventListener('click', () => executeTrade('SELL'));
+}
+
+async function fetchCurrentPrice() {
+    try {
+        const response = await fetch(`/api/ticker/${tradeState.symbol}`);
+        if (response.ok) {
+            const data = await response.json();
+            tradeState.currentPrice = parseFloat(data.price);
+            // Auto-fill price for limit orders
+            if (tradeState.orderType === 'LIMIT') {
+                document.getElementById('tradePrice').value = tradeState.currentPrice.toFixed(2);
+            }
+        }
+    } catch (error) {
+        console.error('Error fetching price:', error);
+    }
+}
+
+function calculateMaxSize() {
+    // Max size based on available balance and leverage
+    const balance = tradeState.availableBalance || 100; // Default for display
+    return balance * tradeState.leverage;
+}
+
+function updateTradeInfo() {
+    const sizeInput = document.getElementById('tradeSize');
+    const size = parseFloat(sizeInput?.value) || 0;
+    const leverage = tradeState.leverage;
+
+    // Cost = Size / Leverage
+    const cost = size / leverage;
+    document.getElementById('tradeCost').textContent = `${cost.toFixed(2)} USDC`;
+
+    // Max size
+    const maxSize = calculateMaxSize();
+    document.getElementById('tradeMax').textContent = `${maxSize.toFixed(2)} USDC`;
+
+    // Liquidation price (simplified calculation)
+    document.getElementById('tradeLiqPrice').textContent = '-- USDC';
+}
+
+async function executeTrade(side) {
+    const symbol = tradeState.symbol;
+    const orderType = tradeState.orderType;
+    const price = parseFloat(document.getElementById('tradePrice')?.value) || 0;
+    const stopPrice = parseFloat(document.getElementById('tradeStopPrice')?.value) || 0;
+    const size = parseFloat(document.getElementById('tradeSize')?.value) || 0;
+    const leverage = tradeState.leverage;
+    const marginType = tradeState.marginType;
+    const reduceOnly = document.getElementById('tradeReduceOnly')?.checked || false;
+    const tif = document.getElementById('tradeTif')?.value || 'GTC';
+
+    // TP/SL values
+    const tpslEnabled = document.getElementById('tradeTpSl')?.checked || false;
+    const tpPrice = parseFloat(document.getElementById('tradeTpPrice')?.value) || 0;
+    const slPrice = parseFloat(document.getElementById('tradeSlPrice')?.value) || 0;
+
+    // Validation
+    if (size <= 0) {
+        showToast('Please enter a valid size', 'error');
+        return;
+    }
+
+    if ((orderType === 'LIMIT' || orderType === 'STOP') && price <= 0) {
+        showToast('Please enter a valid price', 'error');
+        return;
+    }
+
+    if (orderType === 'STOP' && stopPrice <= 0) {
+        showToast('Please enter a valid stop price', 'error');
+        return;
+    }
+
+    // Button loading state
+    const btn = side === 'BUY' ? document.getElementById('tradeBuyBtn') : document.getElementById('tradeSellBtn');
+    const btnText = btn.querySelector('.btn-text');
+    const btnLoading = btn.querySelector('.btn-loading');
+
+    btnText.style.display = 'none';
+    btnLoading.style.display = 'flex';
+    btn.disabled = true;
+
+    try {
+        console.log(`%c[New Trade] Executing ${side} ${orderType} order`, 'color: #3b82f6; font-weight: bold');
+        console.log(`  Symbol: ${symbol}, Size: ${size}, Price: ${price}, Leverage: ${leverage}x`);
+
+        const response = await fetch(`/api/accounts/${ACCOUNT_ID}/trade`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol,
+                side,
+                order_type: orderType,
+                price: price > 0 ? price : null,
+                stop_price: stopPrice > 0 ? stopPrice : null,
+                quantity: size,
+                leverage,
+                margin_type: marginType,
+                reduce_only: reduceOnly,
+                time_in_force: tif,
+                tp_price: tpslEnabled && tpPrice > 0 ? tpPrice : null,
+                sl_price: tpslEnabled && slPrice > 0 ? slPrice : null
+            })
+        });
+
+        const data = await response.json();
+
+        if (data._debug) {
+            console.log('%c[New Trade] Server Debug Log:', 'color: #f59e0b; font-weight: bold');
+            console.table(data._debug.map((msg, i) => ({ step: i + 1, message: msg })));
+        }
+
+        if (response.ok) {
+            console.log('%c[New Trade] SUCCESS', 'color: #22c55e; font-weight: bold');
+            showToast(`${side} order placed successfully`, 'success');
+            document.getElementById('newTradeModal').classList.remove('active');
+            // Refresh positions and orders
+            loadPositions();
+            loadOrders();
+            loadBalance();
+        } else {
+            console.error('%c[New Trade] FAILED:', 'color: #ef4444; font-weight: bold', data.error);
+            showToast(`Trade failed: ${data.error || 'Unknown error'}`, 'error');
+        }
+    } catch (error) {
+        console.error('%c[New Trade] EXCEPTION:', 'color: #ef4444; font-weight: bold', error);
+        showToast(`Trade failed: ${error.message}`, 'error');
+    } finally {
+        btnText.style.display = 'inline';
+        btnLoading.style.display = 'none';
+        btn.disabled = false;
+    }
+}
+
+// Initialize trade modal on page load
+document.addEventListener('DOMContentLoaded', () => {
+    setupTradeModal();
+});
+
