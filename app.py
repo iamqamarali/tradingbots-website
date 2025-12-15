@@ -2096,46 +2096,19 @@ def api_update_stop_loss(account_id):
             except Exception as e:
                 print(f"  Warning: Could not cancel old stop order: {e}")
 
-        # Get current position quantity for this symbol
-        positions = client.futures_position_information(symbol=symbol)
-        position_qty = 0
-        for pos in positions:
-            amt = float(pos.get('positionAmt', 0))
-            if amt != 0:
-                position_qty = abs(amt)
-                break
-
-        if position_qty == 0:
-            return jsonify({'error': 'No open position found for this symbol'}), 400
-
-        # Get quantity precision from symbol info
-        qty_precision = 3  # Default
-        if symbol_info:
-            for f in symbol_info.get('filters', []):
-                if f['filterType'] == 'LOT_SIZE':
-                    step_size = float(f['stepSize'])
-                    if step_size >= 1:
-                        qty_precision = 0
-                    else:
-                        qty_precision = int(round(-math.log10(step_size)))
-                    break
-
-        position_qty = round(position_qty, qty_precision)
-        print(f"  Position quantity: {position_qty}")
-
         # For LONG position, stop-loss is a SELL; for SHORT, it's a BUY
         order_side = 'SELL' if position_side == 'LONG' else 'BUY'
 
-        # Create new stop-loss order with reduceOnly=true (creates Basic order, not Conditional)
+        # Create new stop-loss order with closePosition=true (Conditional order)
+        # This closes the ENTIRE position when triggered, even if position size changed
         # Using MARK_PRICE for more stable triggering (less prone to wicks)
-        print(f"  Creating STOP_MARKET order: {order_side} qty={position_qty} @ stop {stop_price} (reduceOnly=true, workingType=MARK_PRICE)")
+        print(f"  Creating STOP_MARKET order: {order_side} @ stop {stop_price} (closePosition=true, workingType=MARK_PRICE)")
         order = client.futures_create_order(
             symbol=symbol,
             side=order_side,
             type='STOP_MARKET',
-            quantity=str(position_qty),
             stopPrice=str(stop_price),
-            reduceOnly='true',
+            closePosition='true',
             workingType='MARK_PRICE'
         )
 
@@ -2273,46 +2246,19 @@ def api_update_take_profit(account_id):
             except Exception as e:
                 print(f"  Warning: Could not cancel old TP order: {e}")
 
-        # Get current position quantity for this symbol
-        positions = client.futures_position_information(symbol=symbol)
-        position_qty = 0
-        for pos in positions:
-            amt = float(pos.get('positionAmt', 0))
-            if amt != 0:
-                position_qty = abs(amt)
-                break
-
-        if position_qty == 0:
-            return jsonify({'error': 'No open position found for this symbol'}), 400
-
-        # Get quantity precision from symbol info
-        qty_precision = 3  # Default
-        if symbol_info:
-            for f in symbol_info.get('filters', []):
-                if f['filterType'] == 'LOT_SIZE':
-                    step_size = float(f['stepSize'])
-                    if step_size >= 1:
-                        qty_precision = 0
-                    else:
-                        qty_precision = int(round(-math.log10(step_size)))
-                    break
-
-        position_qty = round(position_qty, qty_precision)
-        print(f"  Position quantity: {position_qty}")
-
         # For LONG position, take-profit is a SELL; for SHORT, it's a BUY
         order_side = 'SELL' if position_side == 'LONG' else 'BUY'
 
-        # Create new take-profit order with reduceOnly=true (creates Basic order, not Conditional)
+        # Create new take-profit order with closePosition=true (Conditional order)
+        # This closes the ENTIRE position when triggered, even if position size changed
         # Using MARK_PRICE for more stable triggering (less prone to wicks)
-        print(f"  Creating TAKE_PROFIT_MARKET order: {order_side} qty={position_qty} @ TP {tp_price} (reduceOnly=true, workingType=MARK_PRICE)")
+        print(f"  Creating TAKE_PROFIT_MARKET order: {order_side} @ TP {tp_price} (closePosition=true, workingType=MARK_PRICE)")
         order = client.futures_create_order(
             symbol=symbol,
             side=order_side,
             type='TAKE_PROFIT_MARKET',
-            quantity=str(position_qty),
             stopPrice=str(tp_price),
-            reduceOnly='true',
+            closePosition='true',
             workingType='MARK_PRICE'
         )
 
