@@ -40,13 +40,11 @@ def fetch_algo_orders(api_key, api_secret, testnet=False):
     else:
         base_url = 'https://fapi.binance.com'
 
-    # Try multiple endpoints - Binance has different endpoints for different order types
     # After Dec 2024 migration, conditional orders (STOP_MARKET, TAKE_PROFIT_MARKET)
-    # return algoId and may need different endpoints
+    # are now in the Algo Service and need to be fetched from /fapi/v1/openAlgoOrders
+    # See: https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/Current-All-Algo-Open-Orders
     endpoints_to_try = [
-        '/fapi/v1/algo/openOrders',              # VP/TWAP and potentially conditional orders
-        '/fapi/v1/conditional/openOrders',       # Conditional orders endpoint
-        '/fapi/v1/openConditionalOrders',        # Alternative naming
+        '/fapi/v1/openAlgoOrders',  # Correct endpoint for algo/conditional orders
     ]
 
     all_orders = []
