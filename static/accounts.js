@@ -2212,6 +2212,11 @@ function setupTradeModal() {
         tradeModal.classList.add('active');
         fetchCurrentPrice();
         updateTradeInfo();
+        updateTradeButtonText();
+
+        // Reset to default state
+        document.getElementById('tradeSize').value = '';
+        document.getElementById('tradeSizeSlider').value = 0;
     });
 
     // Close trade modal
@@ -2305,6 +2310,9 @@ function setupTradeModal() {
                 priceGroup.style.display = 'block';
                 stopPriceGroup.style.display = 'none';
             }
+
+            // Update button text based on order type
+            updateTradeButtonText();
         });
     });
 
@@ -2407,6 +2415,35 @@ function updateTradeInfo() {
     }
 }
 
+function updateTradeButtonText() {
+    const buyBtn = document.getElementById('tradeBuyBtn');
+    const sellBtn = document.getElementById('tradeSellBtn');
+    const orderType = tradeState.orderType;
+
+    let buyText = 'Buy/Long';
+    let sellText = 'Sell/Short';
+
+    if (orderType === 'MARKET') {
+        buyText = 'Market Buy/Long';
+        sellText = 'Market Sell/Short';
+    } else if (orderType === 'LIMIT') {
+        buyText = 'Limit Buy/Long';
+        sellText = 'Limit Sell/Short';
+    } else if (orderType === 'STOP') {
+        buyText = 'Stop Buy/Long';
+        sellText = 'Stop Sell/Short';
+    }
+
+    if (buyBtn) {
+        const btnText = buyBtn.querySelector('.btn-text');
+        if (btnText) btnText.textContent = buyText;
+    }
+    if (sellBtn) {
+        const btnText = sellBtn.querySelector('.btn-text');
+        if (btnText) btnText.textContent = sellText;
+    }
+}
+
 async function executeTrade(side) {
     const symbol = tradeState.symbol;
     const orderType = tradeState.orderType;
@@ -2423,19 +2460,50 @@ async function executeTrade(side) {
     const tpPrice = parseFloat(document.getElementById('tradeTpPrice')?.value) || 0;
     const slPrice = parseFloat(document.getElementById('tradeSlPrice')?.value) || 0;
 
+    // Log all parameters for debugging
+    console.log('%c[New Trade] Parameters:', 'color: #3b82f6; font-weight: bold');
+    console.table({
+        symbol,
+        side,
+        orderType,
+        price,
+        stopPrice,
+        size,
+        leverage,
+        marginType,
+        reduceOnly,
+        tif,
+        tpslEnabled,
+        tpPrice,
+        slPrice
+    });
+
     // Validation
     if (size <= 0) {
         showToast('Please enter a valid size', 'error');
         return;
     }
 
-    if ((orderType === 'LIMIT' || orderType === 'STOP') && price <= 0) {
-        showToast('Please enter a valid price', 'error');
+    if (orderType === 'LIMIT' && price <= 0) {
+        showToast('Please enter a valid limit price', 'error');
         return;
     }
 
-    if (orderType === 'STOP' && stopPrice <= 0) {
-        showToast('Please enter a valid stop price', 'error');
+    if (orderType === 'STOP') {
+        if (price <= 0) {
+            showToast('Please enter a valid limit price for stop order', 'error');
+            return;
+        }
+        if (stopPrice <= 0) {
+            showToast('Please enter a valid stop/trigger price', 'error');
+            return;
+        }
+    }
+
+    // Check max size
+    const maxSize = calculateMaxSize();
+    if (size > maxSize && !reduceOnly) {
+        showToast(`Size exceeds max (${maxSize.toFixed(2)} USDC)`, 'error');
         return;
     }
 
@@ -2450,25 +2518,40 @@ async function executeTrade(side) {
 
     try {
         console.log(`%c[New Trade] Executing ${side} ${orderType} order`, 'color: #3b82f6; font-weight: bold');
-        console.log(`  Symbol: ${symbol}, Size: ${size}, Price: ${price}, Leverage: ${leverage}x`);
+
+        const requestBody = {
+            symbol,
+            side,
+            order_type: orderType,
+            quantity: size,
+            leverage,
+            margin_type: marginType,
+            reduce_only: reduceOnly,
+            time_in_force: tif
+        };
+
+        // Only include price for LIMIT and STOP orders
+        if (orderType === 'LIMIT' || orderType === 'STOP') {
+            requestBody.price = price;
+        }
+
+        // Include stop price only for STOP orders
+        if (orderType === 'STOP') {
+            requestBody.stop_price = stopPrice;
+        }
+
+        // Include TP/SL if enabled
+        if (tpslEnabled) {
+            if (tpPrice > 0) requestBody.tp_price = tpPrice;
+            if (slPrice > 0) requestBody.sl_price = slPrice;
+        }
+
+        console.log('%c[New Trade] Request body:', 'color: #f59e0b; font-weight: bold', requestBody);
 
         const response = await fetch(`/api/accounts/${ACCOUNT_ID}/trade`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                symbol,
-                side,
-                order_type: orderType,
-                price: price > 0 ? price : null,
-                stop_price: stopPrice > 0 ? stopPrice : null,
-                quantity: size,
-                leverage,
-                margin_type: marginType,
-                reduce_only: reduceOnly,
-                time_in_force: tif,
-                tp_price: tpslEnabled && tpPrice > 0 ? tpPrice : null,
-                sl_price: tpslEnabled && slPrice > 0 ? slPrice : null
-            })
+            body: JSON.stringify(requestBody)
         });
 
         const data = await response.json();
@@ -2480,7 +2563,8 @@ async function executeTrade(side) {
 
         if (response.ok) {
             console.log('%c[New Trade] SUCCESS', 'color: #22c55e; font-weight: bold');
-            showToast(`${side} order placed successfully`, 'success');
+            const orderTypeLabel = orderType === 'MARKET' ? 'Market' : orderType === 'LIMIT' ? 'Limit' : 'Stop';
+            showToast(`${orderTypeLabel} ${side} order placed successfully`, 'success');
             document.getElementById('newTradeModal').classList.remove('active');
             // Refresh positions and orders
             loadPositions();

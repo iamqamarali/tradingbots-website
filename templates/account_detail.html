@@ -64,57 +64,6 @@
                 </div>
             </header>
 
-        <!-- Balance Section -->
-        <section class="balance-section balance-section-compact">
-            <div class="balance-card">
-                <div class="balance-header">
-                    <span class="balance-label">Current Balance</span>
-                    <button class="refresh-balance-btn" id="refreshBalanceBtn" title="Refresh Balance">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="23 4 23 10 17 10"/>
-                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-                        </svg>
-                    </button>
-                </div>
-                <div class="balance-value" id="accountBalance">
-                    <span class="balance-amount">$0.00</span>
-                    <span class="balance-asset">USDT</span>
-                </div>
-                <div class="balance-details">
-                    <div class="balance-detail">
-                        <span class="detail-label">Unrealized PnL</span>
-                        <span class="detail-value" id="unrealizedPnl">$0.00</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Quick Stats Row -->
-            <div class="stats-row">
-                <div class="mini-stat">
-                    <span class="mini-stat-value" id="statTotalTrades">0</span>
-                    <span class="mini-stat-label">Total Trades</span>
-                </div>
-                <div class="mini-stat">
-                    <span class="mini-stat-value" id="statWinRate">0%</span>
-                    <span class="mini-stat-label">Win Rate</span>
-                </div>
-                <div class="mini-stat">
-                    <span class="mini-stat-value" id="statTotalPnL">$0.00</span>
-                    <span class="mini-stat-label">Realized PnL</span>
-                </div>
-                <div class="mini-stat clickable" onclick="window.location.href='/accounts/{{ account_id }}/stats'">
-                    <span class="mini-stat-value">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                            <path d="M18 20V10"/>
-                            <path d="M12 20V4"/>
-                            <path d="M6 20v-6"/>
-                        </svg>
-                    </span>
-                    <span class="mini-stat-label">View All Stats</span>
-                </div>
-            </div>
-        </section>
-
         <!-- Attached Bots Section -->
         <section class="attached-bots-section" id="attachedBotsSection" style="display: none;">
             <div class="section-header">

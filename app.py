@@ -2769,22 +2769,40 @@ def api_execute_trade(account_id):
             'quantity': qty_in_contracts,
         }
 
+        debug_log.append(f"Order type received: '{order_type}'")
+
         if order_type == 'MARKET':
             order_params['type'] = 'MARKET'
+            debug_log.append("Creating MARKET order (executes immediately at market price)")
         elif order_type == 'LIMIT':
+            if not price or float(price) <= 0:
+                return jsonify({'error': 'Limit order requires a valid price', '_debug': debug_log}), 400
             order_params['type'] = 'LIMIT'
-            order_params['price'] = round(float(price), price_precision)
+            order_params['price'] = str(round(float(price), price_precision))
             order_params['timeInForce'] = time_in_force
+            debug_log.append(f"Creating LIMIT order at price {order_params['price']} with TIF={time_in_force}")
         elif order_type == 'STOP':
+            if not price or float(price) <= 0:
+                return jsonify({'error': 'Stop order requires a valid limit price', '_debug': debug_log}), 400
+            if not stop_price or float(stop_price) <= 0:
+                return jsonify({'error': 'Stop order requires a valid stop/trigger price', '_debug': debug_log}), 400
             order_params['type'] = 'STOP'
-            order_params['price'] = round(float(price), price_precision)
-            order_params['stopPrice'] = round(float(stop_price), price_precision)
+            order_params['price'] = str(round(float(price), price_precision))
+            order_params['stopPrice'] = str(round(float(stop_price), price_precision))
             order_params['timeInForce'] = time_in_force
+            debug_log.append(f"Creating STOP order: trigger at {order_params['stopPrice']}, limit at {order_params['price']}")
+        else:
+            debug_log.append(f"Unknown order type: {order_type}, defaulting to LIMIT")
+            order_params['type'] = 'LIMIT'
+            if price and float(price) > 0:
+                order_params['price'] = str(round(float(price), price_precision))
+                order_params['timeInForce'] = time_in_force
 
         if reduce_only:
             order_params['reduceOnly'] = 'true'
+            debug_log.append("Reduce-only mode enabled")
 
-        debug_log.append(f"Order params: {order_params}")
+        debug_log.append(f"Final order params: {order_params}")
 
         # Execute order
         print(f"  Executing order: {order_params}")
@@ -3093,6 +3111,8 @@ def api_get_equity_curve(account_id):
 
     # Build equity curve - cumulative PnL over time
     equity_data = []
+    dates = []
+    values = []
     cumulative_pnl = 0
 
     for trade in trades:
@@ -3101,16 +3121,33 @@ def api_get_equity_curve(account_id):
         net_pnl = pnl - commission
         cumulative_pnl += net_pnl
 
+        trade_time = trade.get('trade_time', '')
+        balance = round(starting_balance + cumulative_pnl, 2)
+
         equity_data.append({
-            'timestamp': trade.get('trade_time'),
+            'timestamp': trade_time,
             'pnl': round(cumulative_pnl, 2),
-            'balance': round(starting_balance + cumulative_pnl, 2),
+            'balance': balance,
             'trade_pnl': round(net_pnl, 2),
             'symbol': trade.get('symbol', '')
         })
 
+        # Format date for chart display
+        if trade_time:
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(trade_time.replace('Z', '+00:00'))
+                dates.append(dt.strftime('%m/%d %H:%M'))
+            except:
+                dates.append(trade_time[:10] if len(trade_time) >= 10 else trade_time)
+        else:
+            dates.append('')
+        values.append(balance)
+
     return jsonify({
         'data_points': equity_data,
+        'dates': dates,
+        'values': values,
         'starting_balance': starting_balance,
         'current_balance': account.get('current_balance', starting_balance + cumulative_pnl)
     })
