@@ -1161,10 +1161,22 @@ def api_get_account_positions(account_id):
         print("Fetching open orders for stop-loss info...")
         all_open_orders = []
         try:
-            all_open_orders = client.futures_get_open_orders()
-            print(f"Got {len(all_open_orders)} open orders")
+            regular_orders = client.futures_get_open_orders()
+            all_open_orders.extend(regular_orders)
+            print(f"Got {len(regular_orders)} regular open orders")
         except Exception as e:
-            print(f"Warning: Could not fetch open orders: {e}")
+            print(f"Warning: Could not fetch regular orders: {e}")
+
+        # Fetch algo/conditional orders (STOP_MARKET, TAKE_PROFIT_MARKET, etc.)
+        try:
+            algo_orders = client._request('get', 'openAlgoOrders', signed=True, data={})
+            if algo_orders and isinstance(algo_orders, list):
+                all_open_orders.extend(algo_orders)
+                print(f"Got {len(algo_orders)} algo open orders")
+        except Exception as e:
+            print(f"Warning: Could not fetch algo orders: {e}")
+
+        print(f"Total open orders: {len(all_open_orders)}")
 
         # Build a map of symbol -> stop orders
         # Include all conditional/stop order types that Binance Futures supports
@@ -1180,10 +1192,11 @@ def api_get_account_positions(account_id):
         
         for order in all_open_orders:
             symbol = order.get('symbol')
-            order_id = order.get('orderId')
+            # Binance returns 'algoId' for conditional orders, 'orderId' for regular orders
+            order_id = order.get('orderId') or order.get('algoId')
             order_side = order.get('side')
-            order_type = order.get('type', '')
-            stop_price = float(order.get('stopPrice', 0)) if order.get('stopPrice') else 0
+            order_type = order.get('type') or order.get('orderType', '')
+            stop_price = float(order.get('stopPrice') or order.get('triggerPrice') or 0)
 
             # Skip orders with missing required fields
             if not symbol or not order_id or not order_side:
@@ -1199,8 +1212,8 @@ def api_get_account_positions(account_id):
                     'type': order_type,
                     'side': order_side,
                     'stop_price': stop_price,
-                    'quantity': float(order.get('origQty', 0)),
-                    'status': order.get('status', ''),
+                    'quantity': float(order.get('origQty') or order.get('quantity') or 0),
+                    'status': order.get('status') or order.get('algoStatus', ''),
                     'activation_price': float(order.get('activatePrice', 0)) if order.get('activatePrice') else None
                 })
                 print(f"  Found stop order for {symbol}: {order_type} @ {stop_price}")
@@ -1214,8 +1227,8 @@ def api_get_account_positions(account_id):
                     'type': order_type,
                     'side': order_side,
                     'stop_price': stop_price,
-                    'quantity': float(order.get('origQty', 0)),
-                    'status': order.get('status', '')
+                    'quantity': float(order.get('origQty') or order.get('quantity') or 0),
+                    'status': order.get('status') or order.get('algoStatus', '')
                 })
                 print(f"  Found TP order for {symbol}: {order_type} @ {stop_price}")
 
@@ -1308,15 +1321,34 @@ def api_get_account_orders(account_id):
         if account['is_testnet']:
             client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
 
-        all_orders = client.futures_get_open_orders()
-        print(f"Got {len(all_orders)} open orders")
+        # Fetch regular open orders
+        all_orders = []
+        try:
+            regular_orders = client.futures_get_open_orders()
+            all_orders.extend(regular_orders)
+            print(f"Got {len(regular_orders)} regular open orders")
+        except Exception as e:
+            print(f"Warning: Could not fetch regular orders: {e}")
+
+        # Fetch algo/conditional orders (STOP_MARKET, TAKE_PROFIT_MARKET, etc.)
+        # These are now on a separate endpoint since Binance's Dec 2024 migration
+        try:
+            algo_orders = client._request('get', 'openAlgoOrders', signed=True, data={})
+            if algo_orders and isinstance(algo_orders, list):
+                all_orders.extend(algo_orders)
+                print(f"Got {len(algo_orders)} algo open orders")
+        except Exception as e:
+            print(f"Warning: Could not fetch algo orders: {e}")
+
+        print(f"Total orders: {len(all_orders)}")
 
         orders = []
         for order in all_orders:
-            order_id = order.get('orderId')
+            # Binance returns 'algoId' for conditional orders, 'orderId' for regular orders
+            order_id = order.get('orderId') or order.get('algoId')
             symbol = order.get('symbol')
             side = order.get('side')
-            order_type = order.get('type')
+            order_type = order.get('type') or order.get('orderType')
 
             # Skip orders with missing required fields
             if not order_id or not symbol or not side or not order_type:
@@ -1328,12 +1360,13 @@ def api_get_account_orders(account_id):
                 'symbol': symbol,
                 'side': side,
                 'type': order_type,
-                'quantity': float(order.get('origQty', 0)),
+                'quantity': float(order.get('origQty') or order.get('quantity') or 0),
                 'price': float(order.get('price', 0)),
-                'stop_price': float(order.get('stopPrice', 0)) if order.get('stopPrice') else None,
-                'status': order.get('status', ''),
-                'time': order.get('time', 0),
-                'reduce_only': order.get('reduceOnly', False)
+                'stop_price': float(order.get('stopPrice') or order.get('triggerPrice') or 0) or None,
+                'status': order.get('status') or order.get('algoStatus', ''),
+                'time': order.get('time') or order.get('updateTime') or order.get('createTime') or 0,
+                'reduce_only': order.get('reduceOnly', False),
+                'is_algo': 'algoId' in order  # Flag to identify algo orders
             })
 
         # Sort by time descending (newest first)
@@ -1430,9 +1463,18 @@ def api_get_all_positions():
             # Get all open orders for stop-loss/take-profit info
             all_open_orders = []
             try:
-                all_open_orders = client.futures_get_open_orders()
+                regular_orders = client.futures_get_open_orders()
+                all_open_orders.extend(regular_orders)
             except Exception as e:
-                print(f"Warning: Could not fetch open orders for {account_name}: {e}")
+                print(f"Warning: Could not fetch regular orders for {account_name}: {e}")
+
+            # Fetch algo/conditional orders (STOP_MARKET, TAKE_PROFIT_MARKET, etc.)
+            try:
+                algo_orders = client._request('get', 'openAlgoOrders', signed=True, data={})
+                if algo_orders and isinstance(algo_orders, list):
+                    all_open_orders.extend(algo_orders)
+            except Exception as e:
+                print(f"Warning: Could not fetch algo orders for {account_name}: {e}")
 
             # Build stop order maps
             stop_order_types = ['STOP_MARKET', 'STOP', 'STOP_LIMIT', 'TRAILING_STOP_MARKET']
@@ -1441,10 +1483,11 @@ def api_get_all_positions():
 
             for order in all_open_orders:
                 symbol = order.get('symbol')
-                order_id = order.get('orderId')
+                # Binance returns 'algoId' for conditional orders, 'orderId' for regular orders
+                order_id = order.get('orderId') or order.get('algoId')
                 order_side = order.get('side')
-                order_type = order.get('type', '')
-                stop_price = float(order.get('stopPrice', 0)) if order.get('stopPrice') else 0
+                order_type = order.get('type') or order.get('orderType', '')
+                stop_price = float(order.get('stopPrice') or order.get('triggerPrice') or 0)
 
                 # Skip orders with missing required fields
                 if not symbol or not order_id or not order_side:
@@ -1459,7 +1502,7 @@ def api_get_all_positions():
                         'type': order_type,
                         'side': order_side,
                         'stop_price': stop_price,
-                        'quantity': float(order.get('origQty', 0))
+                        'quantity': float(order.get('origQty') or order.get('quantity') or 0)
                     })
                 elif order_type in ['TAKE_PROFIT_MARKET', 'TAKE_PROFIT']:
                     if symbol not in tp_orders_map:
@@ -1469,7 +1512,7 @@ def api_get_all_positions():
                         'type': order_type,
                         'side': order_side,
                         'stop_price': stop_price,
-                        'quantity': float(order.get('origQty', 0))
+                        'quantity': float(order.get('origQty') or order.get('quantity') or 0)
                     })
 
             for pos in positions:
@@ -1877,11 +1920,10 @@ def api_update_stop_loss(account_id):
         # Log the full response for debugging
         print(f"  Binance order response: {order}")
 
-        # Get orderId safely - check multiple possible key names
-        order_id = order.get('orderId') or order.get('orderID') or order.get('order_id') or order.get('id')
+        # Get orderId safely - Binance returns 'algoId' for conditional orders (STOP_MARKET, etc.)
+        order_id = order.get('orderId') or order.get('algoId') or order.get('orderID') or order.get('order_id') or order.get('id')
         if not order_id:
-            print(f"  ERROR: No orderId in response. Full response: {order}")
-            # Return the actual response so we can debug on frontend
+            print(f"  ERROR: No orderId/algoId in response. Full response: {order}")
             return jsonify({'error': f'No orderId in response. Binance returned: {str(order)[:500]}'}), 500
 
         print(f"  Stop-loss order created: {order_id}")
@@ -2025,11 +2067,10 @@ def api_update_take_profit(account_id):
         # Log the full response for debugging
         print(f"  Binance order response: {order}")
 
-        # Get orderId safely - check multiple possible key names
-        order_id = order.get('orderId') or order.get('orderID') or order.get('order_id') or order.get('id')
+        # Get orderId safely - Binance returns 'algoId' for conditional orders (TAKE_PROFIT_MARKET, etc.)
+        order_id = order.get('orderId') or order.get('algoId') or order.get('orderID') or order.get('order_id') or order.get('id')
         if not order_id:
-            print(f"  ERROR: No orderId in response. Full response: {order}")
-            # Return the actual response so we can debug on frontend
+            print(f"  ERROR: No orderId/algoId in response. Full response: {order}")
             return jsonify({'error': f'No orderId in response. Binance returned: {str(order)[:500]}'}), 500
 
         print(f"  Take-profit order created: {order_id}")

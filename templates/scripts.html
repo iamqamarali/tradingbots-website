@@ -12,10 +12,19 @@
     <div class="app-container">
         {% include 'includes/sidebar.html' %}
 
+        <!-- Mobile Scripts Sidebar Overlay -->
+        <div class="scripts-sidebar-overlay" id="scriptsSidebarOverlay"></div>
+
         <!-- Scripts Secondary Sidebar -->
-        <aside class="scripts-sidebar">
+        <aside class="scripts-sidebar" id="scriptsSidebar">
             <div class="scripts-sidebar-header">
                 <div class="section-title">
+                    <button class="scripts-sidebar-close" id="scriptsSidebarClose" title="Close">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"/>
+                            <line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                    </button>
                     <span>Scripts</span>
                     <span class="badge" id="runningCount">0</span>
                 </div>
@@ -38,6 +47,15 @@
             <header class="main-header script-header">
                 <div class="script-header-row">
                     <div class="header-left">
+                        <!-- Mobile Scripts Toggle Button -->
+                        <button class="mobile-scripts-toggle" id="mobileScriptsToggle" title="Show Scripts">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                <polyline points="14 2 14 8 20 8"/>
+                                <line x1="16" y1="13" x2="8" y2="13"/>
+                                <line x1="16" y1="17" x2="8" y2="17"/>
+                            </svg>
+                        </button>
                         <div class="header-title">
                             <h1 id="currentScriptName">Select a Script</h1>
                             <span class="script-status" id="currentScriptStatus"></span>
@@ -256,6 +274,39 @@ client = Client(api_key, api_secret)
             mobileOverlay.addEventListener('click', () => {
                 sidebar.classList.remove('open');
                 mobileOverlay.classList.remove('active');
+            });
+        }
+
+        // Mobile scripts sidebar toggle
+        const mobileScriptsToggle = document.getElementById('mobileScriptsToggle');
+        const scriptsSidebar = document.getElementById('scriptsSidebar');
+        const scriptsSidebarOverlay = document.getElementById('scriptsSidebarOverlay');
+        const scriptsSidebarClose = document.getElementById('scriptsSidebarClose');
+
+        function closeScriptsSidebar() {
+            scriptsSidebar.classList.remove('mobile-open');
+            scriptsSidebarOverlay.classList.remove('active');
+        }
+
+        if (mobileScriptsToggle && scriptsSidebar && scriptsSidebarOverlay) {
+            mobileScriptsToggle.addEventListener('click', () => {
+                scriptsSidebar.classList.toggle('mobile-open');
+                scriptsSidebarOverlay.classList.toggle('active');
+            });
+
+            scriptsSidebarOverlay.addEventListener('click', closeScriptsSidebar);
+
+            if (scriptsSidebarClose) {
+                scriptsSidebarClose.addEventListener('click', closeScriptsSidebar);
+            }
+
+            // Close scripts sidebar when a script is selected on mobile
+            scriptsSidebar.addEventListener('click', (e) => {
+                if (e.target.closest('.script-item')) {
+                    if (window.innerWidth <= 768) {
+                        closeScriptsSidebar();
+                    }
+                }
             });
         }
     </script>

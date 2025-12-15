@@ -23,6 +23,35 @@
 
 .scripts-sidebar-header .section-title {
     margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Scripts Sidebar Close Button (mobile only) */
+.scripts-sidebar-close {
+    display: none;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+}
+
+.scripts-sidebar-close:hover {
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+}
+
+.scripts-sidebar-close svg {
+    width: 16px;
+    height: 16px;
 }
 
 .scripts-sidebar .scripts-list {
@@ -63,6 +92,53 @@
     min-width: 0;
 }
 
+/* Mobile Scripts Toggle Button */
+.mobile-scripts-toggle {
+    display: none;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-primary);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+}
+
+.mobile-scripts-toggle:hover {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+    background: rgba(245, 158, 11, 0.1);
+}
+
+.mobile-scripts-toggle svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* Scripts Sidebar Overlay */
+.scripts-sidebar-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 94;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.scripts-sidebar-overlay.active {
+    display: block;
+    opacity: 1;
+}
+
 /* Mobile Responsive */
 @media (max-width: 1024px) {
     .scripts-sidebar {
@@ -73,17 +149,38 @@
 @media (max-width: 768px) {
     .scripts-sidebar {
         display: none;
+        width: 280px;
     }
 
-    /* Show scripts list in a different way on mobile - as a collapsible panel */
+    /* Show mobile toggle button */
+    .mobile-scripts-toggle {
+        display: flex;
+    }
+
+    /* Show close button inside sidebar on mobile */
+    .scripts-sidebar-close {
+        display: flex;
+    }
+
+    /* Show scripts list as a slide-out panel on mobile */
     .scripts-sidebar.mobile-open {
         display: flex;
         position: fixed;
         top: 0;
-        left: var(--sidebar-width);
+        left: 0;
         height: 100vh;
         z-index: 95;
         box-shadow: 4px 0 20px rgba(0, 0, 0, 0.5);
+        animation: slideInLeft 0.3s ease;
+    }
+
+    @keyframes slideInLeft {
+        from {
+            transform: translateX(-100%);
+        }
+        to {
+            transform: translateX(0);
+        }
     }
 
     .main-header {
