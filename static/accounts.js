@@ -427,6 +427,7 @@ function initDetailPage() {
     setupEditTakeProfitModal();
     setupAddToPositionModal();
     setupSectionTabs();
+    setupTradesPagination();
 }
 
 function setupDetailPageEventListeners() {

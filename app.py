@@ -2436,21 +2436,7 @@ def api_update_take_profit(account_id):
                         qty_precision = int(round(-math.log10(step_size)))
 
         tp_price = round(tp_price, price_precision)
-
-        # Get current position to determine quantity
-        positions = client.futures_position_information(symbol=symbol)
-        position_qty = 0
-        for pos in positions:
-            pos_amt = float(pos.get('positionAmt', 0))
-            if pos_amt != 0:
-                position_qty = abs(pos_amt)
-                break
-
-        if position_qty == 0:
-            return jsonify({'error': 'No open position found for this symbol'}), 400
-
-        position_qty = round(position_qty, qty_precision)
-        debug_log.append(f"Position quantity: {position_qty}")
+        debug_log.append(f"TP price (rounded): {tp_price}")
 
         # Cancel ALL existing TP orders for this symbol
         # First try to cancel the specific order if provided
@@ -2511,16 +2497,16 @@ def api_update_take_profit(account_id):
         # For LONG position, take-profit is a SELL; for SHORT, it's a BUY
         order_side = 'SELL' if position_side == 'LONG' else 'BUY'
 
-        # Create new take-profit as LIMIT order with reduceOnly
-        # This places the order directly in the order book at the exact TP price
-        print(f"  Creating LIMIT TP order: {order_side} {position_qty} @ {tp_price} (reduceOnly=true)")
+        # Create new take-profit as LIMIT order with closePosition=true
+        # This will close the entire position at the specified price
+        print(f"  Creating LIMIT TP order: {order_side} @ {tp_price} (closePosition=true)")
+        debug_log.append(f"Creating LIMIT {order_side} @ {tp_price} with closePosition=true")
         order = client.futures_create_order(
             symbol=symbol,
             side=order_side,
             type='LIMIT',
             price=str(tp_price),
-            quantity=position_qty,
-            reduceOnly='true',
+            closePosition='true',
             timeInForce='GTC'
         )
 
@@ -2541,8 +2527,7 @@ def api_update_take_profit(account_id):
                 'symbol': order.get('symbol', symbol),
                 'side': order.get('side', order_side),
                 'price': tp_price,
-                'quantity': position_qty,
-                'reduceOnly': True,
+                'closePosition': True,
                 'status': order.get('status', 'NEW')
             },
             '_debug': debug_log
