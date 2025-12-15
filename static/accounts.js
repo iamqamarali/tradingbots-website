@@ -625,7 +625,24 @@ async function loadPositions() {
 
     try {
         const response = await fetch(`/api/accounts/${ACCOUNT_ID}/positions`);
-        const positions = await response.json();
+        const data = await response.json();
+
+        // Handle new response format with debug info
+        let positions = [];
+        if (Array.isArray(data)) {
+            positions = data;
+        } else if (data.positions) {
+            positions = data.positions;
+            // Log debug info to console
+            if (data._debug) {
+                console.log('=== POSITIONS DEBUG INFO ===');
+                console.log('Messages:', data._debug.messages);
+                console.log('Regular orders from library:', data._debug.regular_orders);
+                console.log('Direct API orders:', data._debug.direct_api_orders);
+                console.log('Algo orders:', data._debug.algo_orders);
+                console.log('============================');
+            }
+        }
 
         if (loading) loading.style.display = 'none';
 
@@ -757,7 +774,24 @@ async function loadOrders() {
 
     try {
         const response = await fetch(`/api/accounts/${ACCOUNT_ID}/orders`);
-        const orders = await response.json();
+        const data = await response.json();
+
+        // Handle new response format with debug info
+        let orders = [];
+        if (Array.isArray(data)) {
+            orders = data;
+        } else if (data.orders) {
+            orders = data.orders;
+            // Log debug info to console
+            if (data._debug) {
+                console.log('=== ORDERS DEBUG INFO ===');
+                console.log('Messages:', data._debug.messages);
+                console.log('Regular orders from library:', data._debug.regular_orders);
+                console.log('Direct API orders:', data._debug.direct_api_orders);
+                console.log('Algo orders:', data._debug.algo_orders);
+                console.log('=========================');
+            }
+        }
 
         if (loading) loading.style.display = 'none';
 

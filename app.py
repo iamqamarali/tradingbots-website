@@ -25,10 +25,74 @@ import database as db
 try:
     from binance.client import Client as BinanceClient
     from binance.exceptions import BinanceAPIException
+    import requests
+    import hmac
+    import hashlib
     BINANCE_AVAILABLE = True
 except ImportError:
     BINANCE_AVAILABLE = False
-    print("[WARNING] binance-python not installed. Account sync disabled.")
+
+
+def fetch_algo_orders(api_key, api_secret, testnet=False):
+    """Fetch algo/conditional orders from Binance Futures API."""
+    if testnet:
+        base_url = 'https://testnet.binancefuture.com'
+    else:
+        base_url = 'https://fapi.binance.com'
+
+    # Try multiple endpoints - Binance has different endpoints for different order types
+    # After Dec 2024 migration, conditional orders (STOP_MARKET, TAKE_PROFIT_MARKET)
+    # return algoId and may need different endpoints
+    endpoints_to_try = [
+        '/fapi/v1/algo/openOrders',              # VP/TWAP and potentially conditional orders
+        '/fapi/v1/conditional/openOrders',       # Conditional orders endpoint
+        '/fapi/v1/openConditionalOrders',        # Alternative naming
+    ]
+
+    all_orders = []
+
+    for endpoint in endpoints_to_try:
+        timestamp = int(time.time() * 1000)
+        recv_window = 5000
+        query_string = f'recvWindow={recv_window}&timestamp={timestamp}'
+
+        # Create signature
+        signature = hmac.new(
+            api_secret.encode('utf-8'),
+            query_string.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+
+        url = f'{base_url}{endpoint}?{query_string}&signature={signature}'
+        headers = {'X-MBX-APIKEY': api_key}
+
+        print(f"  Fetching algo orders from: {base_url}{endpoint}")
+
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            print(f"  Algo orders response status: {response.status_code}")
+
+            if response.status_code == 200:
+                data = response.json()
+                print(f"  Algo orders response: {data}")
+
+                # Handle both array and object responses
+                if isinstance(data, list):
+                    all_orders.extend(data)
+                elif isinstance(data, dict):
+                    # Some APIs wrap the array in an object
+                    if 'orders' in data:
+                        all_orders.extend(data['orders'])
+                    elif 'data' in data:
+                        all_orders.extend(data['data'])
+                    else:
+                        print(f"  Response format: {data}")
+            else:
+                print(f"  Algo orders API error: {response.status_code} - {response.text}")
+        except Exception as e:
+            print(f"  Error fetching algo orders from {endpoint}: {e}")
+
+    return all_orders
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
@@ -1134,47 +1198,98 @@ def api_get_account_balance(account_id):
 @app.route('/api/accounts/<int:account_id>/positions', methods=['GET'])
 def api_get_account_positions(account_id):
     """Get open positions from Binance with stop-loss info."""
-    print(f"=== GET POSITIONS for account_id: {account_id} ===")
+    debug_info = []  # Collect debug info for frontend
 
     if not BINANCE_AVAILABLE:
-        print("ERROR: Binance API not available")
         return jsonify({'error': 'Binance API not available'}), 500
 
     account = db.get_account(account_id)
     if not account:
-        print(f"ERROR: Account {account_id} not found")
         return jsonify({'error': 'Account not found'}), 404
 
-    print(f"Account: {account['name']}, is_testnet: {account['is_testnet']}")
+    debug_info.append(f"Account: {account['name']}, testnet: {account['is_testnet']}")
 
     try:
         client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
         if account['is_testnet']:
             client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
-            print(f"Using testnet URL: {client.FUTURES_URL}")
 
-        print("Fetching futures position information...")
         positions = client.futures_position_information()
-        print(f"Got {len(positions)} position entries")
+        debug_info.append(f"Got {len(positions)} position entries")
 
         # Get all open orders to find stop-loss orders
-        print("Fetching open orders for stop-loss info...")
         all_open_orders = []
+        regular_orders_debug = []
         try:
             regular_orders = client.futures_get_open_orders()
             all_open_orders.extend(regular_orders)
-            print(f"Got {len(regular_orders)} regular open orders")
+            debug_info.append(f"Library returned {len(regular_orders)} regular orders")
+            for order in regular_orders:
+                regular_orders_debug.append({
+                    'type': order.get('type'),
+                    'symbol': order.get('symbol'),
+                    'orderId': order.get('orderId'),
+                    'algoId': order.get('algoId'),
+                    'stopPrice': order.get('stopPrice')
+                })
         except Exception as e:
-            print(f"Warning: Could not fetch regular orders: {e}")
+            debug_info.append(f"Library error: {str(e)}")
 
-        # Fetch algo/conditional orders (STOP_MARKET, TAKE_PROFIT_MARKET, etc.)
+        # Direct API call to /fapi/v1/openOrders
+        direct_api_debug = []
         try:
-            algo_orders = client._request('get', 'openAlgoOrders', signed=True, data={})
+            if account['is_testnet']:
+                base_url = 'https://testnet.binancefuture.com'
+            else:
+                base_url = 'https://fapi.binance.com'
+
+            timestamp = int(time.time() * 1000)
+            query_string = f'recvWindow=5000&timestamp={timestamp}'
+            signature = hmac.new(
+                account['api_secret'].encode('utf-8'),
+                query_string.encode('utf-8'),
+                hashlib.sha256
+            ).hexdigest()
+
+            url = f'{base_url}/fapi/v1/openOrders?{query_string}&signature={signature}'
+            headers = {'X-MBX-APIKEY': account['api_key']}
+            response = requests.get(url, headers=headers, timeout=10)
+
+            debug_info.append(f"Direct API /fapi/v1/openOrders: status={response.status_code}")
+            if response.status_code == 200:
+                raw_orders = response.json()
+                debug_info.append(f"Direct API returned {len(raw_orders)} orders")
+                for order in raw_orders:
+                    direct_api_debug.append({
+                        'type': order.get('type'),
+                        'symbol': order.get('symbol'),
+                        'orderId': order.get('orderId'),
+                        'algoId': order.get('algoId'),
+                        'stopPrice': order.get('stopPrice')
+                    })
+            else:
+                debug_info.append(f"Direct API error: {response.text[:200]}")
+        except Exception as e:
+            debug_info.append(f"Direct API exception: {str(e)}")
+
+        # Fetch algo/conditional orders
+        algo_orders_debug = []
+        try:
+            algo_orders = fetch_algo_orders(account['api_key'], account['api_secret'], account['is_testnet'])
             if algo_orders and isinstance(algo_orders, list):
                 all_open_orders.extend(algo_orders)
-                print(f"Got {len(algo_orders)} algo open orders")
+                debug_info.append(f"Algo endpoints returned {len(algo_orders)} orders")
+                for order in algo_orders:
+                    algo_orders_debug.append({
+                        'type': order.get('type') or order.get('orderType'),
+                        'symbol': order.get('symbol'),
+                        'algoId': order.get('algoId'),
+                        'triggerPrice': order.get('triggerPrice')
+                    })
+            else:
+                debug_info.append("Algo endpoints returned 0 orders")
         except Exception as e:
-            print(f"Warning: Could not fetch algo orders: {e}")
+            debug_info.append(f"Algo fetch error: {str(e)}")
 
         print(f"Total open orders: {len(all_open_orders)}")
 
@@ -1198,6 +1313,8 @@ def api_get_account_positions(account_id):
             order_type = order.get('type') or order.get('orderType', '')
             stop_price = float(order.get('stopPrice') or order.get('triggerPrice') or 0)
 
+            print(f"  Processing order: symbol={symbol}, id={order_id}, side={order_side}, type={order_type}, stopPrice={stop_price}")
+
             # Skip orders with missing required fields
             if not symbol or not order_id or not order_side:
                 print(f"  Warning: Skipping order with missing fields: {order}")
@@ -1205,6 +1322,7 @@ def api_get_account_positions(account_id):
 
             # Check for stop-loss orders
             if order_type in stop_order_types:
+                print(f"    -> Matched as STOP order")
                 if symbol not in stop_orders_map:
                     stop_orders_map[symbol] = []
                 stop_orders_map[symbol].append({
@@ -1292,13 +1410,22 @@ def api_get_account_positions(account_id):
                 print(f"  Warning: Error processing position {pos}: {e}")
                 continue
 
-        print(f"Returning {len(open_positions)} open positions")
-        return jsonify(open_positions)
+        debug_info.append(f"Total orders found: {len(all_open_orders)}")
+        debug_info.append(f"Returning {len(open_positions)} open positions")
+
+        # Return positions with debug info
+        return jsonify({
+            'positions': open_positions,
+            '_debug': {
+                'messages': debug_info,
+                'regular_orders': regular_orders_debug,
+                'direct_api_orders': direct_api_debug,
+                'algo_orders': algo_orders_debug
+            }
+        })
     except BinanceAPIException as e:
-        print(f"BinanceAPIException: {e}")
-        return jsonify({'error': f'Binance error: {e.message}'}), 500
+        return jsonify({'error': f'Binance error: {e.message}', '_debug': {'messages': debug_info}}), 500
     except Exception as e:
-        print(f"Exception: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
@@ -1307,7 +1434,7 @@ def api_get_account_positions(account_id):
 @app.route('/api/accounts/<int:account_id>/orders', methods=['GET'])
 def api_get_account_orders(account_id):
     """Get all open orders from Binance."""
-    print(f"=== GET OPEN ORDERS for account_id: {account_id} ===")
+    debug_info = []  # Collect debug info for frontend
 
     if not BINANCE_AVAILABLE:
         return jsonify({'error': 'Binance API not available'}), 500
@@ -1316,6 +1443,8 @@ def api_get_account_orders(account_id):
     if not account:
         return jsonify({'error': 'Account not found'}), 404
 
+    debug_info.append(f"Account: {account['name']}, testnet: {account['is_testnet']}")
+
     try:
         client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
         if account['is_testnet']:
@@ -1323,22 +1452,77 @@ def api_get_account_orders(account_id):
 
         # Fetch regular open orders
         all_orders = []
+        regular_orders_debug = []
         try:
             regular_orders = client.futures_get_open_orders()
             all_orders.extend(regular_orders)
-            print(f"Got {len(regular_orders)} regular open orders")
+            debug_info.append(f"Library returned {len(regular_orders)} regular orders")
+            for order in regular_orders:
+                regular_orders_debug.append({
+                    'type': order.get('type'),
+                    'symbol': order.get('symbol'),
+                    'orderId': order.get('orderId'),
+                    'algoId': order.get('algoId'),
+                    'stopPrice': order.get('stopPrice')
+                })
         except Exception as e:
-            print(f"Warning: Could not fetch regular orders: {e}")
+            debug_info.append(f"Library error: {str(e)}")
 
-        # Fetch algo/conditional orders (STOP_MARKET, TAKE_PROFIT_MARKET, etc.)
-        # These are now on a separate endpoint since Binance's Dec 2024 migration
+        # Direct API call to /fapi/v1/openOrders
+        direct_api_debug = []
         try:
-            algo_orders = client._request('get', 'openAlgoOrders', signed=True, data={})
+            if account['is_testnet']:
+                base_url = 'https://testnet.binancefuture.com'
+            else:
+                base_url = 'https://fapi.binance.com'
+
+            timestamp = int(time.time() * 1000)
+            query_string = f'recvWindow=5000&timestamp={timestamp}'
+            signature = hmac.new(
+                account['api_secret'].encode('utf-8'),
+                query_string.encode('utf-8'),
+                hashlib.sha256
+            ).hexdigest()
+
+            url = f'{base_url}/fapi/v1/openOrders?{query_string}&signature={signature}'
+            headers = {'X-MBX-APIKEY': account['api_key']}
+            response = requests.get(url, headers=headers, timeout=10)
+
+            debug_info.append(f"Direct API /fapi/v1/openOrders: status={response.status_code}")
+            if response.status_code == 200:
+                raw_orders = response.json()
+                debug_info.append(f"Direct API returned {len(raw_orders)} orders")
+                for order in raw_orders:
+                    direct_api_debug.append({
+                        'type': order.get('type'),
+                        'symbol': order.get('symbol'),
+                        'orderId': order.get('orderId'),
+                        'algoId': order.get('algoId'),
+                        'stopPrice': order.get('stopPrice')
+                    })
+            else:
+                debug_info.append(f"Direct API error: {response.text[:200]}")
+        except Exception as e:
+            debug_info.append(f"Direct API exception: {str(e)}")
+
+        # Fetch algo/conditional orders
+        algo_orders_debug = []
+        try:
+            algo_orders = fetch_algo_orders(account['api_key'], account['api_secret'], account['is_testnet'])
             if algo_orders and isinstance(algo_orders, list):
                 all_orders.extend(algo_orders)
-                print(f"Got {len(algo_orders)} algo open orders")
+                debug_info.append(f"Algo endpoints returned {len(algo_orders)} orders")
+                for order in algo_orders:
+                    algo_orders_debug.append({
+                        'type': order.get('type') or order.get('orderType'),
+                        'symbol': order.get('symbol'),
+                        'algoId': order.get('algoId'),
+                        'triggerPrice': order.get('triggerPrice')
+                    })
+            else:
+                debug_info.append("Algo endpoints returned 0 orders")
         except Exception as e:
-            print(f"Warning: Could not fetch algo orders: {e}")
+            debug_info.append(f"Algo fetch error: {str(e)}")
 
         print(f"Total orders: {len(all_orders)}")
 
@@ -1372,21 +1556,25 @@ def api_get_account_orders(account_id):
         # Sort by time descending (newest first)
         orders.sort(key=lambda x: x['time'], reverse=True)
 
-        print(f"Returning {len(orders)} open orders")
-        return jsonify(orders)
+        debug_info.append(f"Total orders found: {len(all_orders)}")
+        debug_info.append(f"Returning {len(orders)} processed orders")
+
+        # Return orders with debug info
+        return jsonify({
+            'orders': orders,
+            '_debug': {
+                'messages': debug_info,
+                'regular_orders': regular_orders_debug,
+                'direct_api_orders': direct_api_debug,
+                'algo_orders': algo_orders_debug
+            }
+        })
     except BinanceAPIException as e:
-        print(f"BinanceAPIException: {e}")
-        return jsonify({'error': f'Binance error: {e.message}'}), 500
+        return jsonify({'error': f'Binance error: {e.message}', '_debug': {'messages': debug_info}}), 500
     except KeyError as e:
-        print(f"KeyError accessing order data: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': f'Missing field in order data: {e}'}), 500
+        return jsonify({'error': f'Missing field in order data: {e}', '_debug': {'messages': debug_info}}), 500
     except Exception as e:
-        print(f"Exception: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': f'Server error: {str(e)}'}), 500
+        return jsonify({'error': f'Server error: {str(e)}', '_debug': {'messages': debug_info}}), 500
 
 
 @app.route('/api/accounts/<int:account_id>/orders/<int:order_id>', methods=['DELETE'])
@@ -1465,14 +1653,20 @@ def api_get_all_positions():
             try:
                 regular_orders = client.futures_get_open_orders()
                 all_open_orders.extend(regular_orders)
+                print(f"  Got {len(regular_orders)} regular orders for {account_name}")
+                for i, order in enumerate(regular_orders):
+                    print(f"    Regular order {i}: type={order.get('type')}, symbol={order.get('symbol')}, orderId={order.get('orderId')}, algoId={order.get('algoId')}")
             except Exception as e:
                 print(f"Warning: Could not fetch regular orders for {account_name}: {e}")
 
             # Fetch algo/conditional orders (STOP_MARKET, TAKE_PROFIT_MARKET, etc.)
             try:
-                algo_orders = client._request('get', 'openAlgoOrders', signed=True, data={})
+                algo_orders = fetch_algo_orders(account['api_key_full'], account['api_secret'], account['is_testnet'])
                 if algo_orders and isinstance(algo_orders, list):
                     all_open_orders.extend(algo_orders)
+                    print(f"  Got {len(algo_orders)} algo open orders for {account_name}")
+                    for i, order in enumerate(algo_orders):
+                        print(f"    Algo order {i}: type={order.get('type') or order.get('orderType')}, symbol={order.get('symbol')}, algoId={order.get('algoId')}")
             except Exception as e:
                 print(f"Warning: Could not fetch algo orders for {account_name}: {e}")
 
@@ -1908,13 +2102,15 @@ def api_update_stop_loss(account_id):
         order_side = 'SELL' if position_side == 'LONG' else 'BUY'
 
         # Create new stop-loss order with closePosition=true to close entire position
-        print(f"  Creating STOP_MARKET order: {order_side} @ stop {stop_price} (closePosition=true)")
+        # Using MARK_PRICE for more stable triggering (less prone to wicks)
+        print(f"  Creating STOP_MARKET order: {order_side} @ stop {stop_price} (closePosition=true, workingType=MARK_PRICE)")
         order = client.futures_create_order(
             symbol=symbol,
             side=order_side,
             type='STOP_MARKET',
             stopPrice=str(stop_price),
-            closePosition='true'
+            closePosition='true',
+            workingType='MARK_PRICE'
         )
 
         # Log the full response for debugging
@@ -2055,13 +2251,15 @@ def api_update_take_profit(account_id):
         order_side = 'SELL' if position_side == 'LONG' else 'BUY'
 
         # Create new take-profit order with closePosition=true to close entire position
-        print(f"  Creating TAKE_PROFIT_MARKET order: {order_side} @ TP {tp_price} (closePosition=true)")
+        # Using MARK_PRICE for more stable triggering (less prone to wicks)
+        print(f"  Creating TAKE_PROFIT_MARKET order: {order_side} @ TP {tp_price} (closePosition=true, workingType=MARK_PRICE)")
         order = client.futures_create_order(
             symbol=symbol,
             side=order_side,
             type='TAKE_PROFIT_MARKET',
             stopPrice=str(tp_price),
-            closePosition='true'
+            closePosition='true',
+            workingType='MARK_PRICE'
         )
 
         # Log the full response for debugging
