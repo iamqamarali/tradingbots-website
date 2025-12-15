@@ -219,26 +219,33 @@ def load_logs_from_file(script_id, limit=500):
 
 
 def clear_old_logs():
-    """Clear all logs older than a day."""
+    """Clear log files older than 7 days."""
     global last_clear_date
-    
+
     today = datetime.now().date()
+    # Only run cleanup once per day
     if today > last_clear_date:
-        # Delete all log files (they're from yesterday or older)
+        now = datetime.now()
+        deleted_count = 0
+
+        # Delete log files older than 7 days
         for filename in os.listdir(LOGS_FOLDER):
             if filename.endswith('.log'):
                 filepath = os.path.join(LOGS_FOLDER, filename)
                 try:
-                    os.remove(filepath)
+                    # Check file modification time
+                    file_mtime = datetime.fromtimestamp(os.path.getmtime(filepath))
+                    file_age_days = (now - file_mtime).days
+
+                    if file_age_days >= 7:
+                        os.remove(filepath)
+                        deleted_count += 1
                 except:
                     pass
-        
-        # Clear in-memory logs
-        with logs_lock:
-            script_logs.clear()
-        
+
         last_clear_date = today
-        print(f"[{datetime.now()}] Daily log cleanup completed - old logs deleted")
+        if deleted_count > 0:
+            print(f"[{datetime.now()}] Log cleanup completed - deleted {deleted_count} log files older than 7 days")
 
 
 def log_cleanup_scheduler():
@@ -1193,21 +1200,26 @@ def api_get_account_balance(account_id):
         # Check both USDT and USDC balances
         usdt_balance = 0
         usdc_balance = 0
+        usdt_available = 0
+        usdc_available = 0
         for bal in balances:
             if bal['asset'] == 'USDT':
                 usdt_balance = float(bal['balance'])
-                print(f"USDT balance found: {usdt_balance}")
+                usdt_available = float(bal.get('availableBalance', bal.get('withdrawAvailable', bal['balance'])))
+                print(f"USDT balance found: {usdt_balance}, available: {usdt_available}")
             elif bal['asset'] == 'USDC':
                 usdc_balance = float(bal['balance'])
-                print(f"USDC balance found: {usdc_balance}")
-        
+                usdc_available = float(bal.get('availableBalance', bal.get('withdrawAvailable', bal['balance'])))
+                print(f"USDC balance found: {usdc_balance}, available: {usdc_available}")
+
         # Combine both balances
         total_balance = usdt_balance + usdc_balance
-        print(f"Total balance (USDT + USDC): {total_balance}")
+        total_available = usdt_available + usdc_available
+        print(f"Total balance (USDT + USDC): {total_balance}, available: {total_available}")
 
         # Update balance in database
         db.update_account_balance(account_id, total_balance)
-        
+
         # Get starting balance from database
         accounts = db.get_all_accounts()
         starting_balance = 0
@@ -1218,6 +1230,7 @@ def api_get_account_balance(account_id):
 
         return jsonify({
             'balance': round(total_balance, 2),
+            'available_balance': round(total_available, 2),
             'usdt_balance': round(usdt_balance, 2),
             'usdc_balance': round(usdc_balance, 2),
             'starting_balance': round(starting_balance, 2),

@@ -3,6 +3,7 @@
 let accountsData = [];
 let accountToDelete = null;
 let accountToEdit = null;
+let availableBalance = 0;  // Store available balance for Add to Position modal
 
 // Check if we're on detail page or list page
 const isDetailPage = typeof ACCOUNT_ID !== 'undefined';
@@ -581,17 +582,20 @@ function renderAttachedBots(scripts) {
 async function loadBalance() {
     const refreshBtn = document.getElementById('refreshBalanceBtn');
     if (refreshBtn) refreshBtn.classList.add('loading');
-    
+
     try {
         const response = await fetch(`/api/accounts/${ACCOUNT_ID}/balance`);
         const data = await response.json();
-        
+
         if (response.ok) {
             const balanceAmount = document.querySelector('.balance-amount');
             if (balanceAmount) {
                 balanceAmount.textContent = `$${data.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
             }
-            
+
+            // Store available balance for Add to Position modal
+            availableBalance = data.available_balance || data.balance || 0;
+
             // Update starting balance if available
             if (data.starting_balance !== undefined) {
                 const startBalEl = document.getElementById('startingBalance');
@@ -713,7 +717,8 @@ async function loadPositions() {
                             data-side="${pos.side}"
                             data-quantity="${pos.quantity}"
                             data-entry-price="${pos.entry_price}"
-                            data-mark-price="${pos.mark_price}">
+                            data-mark-price="${pos.mark_price}"
+                            data-leverage="${pos.leverage}">
                             Add
                         </button>
                         <button class="close-position-btn"
@@ -2027,12 +2032,14 @@ function renderEquityChart(data) {
 let currentAddPosition = null;
 
 function openAddToPositionModal(posData) {
+    const leverage = parseInt(posData.leverage) || 1;
     currentAddPosition = {
         symbol: posData.symbol,
         side: posData.side,
         quantity: parseFloat(posData.quantity),
         entryPrice: parseFloat(posData.entryPrice),
-        markPrice: parseFloat(posData.markPrice)
+        markPrice: parseFloat(posData.markPrice),
+        leverage: leverage
     };
 
     // Update modal content
@@ -2044,6 +2051,16 @@ function openAddToPositionModal(posData) {
     document.getElementById('addPosCurrentSize').textContent = currentAddPosition.quantity;
     document.getElementById('addPosEntryPrice').textContent = `$${currentAddPosition.entryPrice.toFixed(4)}`;
     document.getElementById('addPosMarkPrice').textContent = `$${currentAddPosition.markPrice.toFixed(4)}`;
+    document.getElementById('addPosLeverage').textContent = `${leverage}x`;
+
+    // Calculate and display available balance and max add
+    const avail = availableBalance || 0;
+    const maxAdd = avail * leverage;
+    document.getElementById('addPosAvailBalance').textContent = `$${avail.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    document.getElementById('addPosMaxAdd').textContent = `$${maxAdd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    // Store max add for percentage buttons
+    currentAddPosition.maxAdd = maxAdd;
 
     // Clear USDC input and calculated qty
     document.getElementById('addPosUsdc').value = '';
@@ -2094,6 +2111,21 @@ function setupAddToPositionModal() {
             document.getElementById('addPosCalcQty').textContent = qty.toFixed(6);
         });
     }
+
+    // Quick percentage buttons
+    const quickBtns = modal.querySelectorAll('.add-pos-quick-btns .quick-btn');
+    quickBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (!currentAddPosition || !currentAddPosition.maxAdd) return;
+            const pct = parseInt(btn.dataset.pct) || 0;
+            const amount = (currentAddPosition.maxAdd * pct / 100);
+            // Round to 2 decimal places
+            const roundedAmount = Math.floor(amount * 100) / 100;
+            usdcInput.value = roundedAmount.toFixed(2);
+            // Trigger input event to update calculated quantity
+            usdcInput.dispatchEvent(new Event('input'));
+        });
+    });
 
     // Confirm add to position
     if (confirmBtn) {
@@ -2176,6 +2208,8 @@ function setupTradeModal() {
 
     // Open trade modal
     newTradeBtn.addEventListener('click', () => {
+        // Sync available balance from global variable
+        tradeState.availableBalance = availableBalance || 0;
         tradeModal.classList.add('active');
         fetchCurrentPrice();
         updateTradeInfo();
@@ -2343,7 +2377,7 @@ async function fetchCurrentPrice() {
 
 function calculateMaxSize() {
     // Max size based on available balance and leverage
-    const balance = tradeState.availableBalance || 100; // Default for display
+    const balance = tradeState.availableBalance || 0;
     return balance * tradeState.leverage;
 }
 
@@ -2351,17 +2385,27 @@ function updateTradeInfo() {
     const sizeInput = document.getElementById('tradeSize');
     const size = parseFloat(sizeInput?.value) || 0;
     const leverage = tradeState.leverage;
+    const available = tradeState.availableBalance || 0;
 
-    // Cost = Size / Leverage
+    // Available balance
+    const availEl = document.getElementById('tradeAvailable');
+    if (availEl) {
+        availEl.textContent = `${available.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC`;
+    }
+
+    // Max position size = Available * Leverage
+    const maxSize = available * leverage;
+    const maxEl = document.getElementById('tradeMax');
+    if (maxEl) {
+        maxEl.textContent = `${maxSize.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC`;
+    }
+
+    // Cost = Size / Leverage (margin required)
     const cost = size / leverage;
-    document.getElementById('tradeCost').textContent = `${cost.toFixed(2)} USDC`;
-
-    // Max size
-    const maxSize = calculateMaxSize();
-    document.getElementById('tradeMax').textContent = `${maxSize.toFixed(2)} USDC`;
-
-    // Liquidation price (simplified calculation)
-    document.getElementById('tradeLiqPrice').textContent = '-- USDC';
+    const costEl = document.getElementById('tradeCost');
+    if (costEl) {
+        costEl.textContent = `${cost.toFixed(2)} USDC`;
+    }
 }
 
 async function executeTrade(side) {

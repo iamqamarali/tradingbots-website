@@ -2163,7 +2163,7 @@
 }
 
 .position-details {
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
 }
 
 .detail-row {
@@ -2175,6 +2175,79 @@
 
 .detail-row span:first-child {
     color: #a1a1aa;
+}
+
+/* Add to Position Modal - Available Margin Info */
+.available-margin-info {
+    background: rgba(245, 158, 11, 0.05);
+    border: 1px solid rgba(245, 158, 11, 0.15);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+}
+
+.margin-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.4rem 0;
+    font-size: 0.9rem;
+}
+
+.margin-row span:first-child {
+    color: #a1a1aa;
+}
+
+.margin-row span:last-child {
+    font-weight: 500;
+    color: #e4e4e7;
+}
+
+.margin-row.highlight {
+    margin-top: 0.25rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgba(245, 158, 11, 0.15);
+}
+
+.margin-row.highlight span:last-child {
+    color: #fbbf24;
+    font-weight: 600;
+}
+
+/* Quick Percentage Buttons for Add to Position */
+.add-pos-quick-btns {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.add-pos-quick-btns .quick-btn {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: #a1a1aa;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.add-pos-quick-btns .quick-btn:hover {
+    background: rgba(245, 158, 11, 0.15);
+    border-color: rgba(245, 158, 11, 0.3);
+    color: #fbbf24;
+}
+
+.add-pos-quick-btns .quick-btn:active {
+    transform: scale(0.98);
+}
+
+.add-pos-hint {
+    font-size: 0.8rem;
+    color: #71717a;
+    margin-top: 0.5rem;
 }
 
 .close-amount-section {
@@ -3015,6 +3088,11 @@
     font-size: 0.8rem;
     color: #a1a1aa;
     font-family: 'JetBrains Mono', monospace;
+}
+
+.trade-info-item .info-value.highlight {
+    color: #fbbf24;
+    font-weight: 600;
 }
 
 /* Leverage Modal */
