@@ -2359,7 +2359,7 @@ def api_cancel_stop_loss(account_id):
 
 @app.route('/api/accounts/<int:account_id>/update-take-profit', methods=['POST'])
 def api_update_take_profit(account_id):
-    """Update or create a take-profit order for a position (closes entire position)."""
+    """Update or create a take-profit LIMIT order with reduceOnly for a position."""
     print(f"=== UPDATE TAKE-PROFIT for account_id: {account_id} ===")
 
     if not BINANCE_AVAILABLE:
@@ -2387,7 +2387,7 @@ def api_update_take_profit(account_id):
         if account['is_testnet']:
             client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
 
-        # Get symbol precision info for price
+        # Get symbol precision info for price and quantity
         exchange_info = client.futures_exchange_info()
         symbol_info = None
         for s in exchange_info['symbols']:
@@ -2395,22 +2395,42 @@ def api_update_take_profit(account_id):
                 symbol_info = s
                 break
 
-        # Get price tick size
-        price_tick = 0.01  # Default
+        # Get price tick size and quantity step size
+        price_precision = 2
+        qty_precision = 3
         if symbol_info:
             for f in symbol_info.get('filters', []):
                 if f['filterType'] == 'PRICE_FILTER':
-                    price_tick = float(f['tickSize'])
-                    break
+                    tick_size = float(f['tickSize'])
+                    if tick_size >= 1:
+                        price_precision = 0
+                    else:
+                        price_precision = int(round(-math.log10(tick_size)))
+                if f['filterType'] == 'LOT_SIZE':
+                    step_size = float(f['stepSize'])
+                    if step_size >= 1:
+                        qty_precision = 0
+                    else:
+                        qty_precision = int(round(-math.log10(step_size)))
 
-        # Round price to valid tick size
-        if price_tick >= 1:
-            price_precision = 0
-        else:
-            price_precision = int(round(-math.log10(price_tick)))
         tp_price = round(tp_price, price_precision)
 
-        # Cancel ALL existing TP orders for this symbol (closePosition only allows one)
+        # Get current position to determine quantity
+        positions = client.futures_position_information(symbol=symbol)
+        position_qty = 0
+        for pos in positions:
+            pos_amt = float(pos.get('positionAmt', 0))
+            if pos_amt != 0:
+                position_qty = abs(pos_amt)
+                break
+
+        if position_qty == 0:
+            return jsonify({'error': 'No open position found for this symbol'}), 400
+
+        position_qty = round(position_qty, qty_precision)
+        debug_log.append(f"Position quantity: {position_qty}")
+
+        # Cancel ALL existing TP orders for this symbol
         # First try to cancel the specific order if provided
         if old_order_id:
             debug_log.append(f"Trying to cancel old_order_id: {old_order_id}")
@@ -2429,23 +2449,25 @@ def api_update_take_profit(account_id):
                 debug_log.append(f"Both cancel methods failed for {old_order_id}: {str(e)}")
                 print(f"  Warning: Could not cancel old TP order: {e}")
 
-        # Also find and cancel any other TP orders for this symbol (to be safe)
+        # Also find and cancel any other TP orders for this symbol (TAKE_PROFIT_MARKET or LIMIT reduceOnly)
         order_side = 'SELL' if position_side == 'LONG' else 'BUY'
         try:
-            # Check regular orders
+            # Check regular orders - cancel TAKE_PROFIT_MARKET and LIMIT with reduceOnly
             open_orders = client.futures_get_open_orders(symbol=symbol)
             debug_log.append(f"Found {len(open_orders)} regular open orders for {symbol}")
             for order in open_orders:
-                if order.get('type') == 'TAKE_PROFIT_MARKET' and order.get('side') == order_side:
-                    order_id_to_cancel = order.get('orderId')
-                    debug_log.append(f"Found regular TAKE_PROFIT_MARKET {order_id_to_cancel}, cancelling...")
-                    try:
-                        print(f"  Found existing TAKE_PROFIT_MARKET order {order_id_to_cancel}, cancelling...")
-                        client.futures_cancel_order(symbol=symbol, orderId=order_id_to_cancel)
-                        debug_log.append(f"Cancelled regular order {order_id_to_cancel}")
-                    except Exception as e:
-                        debug_log.append(f"Failed to cancel regular order {order_id_to_cancel}: {str(e)}")
-                        print(f"  Warning: Could not cancel order {order_id_to_cancel}: {e}")
+                order_type = order.get('type')
+                is_reduce_only = order.get('reduceOnly', False)
+                # Cancel old TAKE_PROFIT_MARKET orders or LIMIT orders that are reduceOnly (old TPs)
+                if order.get('side') == order_side:
+                    if order_type == 'TAKE_PROFIT_MARKET' or (order_type == 'LIMIT' and is_reduce_only):
+                        order_id_to_cancel = order.get('orderId')
+                        debug_log.append(f"Found regular {order_type} (reduceOnly={is_reduce_only}) {order_id_to_cancel}, cancelling...")
+                        try:
+                            client.futures_cancel_order(symbol=symbol, orderId=order_id_to_cancel)
+                            debug_log.append(f"Cancelled regular order {order_id_to_cancel}")
+                        except Exception as e:
+                            debug_log.append(f"Failed to cancel regular order {order_id_to_cancel}: {str(e)}")
 
             # Check algo orders
             algo_orders = fetch_algo_orders(account['api_key'], account['api_secret'], account['is_testnet'])
@@ -2456,12 +2478,10 @@ def api_update_take_profit(account_id):
                     algo_id = order.get('algoId')
                     debug_log.append(f"Found algo TAKE_PROFIT_MARKET {algo_id}, cancelling...")
                     try:
-                        print(f"  Found existing algo TAKE_PROFIT_MARKET order {algo_id}, cancelling...")
                         cancel_algo_order(account['api_key'], account['api_secret'], algo_id, account['is_testnet'])
                         debug_log.append(f"Cancelled algo order {algo_id}")
                     except Exception as e:
                         debug_log.append(f"Failed to cancel algo order {algo_id}: {str(e)}")
-                        print(f"  Warning: Could not cancel algo order {order.get('algoId')}: {e}")
         except Exception as e:
             debug_log.append(f"Error checking existing orders: {str(e)}")
             print(f"  Warning: Could not check for existing orders: {e}")
@@ -2469,38 +2489,38 @@ def api_update_take_profit(account_id):
         # For LONG position, take-profit is a SELL; for SHORT, it's a BUY
         order_side = 'SELL' if position_side == 'LONG' else 'BUY'
 
-        # Create new take-profit order with closePosition=true (Conditional order)
-        # This closes the ENTIRE position when triggered, even if position size changed
-        # Using MARK_PRICE for more stable triggering (less prone to wicks)
-        print(f"  Creating TAKE_PROFIT_MARKET order: {order_side} @ TP {tp_price} (closePosition=true, workingType=MARK_PRICE)")
+        # Create new take-profit as LIMIT order with reduceOnly
+        # This places the order directly in the order book at the exact TP price
+        print(f"  Creating LIMIT TP order: {order_side} {position_qty} @ {tp_price} (reduceOnly=true)")
         order = client.futures_create_order(
             symbol=symbol,
             side=order_side,
-            type='TAKE_PROFIT_MARKET',
-            stopPrice=str(tp_price),
-            closePosition='true',
-            workingType='MARK_PRICE'
+            type='LIMIT',
+            price=str(tp_price),
+            quantity=position_qty,
+            reduceOnly='true',
+            timeInForce='GTC'
         )
 
         # Log the full response for debugging
         print(f"  Binance order response: {order}")
 
-        # Get orderId safely - Binance returns 'algoId' for conditional orders (TAKE_PROFIT_MARKET, etc.)
-        order_id = order.get('orderId') or order.get('algoId') or order.get('orderID') or order.get('order_id') or order.get('id')
+        order_id = order.get('orderId')
         if not order_id:
-            print(f"  ERROR: No orderId/algoId in response. Full response: {order}")
+            print(f"  ERROR: No orderId in response. Full response: {order}")
             return jsonify({'error': f'No orderId in response. Binance returned: {str(order)[:500]}'}), 500
 
-        print(f"  Take-profit order created: {order_id}")
-        debug_log.append(f"New TP order created: {order_id}")
+        print(f"  Take-profit LIMIT order created: {order_id}")
+        debug_log.append(f"New TP LIMIT order created: {order_id}")
         return jsonify({
             'success': True,
             'order': {
                 'orderId': order_id,
                 'symbol': order.get('symbol', symbol),
                 'side': order.get('side', order_side),
-                'stopPrice': tp_price,
-                'closePosition': True,
+                'price': tp_price,
+                'quantity': position_qty,
+                'reduceOnly': True,
                 'status': order.get('status', 'NEW')
             },
             '_debug': debug_log

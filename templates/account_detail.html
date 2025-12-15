@@ -611,10 +611,30 @@
                         <span>Mark Price:</span>
                         <span id="addPosMarkPrice">$0.00</span>
                     </div>
+                    <div class="detail-row">
+                        <span>Leverage:</span>
+                        <span id="addPosLeverage">1x</span>
+                    </div>
+                </div>
+                <div class="available-margin-info">
+                    <div class="margin-row">
+                        <span>Available Balance:</span>
+                        <span id="addPosAvailBalance">$0.00</span>
+                    </div>
+                    <div class="margin-row highlight">
+                        <span>Max You Can Add:</span>
+                        <span id="addPosMaxAdd">$0.00</span>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="addPosUsdc">Size to Add (USDC)</label>
                     <input type="number" id="addPosUsdc" step="any" placeholder="Enter USDC amount...">
+                    <div class="add-pos-quick-btns">
+                        <button type="button" class="quick-btn" data-pct="25">25%</button>
+                        <button type="button" class="quick-btn" data-pct="50">50%</button>
+                        <button type="button" class="quick-btn" data-pct="75">75%</button>
+                        <button type="button" class="quick-btn" data-pct="100">Max</button>
+                    </div>
                     <div class="calculated-qty">
                         Quantity: <span id="addPosCalcQty">0.00</span>
                     </div>
