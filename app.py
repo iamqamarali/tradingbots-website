@@ -2885,8 +2885,17 @@ def api_execute_trade(account_id):
 
 @app.route('/api/accounts/<int:account_id>/sync', methods=['POST'])
 def api_sync_account_trades(account_id):
-    """Sync trades and balance from Binance."""
-    print(f"=== SYNC TRADES CALLED for account_id: {account_id} ===")
+    """Sync trades and balance from Binance.
+
+    Query Parameters:
+        weeks: Number of weeks to fetch (default: 1, max: 26)
+               Binance API limit is 7 days per request, so we loop through weeks.
+    """
+    # Get weeks parameter (default 1, max 26 = ~6 months which is Binance's history limit)
+    weeks = request.args.get('weeks', 1, type=int)
+    weeks = min(max(weeks, 1), 26)  # Clamp between 1 and 26
+
+    print(f"=== SYNC TRADES CALLED for account_id: {account_id}, weeks: {weeks} ===")
 
     if not BINANCE_AVAILABLE:
         print("ERROR: Binance API not available")
@@ -2928,11 +2937,6 @@ def api_sync_account_trades(account_id):
         except Exception as e:
             print(f"Warning: Could not fetch balance: {e}")
 
-        # Get trades from last 7 days (Binance API limit is 7 days per request)
-        end_time = int(datetime.now().timestamp() * 1000)
-        start_time = int((datetime.now() - timedelta(days=7)).timestamp() * 1000)
-        print(f"Time range: last 7 days")
-
         # Get all symbols with positions or recent activity
         print("Fetching exchange info...")
         exchange_info = client.futures_exchange_info()
@@ -2972,78 +2976,105 @@ def api_sync_account_trades(account_id):
         ]
         symbols_to_sync.update(priority_symbols)
 
-        print(f"Will sync {len(symbols_to_sync)} symbols")
+        print(f"Will sync {len(symbols_to_sync)} symbols for {weeks} week(s)")
 
-        for symbol in symbols_to_sync:
-            if symbol not in all_symbols:
-                continue
+        # Loop through each week (Binance API limit is 7 days per request)
+        # Start from oldest week and work towards present
+        now = datetime.now()
+        weeks_processed = 0
 
-            try:
-                trades = client.futures_account_trades(
-                    symbol=symbol,
-                    startTime=start_time,
-                    endTime=end_time,
-                    limit=100  # Limit to 100 trades per symbol
-                )
+        for week_num in range(weeks - 1, -1, -1):  # Go from oldest to newest
+            week_end = now - timedelta(days=week_num * 7)
+            week_start = week_end - timedelta(days=7)
 
-                for trade in trades:
-                    total_checked += 1
+            end_time = int(week_end.timestamp() * 1000)
+            start_time = int(week_start.timestamp() * 1000)
 
-                    try:
-                        # Get required fields safely
-                        trade_id = trade.get('id')
-                        order_id = trade.get('orderId')
-                        trade_symbol = trade.get('symbol')
-                        trade_side = trade.get('side')
+            print(f"  Fetching week {weeks - week_num}/{weeks}: {week_start.strftime('%Y-%m-%d')} to {week_end.strftime('%Y-%m-%d')}")
 
-                        if not trade_id or not trade_symbol:
-                            print(f"  Warning: Skipping trade with missing fields: {trade}")
+            for symbol in symbols_to_sync:
+                if symbol not in all_symbols:
+                    continue
+
+                try:
+                    # Binance API: GET /fapi/v1/userTrades
+                    # Max limit is 1000 per request, 7 days max range
+                    trades = client.futures_account_trades(
+                        symbol=symbol,
+                        startTime=start_time,
+                        endTime=end_time,
+                        limit=1000  # Max allowed by Binance API
+                    )
+
+                    for trade in trades:
+                        total_checked += 1
+
+                        try:
+                            # Get required fields safely
+                            trade_id = trade.get('id')
+                            order_id = trade.get('orderId')
+                            trade_symbol = trade.get('symbol')
+                            trade_side = trade.get('side')
+
+                            if not trade_id or not trade_symbol:
+                                print(f"  Warning: Skipping trade with missing fields: {trade}")
+                                continue
+
+                            # Insert trade (will skip if already exists based on exchange_trade_id)
+                            inserted = db.insert_trade(
+                                account_id=account_id,
+                                exchange_trade_id=trade_id,
+                                order_id=order_id,
+                                symbol=trade_symbol,
+                                side=trade_side or 'UNKNOWN',
+                                quantity=float(trade.get('qty', 0)),
+                                price=float(trade.get('price', 0)),
+                                realized_pnl=float(trade.get('realizedPnl', 0)),
+                                commission=float(trade.get('commission', 0)),
+                                commission_asset=trade.get('commissionAsset', ''),
+                                trade_time=datetime.fromtimestamp(trade.get('time', 0) / 1000).isoformat() if trade.get('time') else None
+                            )
+
+                            if inserted:
+                                new_trades += 1
+                        except (ValueError, TypeError, KeyError) as e:
+                            print(f"  Warning: Error processing trade {trade}: {e}")
                             continue
 
-                        # Insert trade (will skip if already exists based on exchange_trade_id)
-                        inserted = db.insert_trade(
-                            account_id=account_id,
-                            exchange_trade_id=trade_id,
-                            order_id=order_id,
-                            symbol=trade_symbol,
-                            side=trade_side or 'UNKNOWN',
-                            quantity=float(trade.get('qty', 0)),
-                            price=float(trade.get('price', 0)),
-                            realized_pnl=float(trade.get('realizedPnl', 0)),
-                            commission=float(trade.get('commission', 0)),
-                            commission_asset=trade.get('commissionAsset', ''),
-                            trade_time=datetime.fromtimestamp(trade.get('time', 0) / 1000).isoformat() if trade.get('time') else None
-                        )
+                except BinanceAPIException as e:
+                    if 'Invalid symbol' not in str(e):
+                        print(f"BinanceAPIException syncing {symbol}: {e}")
+                except Exception as e:
+                    print(f"Exception syncing {symbol}: {e}")
 
-                        if inserted:
-                            new_trades += 1
-                    except (ValueError, TypeError, KeyError) as e:
-                        print(f"  Warning: Error processing trade {trade}: {e}")
-                        continue
-
-            except BinanceAPIException as e:
-                if 'Invalid symbol' not in str(e):
-                    print(f"BinanceAPIException syncing {symbol}: {e}")
-            except Exception as e:
-                print(f"Exception syncing {symbol}: {e}")
+            weeks_processed += 1
 
         # Update account stats in database (including balance)
         print("Updating account stats...")
         db.update_account_stats(account_id, current_balance=current_balance)
 
+        # Process trades into closed positions
+        print("Processing trades into closed positions...")
+        db.process_trades_into_closed_positions(account_id)
+
+        # Get closed positions count
+        closed_positions_count = db.get_closed_positions_count(account_id)
+
         # Get updated stats to return
         stats = db.get_trade_stats(account_id)
-        
+
         # Add additional info to stats
         if stats:
             stats['unrealized_pnl'] = round(unrealized_pnl, 2)
 
-        print(f"=== SYNC COMPLETE: {new_trades} new trades, {total_checked} total checked ===")
+        print(f"=== SYNC COMPLETE: {new_trades} new trades, {total_checked} total checked, {weeks_processed} weeks processed ===")
         return jsonify({
             'success': True,
             'new_trades': new_trades,
             'total_checked': total_checked,
-            'message': f'Synced {new_trades} new trades',
+            'weeks_processed': weeks_processed,
+            'closed_positions': closed_positions_count,
+            'message': f'Synced {new_trades} new trades from {weeks_processed} week(s)',
             'stats': stats,
             'balance': round(current_balance, 2)
         })
@@ -3103,6 +3134,75 @@ def api_get_trade_stats():
         'total_pnl': 0,
         'total_commission': 0
     })
+
+
+# ==================== CLOSED POSITIONS API ====================
+
+@app.route('/api/closed-positions', methods=['GET'])
+def api_get_closed_positions():
+    """Get closed positions with optional filters."""
+    account_id = request.args.get('account_id', None, type=int)
+    symbol = request.args.get('symbol', None)
+    limit = request.args.get('limit', 40, type=int)
+    offset = request.args.get('offset', 0, type=int)
+
+    positions = db.get_closed_positions(account_id=account_id, symbol=symbol, limit=limit, offset=offset)
+    total = db.get_closed_positions_count(account_id=account_id, symbol=symbol)
+
+    return jsonify({
+        'positions': positions,
+        'total': total,
+        'limit': limit,
+        'offset': offset
+    })
+
+
+@app.route('/api/closed-positions/<int:position_id>', methods=['DELETE'])
+def api_delete_closed_position(position_id):
+    """Delete a closed position."""
+    if db.delete_closed_position(position_id):
+        return jsonify({'success': True})
+    return jsonify({'error': 'Position not found'}), 404
+
+
+@app.route('/api/accounts/<int:account_id>/closed-positions/stats', methods=['GET'])
+def api_get_closed_positions_stats(account_id):
+    """Get statistics for closed positions."""
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    stats = db.get_closed_positions_stats(account_id)
+    if stats:
+        return jsonify(stats)
+
+    return jsonify({
+        'total_positions': 0,
+        'total_pnl': 0,
+        'total_commission': 0,
+        'winning_positions': 0,
+        'losing_positions': 0,
+        'win_rate': 0
+    })
+
+
+@app.route('/api/accounts/<int:account_id>/process-closed-positions', methods=['POST'])
+def api_process_closed_positions(account_id):
+    """Process trades into closed positions for an account."""
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    try:
+        db.process_trades_into_closed_positions(account_id)
+        stats = db.get_closed_positions_stats(account_id)
+        return jsonify({
+            'success': True,
+            'message': 'Closed positions processed successfully',
+            'stats': stats
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/accounts/<int:account_id>/stats', methods=['GET'])
@@ -3346,6 +3446,10 @@ except AttributeError:
 # This runs when the module is imported, not just when run directly
 print("[STARTUP] Checking for scripts to auto-restart...")
 restart_persistent_scripts()
+
+# Delete all old trades and closed positions for fresh start
+print("[STARTUP] Clearing all trades and closed positions for fresh sync...")
+db.delete_all_trades_and_positions()
 
 
 if __name__ == '__main__':

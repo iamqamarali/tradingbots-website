@@ -180,6 +180,36 @@ def init_db():
             )
         ''')
 
+        # Closed positions table - complete trade cycles from open to close
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS closed_positions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                quantity REAL NOT NULL,
+                entry_price REAL NOT NULL,
+                exit_price REAL NOT NULL,
+                size_usd REAL NOT NULL,
+                realized_pnl REAL NOT NULL,
+                commission REAL DEFAULT 0,
+                entry_time TIMESTAMP,
+                exit_time TIMESTAMP,
+                duration_seconds INTEGER,
+                trade_ids TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+            )
+        ''')
+
+        # Add size_usd column if it doesn't exist (migration)
+        try:
+            cursor.execute('ALTER TABLE closed_positions ADD COLUMN size_usd REAL DEFAULT 0')
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_closed_positions_account_id ON closed_positions(account_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_closed_positions_exit_time ON closed_positions(exit_time)')
+
         conn.commit()
         conn.close()
 
@@ -644,6 +674,41 @@ def delete_trade(trade_id):
         return deleted
 
 
+def delete_all_trades_and_positions():
+    """Delete all trades and closed positions from database. Used for fresh start."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM trades')
+        trades_deleted = cursor.rowcount
+
+        cursor.execute('DELETE FROM closed_positions')
+        positions_deleted = cursor.rowcount
+
+        # Reset account stats
+        cursor.execute('''
+            UPDATE accounts SET
+                total_trades = 0,
+                total_pnl = 0,
+                total_commission = 0,
+                winning_trades = 0,
+                losing_trades = 0,
+                avg_win = 0,
+                avg_loss = 0,
+                largest_win = 0,
+                largest_loss = 0,
+                profit_factor = 0,
+                total_volume = 0,
+                last_sync_time = NULL
+        ''')
+
+        conn.commit()
+        conn.close()
+        print(f"Deleted {trades_deleted} trades and {positions_deleted} closed positions")
+        return trades_deleted, positions_deleted
+
+
 def get_last_sync_time(account_id):
     """Get the most recent trade time for an account."""
     with db_lock:
@@ -876,6 +941,332 @@ def clear_open_positions():
         cursor.execute('DELETE FROM cache_meta WHERE key = ?', ('positions_updated',))
         conn.commit()
         conn.close()
+
+
+# ==================== CLOSED POSITIONS OPERATIONS ====================
+
+def insert_closed_position(account_id, symbol, side, quantity, entry_price, exit_price,
+                           realized_pnl, commission, entry_time, exit_time, trade_ids=None):
+    """Insert a closed position record."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Calculate position size in USD
+        size_usd = quantity * entry_price
+
+        # Calculate duration in seconds
+        duration_seconds = None
+        if entry_time and exit_time:
+            try:
+                from datetime import datetime
+                entry_dt = datetime.fromisoformat(entry_time.replace('Z', '+00:00')) if isinstance(entry_time, str) else entry_time
+                exit_dt = datetime.fromisoformat(exit_time.replace('Z', '+00:00')) if isinstance(exit_time, str) else exit_time
+                duration_seconds = int((exit_dt - entry_dt).total_seconds())
+            except:
+                pass
+
+        # Convert trade_ids list to comma-separated string
+        trade_ids_str = ','.join(map(str, trade_ids)) if trade_ids else None
+
+        cursor.execute('''
+            INSERT INTO closed_positions (
+                account_id, symbol, side, quantity, entry_price, exit_price, size_usd,
+                realized_pnl, commission, entry_time, exit_time, duration_seconds, trade_ids
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (account_id, symbol, side, quantity, entry_price, exit_price, size_usd,
+              realized_pnl, commission, entry_time, exit_time, duration_seconds, trade_ids_str))
+
+        position_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return position_id
+
+
+def get_closed_positions(account_id=None, symbol=None, limit=100, offset=0):
+    """Get closed positions with optional filters."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        query = '''
+            SELECT cp.*, a.name as account_name
+            FROM closed_positions cp
+            JOIN accounts a ON cp.account_id = a.id
+            WHERE 1=1
+        '''
+        params = []
+
+        if account_id:
+            query += ' AND cp.account_id = ?'
+            params.append(account_id)
+
+        if symbol:
+            query += ' AND cp.symbol = ?'
+            params.append(symbol)
+
+        query += ' ORDER BY cp.exit_time DESC LIMIT ? OFFSET ?'
+        params.extend([limit, offset])
+
+        cursor.execute(query, params)
+
+        positions = []
+        for row in cursor.fetchall():
+            # Calculate size_usd if not in DB (for backwards compatibility)
+            size_usd = row['size_usd'] if 'size_usd' in row.keys() and row['size_usd'] else row['quantity'] * row['entry_price']
+            positions.append({
+                'id': row['id'],
+                'account_id': row['account_id'],
+                'account_name': row['account_name'],
+                'symbol': row['symbol'],
+                'side': row['side'],
+                'quantity': row['quantity'],
+                'entry_price': row['entry_price'],
+                'exit_price': row['exit_price'],
+                'size_usd': round(size_usd, 2),
+                'realized_pnl': row['realized_pnl'],
+                'commission': row['commission'],
+                'entry_time': row['entry_time'],
+                'exit_time': row['exit_time'],
+                'duration_seconds': row['duration_seconds'],
+                'trade_ids': row['trade_ids']
+            })
+
+        conn.close()
+        return positions
+
+
+def get_closed_positions_count(account_id=None, symbol=None):
+    """Get total count of closed positions for pagination."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        query = 'SELECT COUNT(*) as count FROM closed_positions WHERE 1=1'
+        params = []
+
+        if account_id:
+            query += ' AND account_id = ?'
+            params.append(account_id)
+
+        if symbol:
+            query += ' AND symbol = ?'
+            params.append(symbol)
+
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+        conn.close()
+
+        return row['count'] if row else 0
+
+
+def delete_closed_position(position_id):
+    """Delete a closed position."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM closed_positions WHERE id = ?', (position_id,))
+        deleted = cursor.rowcount > 0
+
+        conn.commit()
+        conn.close()
+        return deleted
+
+
+def process_trades_into_closed_positions(account_id):
+    """
+    Process all trades for an account and generate closed position records.
+    This groups trades by symbol and calculates complete position cycles.
+    """
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Get all trades for the account, ordered by time
+        cursor.execute('''
+            SELECT * FROM trades
+            WHERE account_id = ?
+            ORDER BY symbol, trade_time ASC
+        ''', (account_id,))
+
+        trades = cursor.fetchall()
+
+        # Clear existing closed positions for this account
+        cursor.execute('DELETE FROM closed_positions WHERE account_id = ?', (account_id,))
+
+        # Group trades by symbol
+        trades_by_symbol = {}
+        for trade in trades:
+            symbol = trade['symbol']
+            if symbol not in trades_by_symbol:
+                trades_by_symbol[symbol] = []
+            trades_by_symbol[symbol].append(dict(trade))
+
+        # Process each symbol's trades to find closed positions
+        for symbol, symbol_trades in trades_by_symbol.items():
+            position_qty = 0
+            position_side = None
+            entry_trades = []
+            total_entry_cost = 0
+            total_commission = 0
+
+            for trade in symbol_trades:
+                trade_qty = float(trade['quantity'])
+                trade_price = float(trade['price'])
+                trade_side = trade['side']
+                trade_pnl = float(trade['realized_pnl'] or 0)
+                trade_commission = float(trade['commission'] or 0)
+
+                # Determine if this is opening or closing a position
+                # BUY increases position (opens LONG or closes SHORT)
+                # SELL decreases position (opens SHORT or closes LONG)
+
+                if position_qty == 0:
+                    # Starting a new position
+                    position_side = 'LONG' if trade_side == 'BUY' else 'SHORT'
+                    position_qty = trade_qty
+                    entry_trades = [trade]
+                    total_entry_cost = trade_qty * trade_price
+                    total_commission = trade_commission
+                elif (position_side == 'LONG' and trade_side == 'BUY') or \
+                     (position_side == 'SHORT' and trade_side == 'SELL'):
+                    # Adding to position
+                    position_qty += trade_qty
+                    entry_trades.append(trade)
+                    total_entry_cost += trade_qty * trade_price
+                    total_commission += trade_commission
+                else:
+                    # Closing position (partially or fully)
+                    close_qty = min(trade_qty, position_qty)
+                    total_commission += trade_commission
+
+                    if close_qty > 0:
+                        # Calculate weighted average entry price
+                        total_entry_qty = sum(float(t['quantity']) for t in entry_trades)
+                        avg_entry_price = total_entry_cost / total_entry_qty if total_entry_qty > 0 else 0
+
+                        # Calculate P&L for this close
+                        # Use the realized_pnl from Binance if available (it's more accurate)
+                        pnl = trade_pnl
+
+                        # If no realized_pnl from trade, calculate it
+                        if pnl == 0 and avg_entry_price > 0:
+                            if position_side == 'LONG':
+                                pnl = (trade_price - avg_entry_price) * close_qty
+                            else:
+                                pnl = (avg_entry_price - trade_price) * close_qty
+
+                        # Get entry and exit times
+                        entry_time = entry_trades[0]['trade_time'] if entry_trades else None
+                        exit_time = trade['trade_time']
+
+                        # Calculate duration
+                        duration_seconds = None
+                        if entry_time and exit_time:
+                            try:
+                                entry_dt = datetime.fromisoformat(entry_time.replace('Z', '+00:00')) if isinstance(entry_time, str) else entry_time
+                                exit_dt = datetime.fromisoformat(exit_time.replace('Z', '+00:00')) if isinstance(exit_time, str) else exit_time
+                                if hasattr(entry_dt, 'timestamp') and hasattr(exit_dt, 'timestamp'):
+                                    duration_seconds = int(exit_dt.timestamp() - entry_dt.timestamp())
+                            except:
+                                pass
+
+                        # Get trade IDs
+                        trade_ids = [str(t['exchange_trade_id']) for t in entry_trades]
+                        trade_ids.append(str(trade['exchange_trade_id']))
+                        trade_ids_str = ','.join(trade_ids)
+
+                        # Calculate position size in USD
+                        size_usd = close_qty * avg_entry_price
+
+                        # Insert closed position
+                        cursor.execute('''
+                            INSERT INTO closed_positions (
+                                account_id, symbol, side, quantity, entry_price, exit_price, size_usd,
+                                realized_pnl, commission, entry_time, exit_time, duration_seconds, trade_ids
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (account_id, symbol, position_side, close_qty, avg_entry_price, trade_price, size_usd,
+                              pnl, total_commission, entry_time, exit_time, duration_seconds, trade_ids_str))
+
+                    # Update remaining position
+                    position_qty -= close_qty
+                    remaining_to_close = trade_qty - close_qty
+
+                    if position_qty <= 0.00001:  # Position fully closed (use small epsilon for float comparison)
+                        position_qty = 0
+
+                        # If there's remaining quantity from this trade, it opens a new position
+                        if remaining_to_close > 0.00001:
+                            position_side = 'LONG' if trade_side == 'BUY' else 'SHORT'
+                            position_qty = remaining_to_close
+                            entry_trades = [trade]
+                            total_entry_cost = remaining_to_close * trade_price
+                            total_commission = 0
+                        else:
+                            position_side = None
+                            entry_trades = []
+                            total_entry_cost = 0
+                            total_commission = 0
+                    else:
+                        # Position partially closed, adjust entry data proportionally
+                        close_ratio = close_qty / (position_qty + close_qty)
+                        total_entry_cost *= (1 - close_ratio)
+
+        conn.commit()
+        conn.close()
+        return True
+
+
+def get_closed_positions_stats(account_id):
+    """Get statistics for closed positions."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT
+                COUNT(*) as total_positions,
+                COALESCE(SUM(realized_pnl), 0) as total_pnl,
+                COALESCE(SUM(commission), 0) as total_commission,
+                COALESCE(SUM(quantity * entry_price), 0) as total_volume,
+                SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END) as winning_positions,
+                SUM(CASE WHEN realized_pnl < 0 THEN 1 ELSE 0 END) as losing_positions,
+                SUM(CASE WHEN realized_pnl = 0 THEN 1 ELSE 0 END) as breakeven_positions,
+                COALESCE(AVG(CASE WHEN realized_pnl > 0 THEN realized_pnl END), 0) as avg_win,
+                COALESCE(AVG(CASE WHEN realized_pnl < 0 THEN realized_pnl END), 0) as avg_loss,
+                COALESCE(MAX(realized_pnl), 0) as largest_win,
+                COALESCE(MIN(realized_pnl), 0) as largest_loss,
+                COALESCE(AVG(duration_seconds), 0) as avg_duration
+            FROM closed_positions
+            WHERE account_id = ?
+        ''', (account_id,))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            total = row['total_positions'] or 0
+            winning = row['winning_positions'] or 0
+            losing = row['losing_positions'] or 0
+
+            return {
+                'total_positions': total,
+                'total_pnl': round(row['total_pnl'] or 0, 2),
+                'total_commission': round(row['total_commission'] or 0, 2),
+                'total_volume': round(row['total_volume'] or 0, 2),
+                'winning_positions': winning,
+                'losing_positions': losing,
+                'breakeven_positions': row['breakeven_positions'] or 0,
+                'win_rate': round(winning / total * 100, 1) if total > 0 else 0,
+                'avg_win': round(row['avg_win'] or 0, 2),
+                'avg_loss': round(row['avg_loss'] or 0, 2),
+                'largest_win': round(row['largest_win'] or 0, 2),
+                'largest_loss': round(row['largest_loss'] or 0, 2),
+                'avg_duration_seconds': int(row['avg_duration'] or 0)
+            }
+
+        return None
 
 
 # Initialize database on module load

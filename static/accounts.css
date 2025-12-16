@@ -2431,6 +2431,83 @@
     font-size: 0.85rem;
 }
 
+/* Duration column */
+.duration {
+    color: #a1a1aa;
+    font-size: 0.85rem;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* ========== Sync Options Modal ========== */
+.sync-options-info {
+    display: flex;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+}
+
+.sync-options-info svg {
+    width: 20px;
+    height: 20px;
+    color: #60a5fa;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.sync-options-info p {
+    color: #a1a1aa;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    margin: 0;
+}
+
+.form-select {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: rgba(24, 24, 32, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #e4e4e7;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.form-select:hover {
+    border-color: rgba(245, 158, 11, 0.3);
+}
+
+.form-select:focus {
+    outline: none;
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
+}
+
+.form-select option {
+    background: #18181a;
+    color: #e4e4e7;
+}
+
+.sync-week-info {
+    color: #a1a1aa;
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+}
+
+#startSyncBtn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+#startSyncBtn svg {
+    width: 16px;
+    height: 16px;
+}
+
 /* ========== Equity Curve Section ========== */
 .equity-curve-section {
     margin: 0 2rem 2rem;

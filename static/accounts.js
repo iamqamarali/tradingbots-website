@@ -5,7 +5,7 @@ let accountToDelete = null;
 let accountToEdit = null;
 let availableBalance = 0;  // Store available balance for Add to Position modal
 
-// Pagination state for trades
+// Pagination state for closed positions (trade history)
 let tradesPage = 1;
 const tradesPerPage = 40;
 let totalTrades = 0;
@@ -431,14 +431,46 @@ function initDetailPage() {
 }
 
 function setupDetailPageEventListeners() {
-    // Sync buttons (header and trades section)
+    // Sync buttons (header and trades section) - open options modal
     const syncBtn = document.getElementById('syncBtn');
     const syncTradesBtn = document.getElementById('syncTradesBtn');
+    const syncOptionsModal = document.getElementById('syncOptionsModal');
+    const closeSyncOptionsModal = document.getElementById('closeSyncOptionsModal');
+    const cancelSyncBtn = document.getElementById('cancelSyncBtn');
+    const startSyncBtn = document.getElementById('startSyncBtn');
+
+    // Open sync options modal
     if (syncBtn) {
-        syncBtn.addEventListener('click', syncTrades);
+        syncBtn.addEventListener('click', () => {
+            syncOptionsModal.classList.add('active');
+        });
     }
     if (syncTradesBtn) {
-        syncTradesBtn.addEventListener('click', syncTrades);
+        syncTradesBtn.addEventListener('click', () => {
+            syncOptionsModal.classList.add('active');
+        });
+    }
+
+    // Close sync options modal
+    if (closeSyncOptionsModal) {
+        closeSyncOptionsModal.addEventListener('click', () => {
+            syncOptionsModal.classList.remove('active');
+        });
+    }
+    if (cancelSyncBtn) {
+        cancelSyncBtn.addEventListener('click', () => {
+            syncOptionsModal.classList.remove('active');
+        });
+    }
+
+    // Start sync with selected weeks
+    if (startSyncBtn) {
+        startSyncBtn.addEventListener('click', () => {
+            const weeksSelect = document.getElementById('syncWeeks');
+            const weeks = parseInt(weeksSelect.value, 10);
+            syncOptionsModal.classList.remove('active');
+            syncTrades(weeks);
+        });
     }
     
     // Close All button
@@ -911,20 +943,21 @@ async function loadTrades(page = 1) {
     if (pagination) pagination.style.display = 'none';
 
     try {
-        const response = await fetch(`/api/trades?account_id=${ACCOUNT_ID}&limit=${tradesPerPage}&offset=${offset}`);
+        // Load closed positions instead of individual trades
+        const response = await fetch(`/api/closed-positions?account_id=${ACCOUNT_ID}&limit=${tradesPerPage}&offset=${offset}`);
         const data = await response.json();
 
         if (loading) loading.style.display = 'none';
 
-        const trades = data.trades || [];
+        const positions = data.positions || [];
         totalTrades = data.total || 0;
 
-        if (trades.length > 0) {
+        if (positions.length > 0) {
             if (table) table.style.display = 'table';
 
-            tbody.innerHTML = trades.map(trade => {
-                const tradeTime = trade.trade_time
-                    ? new Date(trade.trade_time).toLocaleString('en-US', {
+            tbody.innerHTML = positions.map(pos => {
+                const exitTime = pos.exit_time
+                    ? new Date(pos.exit_time).toLocaleString('en-US', {
                         month: 'short',
                         day: 'numeric',
                         hour: '2-digit',
@@ -932,21 +965,31 @@ async function loadTrades(page = 1) {
                     })
                     : 'Unknown';
 
-                // Calculate trade size in $
-                const sizeInDollars = trade.quantity * trade.price;
-                const fee = trade.commission || 0;
+                // Use size_usd from API (or calculate as fallback)
+                const sizeInDollars = pos.size_usd || (pos.quantity * pos.entry_price);
+
+                // Format duration
+                const duration = formatDuration(pos.duration_seconds);
+
+                // Format prices based on value
+                const formatPrice = (price) => {
+                    if (price >= 1000) return price.toFixed(2);
+                    if (price >= 1) return price.toFixed(4);
+                    return price.toFixed(6);
+                };
 
                 return `
                     <tr>
-                        <td>${tradeTime}</td>
-                        <td class="symbol">${trade.symbol}</td>
-                        <td><span class="side ${trade.side.toLowerCase()}">${trade.side}</span></td>
+                        <td>${exitTime}</td>
+                        <td class="symbol">${pos.symbol}</td>
+                        <td><span class="side ${pos.side.toLowerCase()}">${pos.side}</span></td>
                         <td>$${sizeInDollars.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td>$${trade.price.toFixed(4)}</td>
-                        <td class="${trade.realized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}">
-                            ${trade.realized_pnl >= 0 ? '+' : ''}$${trade.realized_pnl.toFixed(2)}
+                        <td>$${formatPrice(pos.entry_price)}</td>
+                        <td>$${formatPrice(pos.exit_price)}</td>
+                        <td class="${pos.realized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}">
+                            ${pos.realized_pnl >= 0 ? '+' : ''}$${pos.realized_pnl.toFixed(2)}
                         </td>
-                        <td class="fee">$${fee.toFixed(4)}</td>
+                        <td class="duration">${duration}</td>
                     </tr>
                 `;
             }).join('');
@@ -957,9 +1000,27 @@ async function loadTrades(page = 1) {
             if (empty) empty.style.display = 'flex';
         }
     } catch (error) {
-        console.error('Error loading trades:', error);
+        console.error('Error loading trade history:', error);
         if (loading) loading.style.display = 'none';
         if (empty) empty.style.display = 'flex';
+    }
+}
+
+function formatDuration(seconds) {
+    if (!seconds || seconds < 0) return '-';
+
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+
+    if (days > 0) {
+        return `${days}d ${hours}h`;
+    } else if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+    } else if (minutes > 0) {
+        return `${minutes}m`;
+    } else {
+        return `${seconds}s`;
     }
 }
 
@@ -980,7 +1041,7 @@ function updateTradesPagination() {
 
     // Update info text
     if (info) {
-        info.textContent = `Page ${tradesPage} of ${totalPages} (${totalTrades} trades)`;
+        info.textContent = `Page ${tradesPage} of ${totalPages} (${totalTrades} positions)`;
     }
 
     // Update button states
@@ -1135,33 +1196,25 @@ function updateStatsDisplay(stats) {
     }
 }
 
-async function syncTrades() {
+async function syncTrades(weeks = 1) {
     console.log('=== syncTrades() called ===');
     console.log('ACCOUNT_ID:', ACCOUNT_ID);
+    console.log('Weeks to sync:', weeks);
 
     const syncBtn = document.getElementById('syncBtn');
     const syncModal = document.getElementById('syncModal');
     const syncProgress = document.getElementById('syncProgress');
     const syncStatus = document.getElementById('syncStatus');
+    const syncWeekProgress = document.getElementById('syncWeekProgress');
 
     syncBtn.classList.add('syncing');
     syncModal.classList.add('active');
-    syncProgress.style.width = '20%';
+    syncProgress.style.width = '10%';
     syncStatus.textContent = 'Fetching account balance...';
+    syncWeekProgress.textContent = `Syncing ${weeks} week(s) of trade history...`;
 
     try {
-        // Simulate progress stages
-        setTimeout(() => {
-            syncProgress.style.width = '40%';
-            syncStatus.textContent = 'Fetching trades from Binance...';
-        }, 500);
-        
-        setTimeout(() => {
-            syncProgress.style.width = '70%';
-            syncStatus.textContent = 'Processing and calculating stats...';
-        }, 2000);
-
-        const url = `/api/accounts/${ACCOUNT_ID}/sync`;
+        const url = `/api/accounts/${ACCOUNT_ID}/sync?weeks=${weeks}`;
         const response = await fetch(url, { method: 'POST' });
         const data = await response.json();
 
@@ -1169,6 +1222,7 @@ async function syncTrades() {
 
         if (response.ok) {
             syncStatus.textContent = `Done! Added ${data.new_trades} new trades.`;
+            syncWeekProgress.textContent = `Processed ${data.weeks_processed || weeks} week(s), found ${data.closed_positions || 0} closed positions.`;
             showToast(`Synced ${data.new_trades} new trades`, 'success');
 
             // Update balance display immediately with sync data
@@ -1178,7 +1232,7 @@ async function syncTrades() {
                     balanceAmount.textContent = `$${data.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                 }
             }
-            
+
             // Update stats immediately with sync data
             if (data.stats) {
                 updateStatsDisplay(data.stats);

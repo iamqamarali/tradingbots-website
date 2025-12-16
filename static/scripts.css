@@ -162,21 +162,22 @@
         display: flex;
     }
 
-    /* Show scripts list as a slide-out panel on mobile */
+    /* Show scripts list as a slide-out panel on mobile (from right) */
     .scripts-sidebar.mobile-open {
         display: flex;
         position: fixed;
         top: 0;
-        left: 0;
+        right: 0;
+        left: auto;
         height: 100vh;
         z-index: 95;
-        box-shadow: 4px 0 20px rgba(0, 0, 0, 0.5);
-        animation: slideInLeft 0.3s ease;
+        box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
+        animation: slideInRight 0.3s ease;
     }
 
-    @keyframes slideInLeft {
+    @keyframes slideInRight {
         from {
-            transform: translateX(-100%);
+            transform: translateX(100%);
         }
         to {
             transform: translateX(0);
@@ -247,6 +248,12 @@
     align-items: center;
     gap: 10px;
     min-width: 0;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 .header-title h1 {
@@ -537,7 +544,7 @@
     }
 
     .header-title h1 {
-        max-width: 150px;
+        max-width: 120px;
         font-size: 1rem;
     }
 
@@ -558,5 +565,14 @@
 
     .toggle-label {
         font-size: 0.75rem;
+    }
+
+    /* Show mobile scripts toggle (hamburger) on right */
+    .mobile-scripts-toggle {
+        display: flex !important;
+    }
+
+    .header-right {
+        gap: 8px;
     }
 }

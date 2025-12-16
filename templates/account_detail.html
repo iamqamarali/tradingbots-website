@@ -190,7 +190,7 @@
             </div>
         </section>
 
-        <!-- Recent Trades Section -->
+        <!-- Trade History Section (Closed Positions) -->
         <section class="trades-section">
             <div class="section-header">
                 <h2>
@@ -198,7 +198,7 @@
                         <circle cx="12" cy="12" r="10"/>
                         <polyline points="12 6 12 12 16 14"/>
                     </svg>
-                    Synced Trades
+                    Trade History
                 </h2>
                 <div class="section-actions">
                     <button class="refresh-btn" id="refreshTradesBtn">
@@ -217,23 +217,24 @@
                     </button>
                 </div>
             </div>
-            
+
             <div class="trades-container">
                 <div class="trades-table-wrapper">
                     <table class="trades-table" id="tradesTable">
                         <thead>
                             <tr>
-                                <th>Time</th>
+                                <th>Closed</th>
                                 <th>Symbol</th>
                                 <th>Side</th>
                                 <th>Size</th>
-                                <th>Price</th>
+                                <th>Entry</th>
+                                <th>Exit</th>
                                 <th>PnL</th>
-                                <th>Fee</th>
+                                <th>Duration</th>
                             </tr>
                         </thead>
                         <tbody id="tradesBody">
-                            <!-- Trades will be inserted here -->
+                            <!-- Closed positions will be inserted here -->
                         </tbody>
                     </table>
                 </div>
@@ -257,15 +258,15 @@
 
                 <div class="loading-state" id="tradesLoading" style="display: none;">
                     <div class="spinner"></div>
-                    <p>Loading trades...</p>
+                    <p>Loading trade history...</p>
                 </div>
-                
+
                 <div class="empty-trades" id="emptyTrades" style="display: none;">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <circle cx="12" cy="12" r="10"/>
                         <polyline points="12 6 12 12 16 14"/>
                     </svg>
-                    <p>No trades synced yet</p>
+                    <p>No closed positions yet</p>
                     <button class="btn-secondary" onclick="document.getElementById('syncBtn').click()">Sync Trades Now</button>
                 </div>
             </div>
@@ -560,6 +561,52 @@
         </div>
     </div>
 
+    <!-- Sync Options Modal -->
+    <div class="modal-overlay" id="syncOptionsModal">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3>Sync Trades</h3>
+                <button class="modal-close" id="closeSyncOptionsModal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="sync-options-info">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="16" x2="12" y2="12"/>
+                        <line x1="12" y1="8" x2="12.01" y2="8"/>
+                    </svg>
+                    <p>Binance API provides up to 6 months of trade history. Select how many weeks to fetch.</p>
+                </div>
+                <div class="form-group">
+                    <label for="syncWeeks">Weeks to Fetch</label>
+                    <select id="syncWeeks" class="form-select">
+                        <option value="1" selected>1 week (default)</option>
+                        <option value="2">2 weeks</option>
+                        <option value="4">4 weeks (1 month)</option>
+                        <option value="8">8 weeks (2 months)</option>
+                        <option value="12">12 weeks (3 months)</option>
+                        <option value="26">26 weeks (6 months - max)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelSyncBtn">Cancel</button>
+                <button class="btn-primary" id="startSyncBtn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                    </svg>
+                    Start Sync
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Sync Progress Modal -->
     <div class="modal-overlay" id="syncModal">
         <div class="modal modal-small">
@@ -572,6 +619,7 @@
                 </div>
                 <h3>Syncing Trades</h3>
                 <p id="syncStatus">Fetching trades from Binance...</p>
+                <p id="syncWeekProgress" class="sync-week-info"></p>
                 <div class="progress-bar">
                     <div class="progress-fill" id="syncProgress"></div>
                 </div>
