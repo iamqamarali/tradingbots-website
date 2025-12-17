@@ -13,7 +13,6 @@ let editingSetupId = null;
 // Multi-image state
 let setupImages = []; // Array of {id, timeframe, image_data, notes, isNew, isModified, toDelete}
 let currentImageIndex = -1;
-let currentZoom = 100;
 let viewerImages = [];
 let viewerCurrentIndex = 0;
 
@@ -81,19 +80,25 @@ const cancelDeleteSetupBtn = document.getElementById('cancelDeleteSetupBtn');
 const confirmDeleteSetupBtn = document.getElementById('confirmDeleteSetupBtn');
 let setupToDelete = null;
 
-// Image Viewer Modal
+// Setup Viewer Modal
 const imageViewerModal = document.getElementById('imageViewerModal');
 const viewerImage = document.getElementById('viewerImage');
 const viewerTitle = document.getElementById('viewerTitle');
-const viewerTabs = document.getElementById('viewerTabs');
 const viewerImageContainer = document.getElementById('viewerImageContainer');
-const viewerNotes = document.getElementById('viewerNotes');
-const viewerNotesText = document.getElementById('viewerNotesText');
+const viewerIndicators = document.getElementById('viewerIndicators');
+const viewerDescription = document.getElementById('viewerDescription');
+const viewerDescriptionText = document.getElementById('viewerDescriptionText');
 const closeImageViewer = document.getElementById('closeImageViewer');
-const zoomInBtn = document.getElementById('zoomInBtn');
-const zoomOutBtn = document.getElementById('zoomOutBtn');
-const zoomResetBtn = document.getElementById('zoomResetBtn');
-const zoomLevel = document.getElementById('zoomLevel');
+const viewerPrevBtn = document.getElementById('viewerPrevBtn');
+const viewerNextBtn = document.getElementById('viewerNextBtn');
+const viewerPrevSetupBtn = document.getElementById('viewerPrevSetupBtn');
+const viewerNextSetupBtn = document.getElementById('viewerNextSetupBtn');
+const viewerSetupNav = document.getElementById('viewerSetupNav');
+const viewerSetupIndicator = document.getElementById('viewerSetupIndicator');
+let currentViewerSetupIndex = -1;
+let currentViewerSetup = null;
+let touchStartX = 0;
+let touchEndX = 0;
 
 // Toast
 const toastContainer = document.getElementById('toastContainer');
@@ -153,11 +158,6 @@ function setupEventListeners() {
         }
     });
 
-    // Zoom controls
-    zoomInBtn.addEventListener('click', () => setZoom(currentZoom + 25));
-    zoomOutBtn.addEventListener('click', () => setZoom(currentZoom - 25));
-    zoomResetBtn.addEventListener('click', () => setZoom(100));
-
     // Delete Setup Modal
     closeDeleteSetupModal.addEventListener('click', () => closeDeleteSetupModalFn());
     cancelDeleteSetupBtn.addEventListener('click', () => closeDeleteSetupModalFn());
@@ -168,8 +168,22 @@ function setupEventListeners() {
     imageViewerModal.addEventListener('click', (e) => {
         if (e.target === imageViewerModal) closeImageViewerFn();
     });
+    viewerPrevBtn.addEventListener('click', () => navigateViewerImage(-1));
+    viewerNextBtn.addEventListener('click', () => navigateViewerImage(1));
+    viewerPrevSetupBtn.addEventListener('click', () => navigateToSetup(-1));
+    viewerNextSetupBtn.addEventListener('click', () => navigateToSetup(1));
 
-    // Close modals on escape
+    // Touch/swipe support for mobile
+    viewerImageContainer.addEventListener('touchstart', (e) => {
+        touchStartX = e.changedTouches[0].screenX;
+    }, { passive: true });
+
+    viewerImageContainer.addEventListener('touchend', (e) => {
+        touchEndX = e.changedTouches[0].screenX;
+        handleSwipe();
+    }, { passive: true });
+
+    // Close modals on escape and keyboard navigation for image viewer
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             closeFolderModalFn();
@@ -177,6 +191,16 @@ function setupEventListeners() {
             closeSetupModalFn();
             closeDeleteSetupModalFn();
             closeImageViewerFn();
+        }
+        // Arrow key navigation for image viewer
+        if (imageViewerModal.classList.contains('active')) {
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                navigateViewerImage(-1);
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                navigateViewerImage(1);
+            }
         }
     });
 
@@ -723,10 +747,22 @@ function closeDeleteSetupModalFn() {
 }
 
 async function openImageViewer(setup) {
+    currentViewerSetup = setup;
     viewerTitle.textContent = setup.name;
     viewerImages = [];
     viewerCurrentIndex = 0;
-    currentZoom = 100;
+
+    // Track current setup index in the setups array
+    currentViewerSetupIndex = setups.findIndex(s => s.id === setup.id);
+    updateSetupNavButtons();
+
+    // Show description
+    if (setup.description && setup.description.trim()) {
+        viewerDescriptionText.textContent = setup.description;
+        viewerDescription.style.display = 'block';
+    } else {
+        viewerDescription.style.display = 'none';
+    }
 
     // Load images from API if setup has id
     if (setup.id) {
@@ -760,16 +796,15 @@ async function openImageViewer(setup) {
         return;
     }
 
-    renderViewerTabs();
+    renderViewerIndicators();
     showViewerImage(0);
-    setZoom(100);
     imageViewerModal.classList.add('active');
 }
 
 function closeImageViewerFn() {
     imageViewerModal.classList.remove('active');
-    currentZoom = 100;
     viewerImages = [];
+    currentViewerSetup = null;
 }
 
 // Multi-image management functions
@@ -946,22 +981,21 @@ function handleCurrentImageFile(file) {
 }
 
 // Viewer functions
-function renderViewerTabs() {
-    viewerTabs.innerHTML = '';
+function renderViewerIndicators() {
+    viewerIndicators.innerHTML = '';
 
     if (viewerImages.length <= 1) {
-        viewerTabs.style.display = 'none';
+        viewerIndicators.style.display = 'none';
         return;
     }
 
-    viewerTabs.style.display = 'flex';
+    viewerIndicators.style.display = 'flex';
 
     viewerImages.forEach((img, index) => {
-        const tab = document.createElement('button');
-        tab.className = `viewer-tab${viewerCurrentIndex === index ? ' active' : ''}`;
-        tab.textContent = img.timeframe ? img.timeframe.toUpperCase() : `Image ${index + 1}`;
-        tab.onclick = () => showViewerImage(index);
-        viewerTabs.appendChild(tab);
+        const dot = document.createElement('button');
+        dot.className = `carousel-dot${viewerCurrentIndex === index ? ' active' : ''}`;
+        dot.onclick = () => showViewerImage(index);
+        viewerIndicators.appendChild(dot);
     });
 }
 
@@ -973,27 +1007,74 @@ function showViewerImage(index) {
 
     viewerImage.src = img.src;
 
-    // Update tab active states
-    viewerTabs.querySelectorAll('.viewer-tab').forEach((tab, i) => {
-        tab.classList.toggle('active', i === index);
+    // Update indicator dots
+    viewerIndicators.querySelectorAll('.carousel-dot').forEach((dot, i) => {
+        dot.classList.toggle('active', i === index);
     });
 
-    // Show notes if available
-    if (img.notes && img.notes.trim()) {
-        viewerNotesText.textContent = img.notes;
-        viewerNotes.style.display = 'block';
-    } else {
-        viewerNotes.style.display = 'none';
-    }
-
-    // Reset zoom when switching images
-    setZoom(100);
+    // Update navigation button visibility
+    updateNavButtons();
 }
 
-function setZoom(level) {
-    currentZoom = Math.max(25, Math.min(300, level));
-    zoomLevel.textContent = `${currentZoom}%`;
-    viewerImage.style.transform = `scale(${currentZoom / 100})`;
+function navigateViewerImage(direction) {
+    const newIndex = viewerCurrentIndex + direction;
+    if (newIndex >= 0 && newIndex < viewerImages.length) {
+        showViewerImage(newIndex);
+    }
+}
+
+function handleSwipe() {
+    const swipeThreshold = 50;
+    const diff = touchStartX - touchEndX;
+
+    if (Math.abs(diff) > swipeThreshold) {
+        if (diff > 0) {
+            // Swipe left - next image
+            navigateViewerImage(1);
+        } else {
+            // Swipe right - previous image
+            navigateViewerImage(-1);
+        }
+    }
+}
+
+function updateNavButtons() {
+    // Show/hide navigation buttons based on current position and image count
+    const hasMultipleImages = viewerImages.length > 1;
+
+    viewerPrevBtn.style.display = hasMultipleImages ? 'flex' : 'none';
+    viewerNextBtn.style.display = hasMultipleImages ? 'flex' : 'none';
+
+    // Disable buttons at boundaries
+    viewerPrevBtn.disabled = viewerCurrentIndex === 0;
+    viewerNextBtn.disabled = viewerCurrentIndex === viewerImages.length - 1;
+}
+
+async function navigateToSetup(direction) {
+    const newIndex = currentViewerSetupIndex + direction;
+    if (newIndex >= 0 && newIndex < setups.length) {
+        const nextSetup = setups[newIndex];
+        // Check if the next setup has images before navigating
+        if (nextSetup.id) {
+            await openImageViewer(nextSetup);
+        }
+    }
+}
+
+function updateSetupNavButtons() {
+    const hasMultipleSetups = setups.length > 1;
+
+    // Show setup navigation only if there are multiple setups
+    viewerSetupNav.style.display = hasMultipleSetups ? 'flex' : 'none';
+
+    if (hasMultipleSetups && currentViewerSetupIndex >= 0) {
+        // Update indicator
+        viewerSetupIndicator.textContent = `${currentViewerSetupIndex + 1} / ${setups.length}`;
+
+        // Disable buttons at boundaries
+        viewerPrevSetupBtn.disabled = currentViewerSetupIndex === 0;
+        viewerNextSetupBtn.disabled = currentViewerSetupIndex === setups.length - 1;
+    }
 }
 
 // Helper Functions
