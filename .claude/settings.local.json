@@ -5,7 +5,8 @@
       "Bash(cat:*)",
       "WebSearch",
       "WebFetch(domain:developers.binance.com)",
-      "Bash(dir /b \"C:\\trading bot\\tradingwebsite\\static\")"
+      "Bash(dir /b \"C:\\trading bot\\tradingwebsite\\static\")",
+      "Bash(dir /b \"C:\\trading bot\\tradingwebsite\")"
     ]
   }
 }

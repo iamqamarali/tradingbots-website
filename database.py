@@ -1353,7 +1353,7 @@ def get_all_setup_folders():
             FROM setup_folders sf
             LEFT JOIN setups s ON sf.id = s.folder_id
             GROUP BY sf.id
-            ORDER BY sf.created_at DESC
+            ORDER BY sf.created_at ASC
         ''')
 
         folders = []
