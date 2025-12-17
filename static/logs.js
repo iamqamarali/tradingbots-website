@@ -13,6 +13,7 @@ const elements = {
     toastContainer: document.getElementById('toastContainer'),
     refreshIndicator: document.getElementById('refreshIndicator')
 };
+ 
 
 // Refresh interval
 let refreshInterval = null;
