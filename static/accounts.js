@@ -2301,13 +2301,25 @@ async function addToPosition() {
 // ==================== NEW TRADE MODAL ====================
 
 let tradeState = {
-    symbol: 'SOLUSDC',
+    symbol: 'BTCUSDT',
     marginType: 'CROSSED',
     leverage: 5,
     orderType: 'LIMIT',
     availableBalance: 0,
     currentPrice: 0
 };
+
+// Update currency suffix (USDT/USDC) based on selected symbol
+function updateCurrencySuffix() {
+    const symbol = tradeState.symbol || '';
+    const currency = symbol.endsWith('USDT') ? 'USDT' : 'USDC';
+
+    // Update all input suffix elements in the trade modal
+    const suffixElements = document.querySelectorAll('#newTradeModal .input-suffix');
+    suffixElements.forEach(el => {
+        el.textContent = currency;
+    });
+}
 
 function setupTradeModal() {
     const newTradeBtn = document.getElementById('newTradeBtn');
@@ -2323,6 +2335,7 @@ function setupTradeModal() {
         // Sync available balance from global variable
         tradeState.availableBalance = availableBalance || 0;
         tradeModal.classList.add('active');
+        updateCurrencySuffix();
         fetchCurrentPrice();
         updateTradeInfo();
         updateTradeButtonText();
@@ -2330,6 +2343,7 @@ function setupTradeModal() {
         // Reset to default state
         document.getElementById('tradeSize').value = '';
         document.getElementById('tradeSizeSlider').value = 0;
+        document.getElementById('symbolSearch').value = '';
     });
 
     // Close trade modal
@@ -2343,10 +2357,38 @@ function setupTradeModal() {
         }
     });
 
-    // Symbol selector
+    // Symbol selector with search filter
     const symbolSelect = document.getElementById('tradeSymbol');
+    const symbolSearch = document.getElementById('symbolSearch');
+    const allSymbolOptions = symbolSelect ? Array.from(symbolSelect.options) : [];
+
+    // Filter symbols as user types
+    symbolSearch?.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        symbolSelect.innerHTML = '';
+
+        const filteredOptions = allSymbolOptions.filter(option =>
+            option.value.toLowerCase().includes(searchTerm) ||
+            option.text.toLowerCase().includes(searchTerm)
+        );
+
+        filteredOptions.forEach(option => {
+            symbolSelect.appendChild(option.cloneNode(true));
+        });
+
+        // Auto-select first match if available
+        if (filteredOptions.length > 0) {
+            symbolSelect.value = filteredOptions[0].value;
+            tradeState.symbol = filteredOptions[0].value;
+            updateCurrencySuffix();
+            fetchCurrentPrice();
+            updateTradeInfo();
+        }
+    });
+
     symbolSelect?.addEventListener('change', (e) => {
         tradeState.symbol = e.target.value;
+        updateCurrencySuffix();
         fetchCurrentPrice();
         updateTradeInfo();
     });

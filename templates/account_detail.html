@@ -645,10 +645,19 @@
                 <!-- Symbol Selector -->
                 <div class="trade-symbol-selector">
                     <label>Symbol</label>
-                    <select id="tradeSymbol" class="trade-select">
-                        <option value="SOLUSDC">SOL/USDC</option>
-                        <option value="ETHUSDC">ETH/USDC</option>
-                    </select>
+                    <div class="symbol-search-container">
+                        <input type="text" id="symbolSearch" class="symbol-search-input" placeholder="Search symbol..." autocomplete="off">
+                        <select id="tradeSymbol" class="trade-select">
+                            <option value="BTCUSDT">BTC/USDT</option>
+                            <option value="BTCUSDC">BTC/USDC</option>
+                            <option value="ETHUSDT">ETH/USDT</option>
+                            <option value="ETHUSDC">ETH/USDC</option>
+                            <option value="SOLUSDT">SOL/USDT</option>
+                            <option value="SOLUSDC">SOL/USDC</option>
+                            <option value="AAVEUSDT">AAVE/USDT</option>
+                            <option value="AAVEUSDC">AAVE/USDC</option>
+                        </select>
+                    </div>
                 </div>
 
                 <!-- Margin & Leverage Row -->
