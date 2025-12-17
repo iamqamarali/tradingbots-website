@@ -4,7 +4,8 @@
       "Bash(python:*)",
       "Bash(cat:*)",
       "WebSearch",
-      "WebFetch(domain:developers.binance.com)"
+      "WebFetch(domain:developers.binance.com)",
+      "Bash(dir /b \"C:\\trading bot\\tradingwebsite\\static\")"
     ]
   }
 }

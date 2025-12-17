@@ -165,6 +165,7 @@
                                     <th>Price</th>
                                     <th>Stop Price</th>
                                     <th>Reduce Only</th>
+                                    <th>Close Pos</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -231,6 +232,7 @@
                                 <th>Exit</th>
                                 <th>PnL</th>
                                 <th>Duration</th>
+                                <th>Setup</th>
                             </tr>
                         </thead>
                         <tbody id="tradesBody">
@@ -817,6 +819,36 @@
                     <span>Higher leverage = Higher risk of liquidation</span>
                 </div>
                 <button class="btn-primary" id="confirmLeverageBtn">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Link to Setup Modal -->
+    <div class="modal-overlay" id="linkSetupModal">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3>Link to Setup</h3>
+                <button class="modal-close" id="closeLinkSetupModal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="trade-link-info" id="tradeLinkInfo">
+                    <!-- Trade info will be inserted here -->
+                </div>
+                <div class="form-group">
+                    <label for="setupSelect">Select Setup</label>
+                    <select id="setupSelect">
+                        <option value="">-- Select a setup --</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelLinkSetup">Cancel</button>
+                <button class="btn-primary" id="confirmLinkSetup">Link Setup</button>
             </div>
         </div>
     </div>

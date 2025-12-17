@@ -3,8 +3,9 @@ Trading Bot Script Manager
 A Flask web application to manage, run, and monitor Python trading bot scripts.
 """
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_from_directory
 from functools import wraps
+from werkzeug.utils import secure_filename
 import os
 import subprocess
 import signal
@@ -12,6 +13,7 @@ import sys
 import uuid
 import json
 import secrets
+import base64
 from datetime import datetime, timedelta
 from threading import Thread, Lock
 import time
@@ -175,10 +177,14 @@ def check_authentication():
 SCRIPTS_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scripts')
 METADATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scripts_metadata.json')
 LOGS_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+SETUP_UPLOADS_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads', 'setups')
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
 
 # Ensure folders exist
 os.makedirs(SCRIPTS_FOLDER, exist_ok=True)
 os.makedirs(LOGS_FOLDER, exist_ok=True)
+os.makedirs(SETUP_UPLOADS_FOLDER, exist_ok=True)
 
 # Store running processes
 running_processes = {}
@@ -1053,6 +1059,334 @@ def account_stats_page(account_id):
     return render_template('account_stats.html', account_id=account_id, active_page='accounts')
 
 
+@app.route('/setups')
+def setups_page():
+    """Render the setups page."""
+    return render_template('setups.html', active_page='setups')
+
+
+# ==================== SETUPS API ====================
+
+@app.route('/api/setup-folders', methods=['GET'])
+def api_get_setup_folders():
+    """Get all setup folders."""
+    folders = db.get_all_setup_folders()
+    return jsonify(folders)
+
+
+@app.route('/api/setup-folders', methods=['POST'])
+def api_create_setup_folder():
+    """Create a new setup folder."""
+    data = request.json
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({'error': 'Folder name is required'}), 400
+
+    description = data.get('description', '').strip() or None
+    color = data.get('color', '#fbbf24').strip()
+
+    folder_id = db.create_setup_folder(name, description, color)
+    return jsonify({'id': folder_id, 'message': 'Folder created successfully'})
+
+
+@app.route('/api/setup-folders/<int:folder_id>', methods=['GET'])
+def api_get_setup_folder(folder_id):
+    """Get a single setup folder."""
+    folder = db.get_setup_folder(folder_id)
+    if not folder:
+        return jsonify({'error': 'Folder not found'}), 404
+    return jsonify(folder)
+
+
+@app.route('/api/setup-folders/<int:folder_id>', methods=['PUT'])
+def api_update_setup_folder(folder_id):
+    """Update a setup folder."""
+    data = request.json
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    name = data.get('name')
+    description = data.get('description')
+    color = data.get('color')
+
+    db.update_setup_folder(folder_id, name=name, description=description, color=color)
+    return jsonify({'message': 'Folder updated successfully'})
+
+
+@app.route('/api/setup-folders/<int:folder_id>', methods=['DELETE'])
+def api_delete_setup_folder(folder_id):
+    """Delete a setup folder."""
+    deleted = db.delete_setup_folder(folder_id)
+    if deleted:
+        return jsonify({'message': 'Folder deleted successfully'})
+    return jsonify({'error': 'Folder not found'}), 404
+
+
+@app.route('/api/setups', methods=['GET'])
+def api_get_setups():
+    """Get all setups with performance stats, optionally filtered by folder."""
+    folder_id = request.args.get('folder_id', type=int)
+    setups = db.get_all_setups_with_stats(folder_id=folder_id)
+    return jsonify(setups)
+
+
+@app.route('/api/setups/list-simple', methods=['GET'])
+def api_get_setups_simple():
+    """Get simple list of setups for dropdown selection."""
+    setups = db.get_setups_simple_list()
+    return jsonify(setups)
+
+
+@app.route('/api/setups', methods=['POST'])
+def api_create_setup():
+    """Create a new setup."""
+    data = request.json
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({'error': 'Setup name is required'}), 400
+
+    folder_id = data.get('folder_id')
+    description = data.get('description', '').strip() or None
+    timeframe = data.get('timeframe', '').strip() or None
+    image_data = data.get('image_data')
+    notes = data.get('notes', '').strip() or None
+
+    setup_id = db.create_setup(
+        name=name,
+        folder_id=folder_id,
+        description=description,
+        timeframe=timeframe,
+        image_data=image_data,
+        notes=notes
+    )
+    return jsonify({'id': setup_id, 'message': 'Setup created successfully'})
+
+
+@app.route('/api/setups/<int:setup_id>', methods=['GET'])
+def api_get_setup(setup_id):
+    """Get a single setup."""
+    setup = db.get_setup(setup_id)
+    if not setup:
+        return jsonify({'error': 'Setup not found'}), 404
+    return jsonify(setup)
+
+
+@app.route('/api/setups/<int:setup_id>', methods=['PUT'])
+def api_update_setup(setup_id):
+    """Update a setup."""
+    data = request.json
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    db.update_setup(
+        setup_id,
+        name=data.get('name'),
+        folder_id=data.get('folder_id'),
+        description=data.get('description'),
+        timeframe=data.get('timeframe'),
+        image_data=data.get('image_data'),
+        notes=data.get('notes')
+    )
+    return jsonify({'message': 'Setup updated successfully'})
+
+
+@app.route('/api/setups/<int:setup_id>', methods=['DELETE'])
+def api_delete_setup(setup_id):
+    """Delete a setup."""
+    # First delete all associated images
+    images = db.get_setup_images(setup_id)
+    for img in images:
+        image_path = db.delete_setup_image(img['id'])
+        if image_path:
+            try:
+                full_path = os.path.join(SETUP_UPLOADS_FOLDER, os.path.basename(image_path))
+                if os.path.exists(full_path):
+                    os.remove(full_path)
+            except Exception as e:
+                print(f"Error deleting image file: {e}")
+
+    deleted = db.delete_setup(setup_id)
+    if deleted:
+        return jsonify({'message': 'Setup deleted successfully'})
+    return jsonify({'error': 'Setup not found'}), 404
+
+
+# ==================== SETUP IMAGES API ====================
+
+def allowed_image_file(filename):
+    """Check if file extension is allowed."""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
+
+
+def generate_image_filename(setup_id, timeframe, original_filename):
+    """Generate unique filename for uploaded image."""
+    ext = original_filename.rsplit('.', 1)[1].lower() if '.' in original_filename else 'png'
+    unique_id = uuid.uuid4().hex[:12]
+    return f"{setup_id}_{timeframe}_{unique_id}.{ext}"
+
+
+@app.route('/api/setups/<int:setup_id>/images', methods=['GET'])
+def api_get_setup_images(setup_id):
+    """Get all images for a setup."""
+    images = db.get_setup_images(setup_id)
+    return jsonify(images)
+
+
+@app.route('/api/setups/<int:setup_id>/images', methods=['POST'])
+def api_upload_setup_image(setup_id):
+    """Upload an image for a setup."""
+    # Check if setup exists
+    setup = db.get_setup(setup_id)
+    if not setup:
+        return jsonify({'error': 'Setup not found'}), 404
+
+    timeframe = request.form.get('timeframe', '').strip()
+    if not timeframe:
+        return jsonify({'error': 'Timeframe is required'}), 400
+
+    notes = request.form.get('notes', '').strip() or None
+
+    # Handle file upload
+    if 'file' in request.files:
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+
+        if not allowed_image_file(file.filename):
+            return jsonify({'error': 'Invalid file type. Allowed: png, jpg, jpeg, gif, webp'}), 400
+
+        # Generate unique filename
+        filename = generate_image_filename(setup_id, timeframe, file.filename)
+        filepath = os.path.join(SETUP_UPLOADS_FOLDER, filename)
+
+        # Save file
+        file.save(filepath)
+        image_path = filename
+
+    # Handle base64 image data
+    elif request.form.get('image_data'):
+        image_data = request.form.get('image_data')
+        # Parse base64 data URL
+        if ',' in image_data:
+            header, data = image_data.split(',', 1)
+            # Determine extension from header
+            if 'png' in header:
+                ext = 'png'
+            elif 'jpeg' in header or 'jpg' in header:
+                ext = 'jpg'
+            elif 'gif' in header:
+                ext = 'gif'
+            elif 'webp' in header:
+                ext = 'webp'
+            else:
+                ext = 'png'
+        else:
+            data = image_data
+            ext = 'png'
+
+        # Decode and save
+        filename = f"{setup_id}_{timeframe}_{uuid.uuid4().hex[:12]}.{ext}"
+        filepath = os.path.join(SETUP_UPLOADS_FOLDER, filename)
+
+        try:
+            image_bytes = base64.b64decode(data)
+            with open(filepath, 'wb') as f:
+                f.write(image_bytes)
+            image_path = filename
+        except Exception as e:
+            return jsonify({'error': f'Failed to decode image: {str(e)}'}), 400
+    else:
+        return jsonify({'error': 'No image provided'}), 400
+
+    # Get display order (add at end)
+    existing_images = db.get_setup_images(setup_id)
+    display_order = len(existing_images)
+
+    # Create database record
+    image_id = db.create_setup_image(setup_id, timeframe, image_path, notes, display_order)
+
+    return jsonify({
+        'id': image_id,
+        'image_path': image_path,
+        'message': 'Image uploaded successfully'
+    })
+
+
+@app.route('/api/setup-images/<int:image_id>', methods=['PUT'])
+def api_update_setup_image(image_id):
+    """Update a setup image (notes, timeframe)."""
+    data = request.json
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    image = db.get_setup_image(image_id)
+    if not image:
+        return jsonify({'error': 'Image not found'}), 404
+
+    db.update_setup_image(
+        image_id,
+        timeframe=data.get('timeframe'),
+        notes=data.get('notes'),
+        display_order=data.get('display_order')
+    )
+    return jsonify({'message': 'Image updated successfully'})
+
+
+@app.route('/api/setup-images/<int:image_id>', methods=['DELETE'])
+def api_delete_setup_image(image_id):
+    """Delete a setup image and its file."""
+    image_path = db.delete_setup_image(image_id)
+    if image_path:
+        # Delete the file
+        try:
+            full_path = os.path.join(SETUP_UPLOADS_FOLDER, os.path.basename(image_path))
+            if os.path.exists(full_path):
+                os.remove(full_path)
+        except Exception as e:
+            print(f"Error deleting image file: {e}")
+        return jsonify({'message': 'Image deleted successfully'})
+    return jsonify({'error': 'Image not found'}), 404
+
+
+# ==================== TRADE-SETUP LINKING API ====================
+
+@app.route('/api/closed-positions/<int:position_id>/link-setup', methods=['PUT'])
+def api_link_position_to_setup(position_id):
+    """Link a closed position to a setup."""
+    data = request.json
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    setup_id = data.get('setup_id')
+    if not setup_id:
+        return jsonify({'error': 'setup_id is required'}), 400
+
+    # Verify setup exists
+    setup = db.get_setup(setup_id)
+    if not setup:
+        return jsonify({'error': 'Setup not found'}), 404
+
+    updated = db.link_position_to_setup(position_id, setup_id)
+    if updated:
+        return jsonify({'message': 'Position linked to setup successfully'})
+    return jsonify({'error': 'Position not found'}), 404
+
+
+@app.route('/api/closed-positions/<int:position_id>/link-setup', methods=['DELETE'])
+def api_unlink_position_from_setup(position_id):
+    """Unlink a closed position from its setup."""
+    updated = db.unlink_position_from_setup(position_id)
+    if updated:
+        return jsonify({'message': 'Position unlinked from setup successfully'})
+    return jsonify({'error': 'Position not found'}), 404
+
+
 # ==================== ACCOUNTS API ====================
 
 @app.route('/api/accounts', methods=['GET'])
@@ -1610,6 +1944,7 @@ def api_get_account_orders(account_id):
                 'status': order.get('status') or order.get('algoStatus', ''),
                 'time': order.get('time') or order.get('updateTime') or order.get('createTime') or 0,
                 'reduce_only': order.get('reduceOnly', False),
+                'close_position': order.get('closePosition') == 'true' or order.get('closePosition') == True,
                 'is_algo': 'algoId' in order  # Flag to identify algo orders
             })
 

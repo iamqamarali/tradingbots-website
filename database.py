@@ -210,6 +210,57 @@ def init_db():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_closed_positions_account_id ON closed_positions(account_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_closed_positions_exit_time ON closed_positions(exit_time)')
 
+        # Setup folders table (e.g., Grade A, Grade B, Grade C)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS setup_folders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                color TEXT DEFAULT '#fbbf24',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # Setups table (individual trading setups with images)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS setups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                folder_id INTEGER,
+                name TEXT NOT NULL,
+                description TEXT,
+                timeframe TEXT,
+                image_data TEXT,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (folder_id) REFERENCES setup_folders(id) ON DELETE SET NULL
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_setups_folder_id ON setups(folder_id)')
+
+        # Setup images table (multiple images per setup with timeframes)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS setup_images (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                setup_id INTEGER NOT NULL,
+                timeframe TEXT NOT NULL,
+                image_path TEXT NOT NULL,
+                notes TEXT,
+                display_order INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (setup_id) REFERENCES setups(id) ON DELETE CASCADE
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_setup_images_setup_id ON setup_images(setup_id)')
+
+        # Add setup_id column to closed_positions for trade-setup linking
+        try:
+            cursor.execute('ALTER TABLE closed_positions ADD COLUMN setup_id INTEGER REFERENCES setups(id) ON DELETE SET NULL')
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_closed_positions_setup_id ON closed_positions(setup_id)')
+
         conn.commit()
         conn.close()
 
@@ -984,15 +1035,16 @@ def insert_closed_position(account_id, symbol, side, quantity, entry_price, exit
 
 
 def get_closed_positions(account_id=None, symbol=None, limit=100, offset=0):
-    """Get closed positions with optional filters."""
+    """Get closed positions with optional filters, including setup info."""
     with db_lock:
         conn = get_connection()
         cursor = conn.cursor()
 
         query = '''
-            SELECT cp.*, a.name as account_name
+            SELECT cp.*, a.name as account_name, s.name as setup_name
             FROM closed_positions cp
             JOIN accounts a ON cp.account_id = a.id
+            LEFT JOIN setups s ON cp.setup_id = s.id
             WHERE 1=1
         '''
         params = []
@@ -1029,7 +1081,9 @@ def get_closed_positions(account_id=None, symbol=None, limit=100, offset=0):
                 'entry_time': row['entry_time'],
                 'exit_time': row['exit_time'],
                 'duration_seconds': row['duration_seconds'],
-                'trade_ids': row['trade_ids']
+                'trade_ids': row['trade_ids'],
+                'setup_id': row['setup_id'] if 'setup_id' in row.keys() else None,
+                'setup_name': row['setup_name'] if 'setup_name' in row.keys() else None
             })
 
         conn.close()
@@ -1267,6 +1321,574 @@ def get_closed_positions_stats(account_id):
             }
 
         return None
+
+
+# ==================== SETUP FOLDERS OPERATIONS ====================
+
+def create_setup_folder(name, description=None, color='#fbbf24'):
+    """Create a new setup folder. Returns folder id."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            'INSERT INTO setup_folders (name, description, color) VALUES (?, ?, ?)',
+            (name, description, color)
+        )
+        folder_id = cursor.lastrowid
+
+        conn.commit()
+        conn.close()
+        return folder_id
+
+
+def get_all_setup_folders():
+    """Get all setup folders with setup count."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT sf.*, COUNT(s.id) as setup_count
+            FROM setup_folders sf
+            LEFT JOIN setups s ON sf.id = s.folder_id
+            GROUP BY sf.id
+            ORDER BY sf.created_at DESC
+        ''')
+
+        folders = []
+        for row in cursor.fetchall():
+            folders.append({
+                'id': row['id'],
+                'name': row['name'],
+                'description': row['description'],
+                'color': row['color'],
+                'setup_count': row['setup_count'],
+                'created_at': row['created_at'],
+                'updated_at': row['updated_at']
+            })
+
+        conn.close()
+        return folders
+
+
+def get_setup_folder(folder_id):
+    """Get a single setup folder by ID."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT * FROM setup_folders WHERE id = ?', (folder_id,))
+        row = cursor.fetchone()
+
+        conn.close()
+
+        if row:
+            return {
+                'id': row['id'],
+                'name': row['name'],
+                'description': row['description'],
+                'color': row['color'],
+                'created_at': row['created_at'],
+                'updated_at': row['updated_at']
+            }
+        return None
+
+
+def update_setup_folder(folder_id, name=None, description=None, color=None):
+    """Update a setup folder."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        updates = ['updated_at = CURRENT_TIMESTAMP']
+        params = []
+
+        if name is not None:
+            updates.append('name = ?')
+            params.append(name)
+        if description is not None:
+            updates.append('description = ?')
+            params.append(description)
+        if color is not None:
+            updates.append('color = ?')
+            params.append(color)
+
+        params.append(folder_id)
+        cursor.execute(f'UPDATE setup_folders SET {", ".join(updates)} WHERE id = ?', params)
+
+        conn.commit()
+        conn.close()
+        return True
+
+
+def delete_setup_folder(folder_id):
+    """Delete a setup folder. Setups in the folder will have folder_id set to NULL."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM setup_folders WHERE id = ?', (folder_id,))
+        deleted = cursor.rowcount > 0
+
+        conn.commit()
+        conn.close()
+        return deleted
+
+
+# ==================== SETUPS OPERATIONS ====================
+
+def create_setup(name, folder_id=None, description=None, timeframe=None, image_data=None, notes=None):
+    """Create a new setup. Returns setup id."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            '''INSERT INTO setups (name, folder_id, description, timeframe, image_data, notes)
+               VALUES (?, ?, ?, ?, ?, ?)''',
+            (name, folder_id, description, timeframe, image_data, notes)
+        )
+        setup_id = cursor.lastrowid
+
+        conn.commit()
+        conn.close()
+        return setup_id
+
+
+def get_all_setups(folder_id=None):
+    """Get all setups, optionally filtered by folder."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        if folder_id is not None:
+            cursor.execute('''
+                SELECT s.*, sf.name as folder_name, sf.color as folder_color
+                FROM setups s
+                LEFT JOIN setup_folders sf ON s.folder_id = sf.id
+                WHERE s.folder_id = ?
+                ORDER BY s.created_at DESC
+            ''', (folder_id,))
+        else:
+            cursor.execute('''
+                SELECT s.*, sf.name as folder_name, sf.color as folder_color
+                FROM setups s
+                LEFT JOIN setup_folders sf ON s.folder_id = sf.id
+                ORDER BY s.created_at DESC
+            ''')
+
+        setups = []
+        for row in cursor.fetchall():
+            setups.append({
+                'id': row['id'],
+                'folder_id': row['folder_id'],
+                'folder_name': row['folder_name'],
+                'folder_color': row['folder_color'],
+                'name': row['name'],
+                'description': row['description'],
+                'timeframe': row['timeframe'],
+                'image_data': row['image_data'],
+                'notes': row['notes'],
+                'created_at': row['created_at'],
+                'updated_at': row['updated_at']
+            })
+
+        conn.close()
+        return setups
+
+
+def get_setup(setup_id):
+    """Get a single setup by ID."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT s.*, sf.name as folder_name, sf.color as folder_color
+            FROM setups s
+            LEFT JOIN setup_folders sf ON s.folder_id = sf.id
+            WHERE s.id = ?
+        ''', (setup_id,))
+        row = cursor.fetchone()
+
+        conn.close()
+
+        if row:
+            return {
+                'id': row['id'],
+                'folder_id': row['folder_id'],
+                'folder_name': row['folder_name'],
+                'folder_color': row['folder_color'],
+                'name': row['name'],
+                'description': row['description'],
+                'timeframe': row['timeframe'],
+                'image_data': row['image_data'],
+                'notes': row['notes'],
+                'created_at': row['created_at'],
+                'updated_at': row['updated_at']
+            }
+        return None
+
+
+def update_setup(setup_id, name=None, folder_id=None, description=None, timeframe=None, image_data=None, notes=None):
+    """Update a setup."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        updates = ['updated_at = CURRENT_TIMESTAMP']
+        params = []
+
+        if name is not None:
+            updates.append('name = ?')
+            params.append(name)
+        if folder_id is not None:
+            updates.append('folder_id = ?')
+            params.append(folder_id if folder_id != 0 else None)
+        if description is not None:
+            updates.append('description = ?')
+            params.append(description)
+        if timeframe is not None:
+            updates.append('timeframe = ?')
+            params.append(timeframe)
+        if image_data is not None:
+            updates.append('image_data = ?')
+            params.append(image_data)
+        if notes is not None:
+            updates.append('notes = ?')
+            params.append(notes)
+
+        params.append(setup_id)
+        cursor.execute(f'UPDATE setups SET {", ".join(updates)} WHERE id = ?', params)
+
+        conn.commit()
+        conn.close()
+        return True
+
+
+def delete_setup(setup_id):
+    """Delete a setup."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM setups WHERE id = ?', (setup_id,))
+        deleted = cursor.rowcount > 0
+
+        conn.commit()
+        conn.close()
+        return deleted
+
+
+# ==================== SETUP IMAGES OPERATIONS ====================
+
+def create_setup_image(setup_id, timeframe, image_path, notes=None, display_order=0):
+    """Create a new setup image. Returns image id."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            '''INSERT INTO setup_images (setup_id, timeframe, image_path, notes, display_order)
+               VALUES (?, ?, ?, ?, ?)''',
+            (setup_id, timeframe, image_path, notes, display_order)
+        )
+        image_id = cursor.lastrowid
+
+        conn.commit()
+        conn.close()
+        return image_id
+
+
+def get_setup_images(setup_id):
+    """Get all images for a setup, ordered by display_order."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT id, setup_id, timeframe, image_path, notes, display_order, created_at
+            FROM setup_images
+            WHERE setup_id = ?
+            ORDER BY display_order, created_at
+        ''', (setup_id,))
+
+        images = []
+        for row in cursor.fetchall():
+            # Add static path prefix for frontend display
+            image_path = row['image_path']
+            if image_path and not image_path.startswith('/') and not image_path.startswith('data:'):
+                image_path = f'/static/uploads/setups/{image_path}'
+            images.append({
+                'id': row['id'],
+                'setup_id': row['setup_id'],
+                'timeframe': row['timeframe'],
+                'image_path': image_path,
+                'notes': row['notes'],
+                'display_order': row['display_order'],
+                'created_at': row['created_at']
+            })
+
+        conn.close()
+        return images
+
+
+def get_setup_image(image_id):
+    """Get a single setup image by ID."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT * FROM setup_images WHERE id = ?', (image_id,))
+        row = cursor.fetchone()
+
+        conn.close()
+
+        if row:
+            return {
+                'id': row['id'],
+                'setup_id': row['setup_id'],
+                'timeframe': row['timeframe'],
+                'image_path': row['image_path'],
+                'notes': row['notes'],
+                'display_order': row['display_order'],
+                'created_at': row['created_at']
+            }
+        return None
+
+
+def update_setup_image(image_id, timeframe=None, notes=None, display_order=None):
+    """Update a setup image."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        updates = []
+        params = []
+
+        if timeframe is not None:
+            updates.append('timeframe = ?')
+            params.append(timeframe)
+        if notes is not None:
+            updates.append('notes = ?')
+            params.append(notes)
+        if display_order is not None:
+            updates.append('display_order = ?')
+            params.append(display_order)
+
+        if updates:
+            params.append(image_id)
+            cursor.execute(f'UPDATE setup_images SET {", ".join(updates)} WHERE id = ?', params)
+
+        conn.commit()
+        conn.close()
+        return True
+
+
+def delete_setup_image(image_id):
+    """Delete a setup image. Returns the image_path for file cleanup."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Get the image path before deleting
+        cursor.execute('SELECT image_path FROM setup_images WHERE id = ?', (image_id,))
+        row = cursor.fetchone()
+        image_path = row['image_path'] if row else None
+
+        cursor.execute('DELETE FROM setup_images WHERE id = ?', (image_id,))
+        deleted = cursor.rowcount > 0
+
+        conn.commit()
+        conn.close()
+        return image_path if deleted else None
+
+
+# ==================== TRADE-SETUP LINKING ====================
+
+def link_position_to_setup(position_id, setup_id):
+    """Link a closed position to a setup."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            'UPDATE closed_positions SET setup_id = ? WHERE id = ?',
+            (setup_id, position_id)
+        )
+        updated = cursor.rowcount > 0
+
+        conn.commit()
+        conn.close()
+        return updated
+
+
+def unlink_position_from_setup(position_id):
+    """Unlink a closed position from its setup."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            'UPDATE closed_positions SET setup_id = NULL WHERE id = ?',
+            (position_id,)
+        )
+        updated = cursor.rowcount > 0
+
+        conn.commit()
+        conn.close()
+        return updated
+
+
+def get_setup_performance(setup_id):
+    """Calculate performance stats for a setup from linked trades."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT
+                COUNT(*) as total_trades,
+                SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END) as winning_trades,
+                SUM(CASE WHEN realized_pnl < 0 THEN 1 ELSE 0 END) as losing_trades,
+                COALESCE(SUM(realized_pnl), 0) as total_pnl,
+                COALESCE(AVG(realized_pnl), 0) as avg_pnl
+            FROM closed_positions
+            WHERE setup_id = ?
+        ''', (setup_id,))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row and row['total_trades'] > 0:
+            total = row['total_trades']
+            winning = row['winning_trades'] or 0
+            losing = row['losing_trades'] or 0
+            win_rate = round(winning / total * 100, 1) if total > 0 else 0
+
+            return {
+                'total_trades': total,
+                'winning_trades': winning,
+                'losing_trades': losing,
+                'win_rate': win_rate,
+                'total_pnl': round(row['total_pnl'], 2),
+                'avg_pnl': round(row['avg_pnl'], 2)
+            }
+        return {
+            'total_trades': 0,
+            'winning_trades': 0,
+            'losing_trades': 0,
+            'win_rate': 0,
+            'total_pnl': 0,
+            'avg_pnl': 0
+        }
+
+
+def get_all_setups_with_stats(folder_id=None):
+    """Get all setups with performance stats and images included."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        if folder_id is not None:
+            cursor.execute('''
+                SELECT s.*, sf.name as folder_name, sf.color as folder_color
+                FROM setups s
+                LEFT JOIN setup_folders sf ON s.folder_id = sf.id
+                WHERE s.folder_id = ?
+                ORDER BY s.created_at DESC
+            ''', (folder_id,))
+        else:
+            cursor.execute('''
+                SELECT s.*, sf.name as folder_name, sf.color as folder_color
+                FROM setups s
+                LEFT JOIN setup_folders sf ON s.folder_id = sf.id
+                ORDER BY s.created_at DESC
+            ''')
+
+        setups = []
+        for row in cursor.fetchall():
+            setup_id = row['id']
+
+            # Get images for this setup
+            cursor.execute('''
+                SELECT id, timeframe, image_path, notes, display_order
+                FROM setup_images
+                WHERE setup_id = ?
+                ORDER BY display_order, created_at
+            ''', (setup_id,))
+            images = []
+            for img in cursor.fetchall():
+                img_dict = dict(img)
+                # Add static path prefix for frontend display
+                if img_dict['image_path'] and not img_dict['image_path'].startswith('/') and not img_dict['image_path'].startswith('data:'):
+                    img_dict['image_path'] = f'/static/uploads/setups/{img_dict["image_path"]}'
+                images.append(img_dict)
+
+            # Get performance stats
+            cursor.execute('''
+                SELECT
+                    COUNT(*) as total_trades,
+                    SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END) as winning_trades,
+                    COALESCE(SUM(realized_pnl), 0) as total_pnl
+                FROM closed_positions
+                WHERE setup_id = ?
+            ''', (setup_id,))
+            perf_row = cursor.fetchone()
+
+            total_trades = perf_row['total_trades'] or 0
+            winning = perf_row['winning_trades'] or 0
+            win_rate = round(winning / total_trades * 100, 1) if total_trades > 0 else 0
+
+            setups.append({
+                'id': setup_id,
+                'folder_id': row['folder_id'],
+                'folder_name': row['folder_name'],
+                'folder_color': row['folder_color'],
+                'name': row['name'],
+                'description': row['description'],
+                'timeframe': row['timeframe'],
+                'image_data': row['image_data'],  # Legacy support
+                'notes': row['notes'],
+                'images': images,
+                'performance': {
+                    'total_trades': total_trades,
+                    'winning_trades': winning,
+                    'win_rate': win_rate,
+                    'total_pnl': round(perf_row['total_pnl'] or 0, 2)
+                },
+                'created_at': row['created_at'],
+                'updated_at': row['updated_at']
+            })
+
+        conn.close()
+        return setups
+
+
+def get_setups_simple_list():
+    """Get a simple list of setups for dropdown selection."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT s.id, s.name, sf.name as folder_name
+            FROM setups s
+            LEFT JOIN setup_folders sf ON s.folder_id = sf.id
+            ORDER BY sf.name, s.name
+        ''')
+
+        setups = []
+        for row in cursor.fetchall():
+            setups.append({
+                'id': row['id'],
+                'name': row['name'],
+                'folder_name': row['folder_name']
+            })
+
+        conn.close()
+        return setups
 
 
 # Initialize database on module load

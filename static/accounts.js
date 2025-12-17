@@ -827,6 +827,7 @@ async function loadOrders() {
                     <td>${priceDisplay}</td>
                     <td>${stopPriceDisplay}</td>
                     <td>${order.reduce_only ? 'Yes' : 'No'}</td>
+                    <td>${order.close_position ? 'Yes' : 'No'}</td>
                     <td>
                         <button class="cancel-order-btn"
                             data-order-id="${order.order_id}"
@@ -978,8 +979,12 @@ async function loadTrades(page = 1) {
                     return price.toFixed(6);
                 };
 
+                const setupBadge = pos.setup_name
+                    ? `<span class="setup-badge" title="${pos.setup_name}">${pos.setup_name}</span>`
+                    : '';
+
                 return `
-                    <tr>
+                    <tr data-position-id="${pos.id}">
                         <td>${exitTime}</td>
                         <td class="symbol">${pos.symbol}</td>
                         <td><span class="side ${pos.side.toLowerCase()}">${pos.side}</span></td>
@@ -990,6 +995,24 @@ async function loadTrades(page = 1) {
                             ${pos.realized_pnl >= 0 ? '+' : ''}$${pos.realized_pnl.toFixed(2)}
                         </td>
                         <td class="duration">${duration}</td>
+                        <td class="setup-cell">
+                            ${setupBadge}
+                            <div class="trade-action-menu">
+                                <button class="action-menu-btn" onclick="toggleTradeMenu(${pos.id}, event)">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="5" r="1"/>
+                                        <circle cx="12" cy="12" r="1"/>
+                                        <circle cx="12" cy="19" r="1"/>
+                                    </svg>
+                                </button>
+                                <div class="action-dropdown" id="tradeMenu-${pos.id}">
+                                    <button onclick="openLinkSetupModal(${pos.id}, '${pos.symbol}', '${pos.side}', ${pos.realized_pnl}, ${pos.setup_id || 'null'})">
+                                        ${pos.setup_id ? 'Change Setup' : 'Link to Setup'}
+                                    </button>
+                                    ${pos.setup_id ? `<button onclick="unlinkSetup(${pos.id})">Unlink Setup</button>` : ''}
+                                </div>
+                            </div>
+                        </td>
                     </tr>
                 `;
             }).join('');
@@ -2669,5 +2692,169 @@ async function executeTrade(side) {
 // Initialize trade modal on page load
 document.addEventListener('DOMContentLoaded', () => {
     setupTradeModal();
+    setupLinkSetupModal();
 });
+
+
+// ==================== SETUP LINKING ====================
+
+let linkingPositionId = null;
+let linkingPositionSetupId = null;
+
+function setupLinkSetupModal() {
+    const modal = document.getElementById('linkSetupModal');
+    const closeBtn = document.getElementById('closeLinkSetupModal');
+    const cancelBtn = document.getElementById('cancelLinkSetup');
+    const confirmBtn = document.getElementById('confirmLinkSetup');
+
+    if (!modal) return;
+
+    closeBtn?.addEventListener('click', closeLinkSetupModal);
+    cancelBtn?.addEventListener('click', closeLinkSetupModal);
+    confirmBtn?.addEventListener('click', linkTradeToSetup);
+
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeLinkSetupModal();
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.trade-action-menu')) {
+            document.querySelectorAll('.action-dropdown.active').forEach(d => d.classList.remove('active'));
+        }
+    });
+}
+
+function toggleTradeMenu(positionId, event) {
+    event.stopPropagation();
+    const menu = document.getElementById(`tradeMenu-${positionId}`);
+    if (!menu) return;
+
+    // Close other menus
+    document.querySelectorAll('.action-dropdown.active').forEach(d => {
+        if (d !== menu) d.classList.remove('active');
+    });
+
+    menu.classList.toggle('active');
+}
+
+async function openLinkSetupModal(positionId, symbol, side, pnl, currentSetupId) {
+    linkingPositionId = positionId;
+    linkingPositionSetupId = currentSetupId;
+
+    // Close dropdown
+    document.querySelectorAll('.action-dropdown.active').forEach(d => d.classList.remove('active'));
+
+    // Show trade info
+    const infoDiv = document.getElementById('tradeLinkInfo');
+    if (infoDiv) {
+        const pnlClass = pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+        const pnlSign = pnl >= 0 ? '+' : '';
+        infoDiv.innerHTML = `
+            <div class="trade-info-row">
+                <span class="trade-symbol">${symbol}</span>
+                <span class="side ${side.toLowerCase()}">${side}</span>
+                <span class="${pnlClass}">${pnlSign}$${pnl.toFixed(2)}</span>
+            </div>
+        `;
+    }
+
+    // Load setups for dropdown
+    const select = document.getElementById('setupSelect');
+    if (select) {
+        select.innerHTML = '<option value="">-- Select a setup --</option>';
+        try {
+            const response = await fetch('/api/setups/list-simple');
+            const setups = await response.json();
+
+            // Group by folder
+            const byFolder = {};
+            setups.forEach(s => {
+                const folder = s.folder_name || 'Uncategorized';
+                if (!byFolder[folder]) byFolder[folder] = [];
+                byFolder[folder].push(s);
+            });
+
+            Object.keys(byFolder).sort().forEach(folder => {
+                const optgroup = document.createElement('optgroup');
+                optgroup.label = folder;
+                byFolder[folder].forEach(s => {
+                    const option = document.createElement('option');
+                    option.value = s.id;
+                    option.textContent = s.name;
+                    if (currentSetupId && s.id === currentSetupId) {
+                        option.selected = true;
+                    }
+                    optgroup.appendChild(option);
+                });
+                select.appendChild(optgroup);
+            });
+        } catch (error) {
+            console.error('Error loading setups:', error);
+        }
+    }
+
+    // Show modal
+    const modal = document.getElementById('linkSetupModal');
+    if (modal) modal.classList.add('active');
+}
+
+function closeLinkSetupModal() {
+    const modal = document.getElementById('linkSetupModal');
+    if (modal) modal.classList.remove('active');
+    linkingPositionId = null;
+    linkingPositionSetupId = null;
+}
+
+async function linkTradeToSetup() {
+    const select = document.getElementById('setupSelect');
+    const setupId = select?.value;
+
+    if (!setupId) {
+        showToast('Please select a setup', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/closed-positions/${linkingPositionId}/link-setup`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ setup_id: parseInt(setupId) })
+        });
+
+        if (response.ok) {
+            showToast('Trade linked to setup', 'success');
+            closeLinkSetupModal();
+            loadTrades(tradesPage);
+        } else {
+            const data = await response.json();
+            showToast(data.error || 'Failed to link trade', 'error');
+        }
+    } catch (error) {
+        console.error('Error linking trade:', error);
+        showToast('Failed to link trade', 'error');
+    }
+}
+
+async function unlinkSetup(positionId) {
+    // Close dropdown
+    document.querySelectorAll('.action-dropdown.active').forEach(d => d.classList.remove('active'));
+
+    try {
+        const response = await fetch(`/api/closed-positions/${positionId}/link-setup`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            showToast('Setup unlinked', 'success');
+            loadTrades(tradesPage);
+        } else {
+            const data = await response.json();
+            showToast(data.error || 'Failed to unlink setup', 'error');
+        }
+    } catch (error) {
+        console.error('Error unlinking setup:', error);
+        showToast('Failed to unlink setup', 'error');
+    }
+}
 

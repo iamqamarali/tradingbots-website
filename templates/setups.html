@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setups - Trading Bot Manager</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/setups.css">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        {% include 'includes/sidebar.html' %}
+
+        <!-- Main Content -->
+        <main class="main-content setups-page-content">
+            <!-- Folders Sidebar -->
+            <aside class="folders-sidebar">
+                <div class="folders-header">
+                    <h2>Folders</h2>
+                    <button class="add-folder-btn" id="addFolderBtn" title="Add Folder">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                    </button>
+                </div>
+                <div class="folders-list" id="foldersList">
+                    <a href="#" class="folder-item active" data-folder-id="all">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                            <line x1="3" y1="9" x2="21" y2="9"/>
+                            <line x1="9" y1="21" x2="9" y2="9"/>
+                        </svg>
+                        <span>All Setups</span>
+                        <span class="folder-count" id="allSetupsCount">0</span>
+                    </a>
+                    <!-- Folders will be inserted here -->
+                </div>
+            </aside>
+
+            <!-- Setups Area -->
+            <div class="setups-area">
+                <!-- Header -->
+                <header class="page-header">
+                    <div class="header-left">
+                        <h1 id="pageTitle">All Setups</h1>
+                    </div>
+                    <button class="add-setup-btn" id="addSetupBtn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        Add Setup
+                    </button>
+                </header>
+
+                <!-- Setups Grid -->
+                <div class="setups-main">
+                    <div class="setups-grid" id="setupsGrid">
+                        <!-- Setup cards will be inserted here -->
+                        <div class="loading-state" id="loadingState">
+                            <div class="spinner"></div>
+                            <p>Loading setups...</p>
+                        </div>
+                    </div>
+
+                    <div class="empty-state" id="emptyState" style="display: none;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                            <line x1="3" y1="9" x2="21" y2="9"/>
+                            <line x1="9" y1="21" x2="9" y2="9"/>
+                        </svg>
+                        <h3>No Setups Yet</h3>
+                        <p>Save your trading setups with images and timeframes for quick reference.</p>
+                        <button class="btn-primary" onclick="document.getElementById('addSetupBtn').click()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            Add Your First Setup
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Add/Edit Folder Modal -->
+    <div class="modal-overlay" id="folderModal">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3 id="folderModalTitle">Add Folder</h3>
+                <button class="modal-close" id="closeFolderModal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="folderName">Folder Name</label>
+                    <input type="text" id="folderName" placeholder="e.g., Grade A Setups">
+                </div>
+                <div class="form-group">
+                    <label for="folderDescription">Description (optional)</label>
+                    <input type="text" id="folderDescription" placeholder="e.g., High probability setups">
+                </div>
+                <div class="form-group">
+                    <label for="folderColor">Color</label>
+                    <div class="color-picker">
+                        <input type="color" id="folderColor" value="#fbbf24">
+                        <span class="color-preview" id="colorPreview"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelFolderBtn">Cancel</button>
+                <button class="btn-primary" id="saveFolderBtn">Save Folder</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Folder Modal -->
+    <div class="modal-overlay" id="deleteFolderModal">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3>Delete Folder</h3>
+                <button class="modal-close" id="closeDeleteFolderModal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="warning-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                        <line x1="12" y1="9" x2="12" y2="13"/>
+                        <line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                </div>
+                <p>Are you sure you want to delete <strong id="deleteFolderName"></strong>?</p>
+                <p class="warning-text">Setups in this folder will be moved to "Uncategorized".</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelDeleteFolderBtn">Cancel</button>
+                <button class="btn-danger" id="confirmDeleteFolderBtn">Delete Folder</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Setup Modal -->
+    <div class="modal-overlay" id="setupModal">
+        <div class="modal modal-large">
+            <div class="modal-header">
+                <h3 id="setupModalTitle">Add Setup</h3>
+                <button class="modal-close" id="closeSetupModal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="setupName">Setup Name *</label>
+                        <input type="text" id="setupName" placeholder="e.g., BTC Bullish Flag">
+                    </div>
+                    <div class="form-group">
+                        <label for="setupTimeframe">Timeframe</label>
+                        <select id="setupTimeframe">
+                            <option value="">Select timeframe</option>
+                            <option value="1m">1 Minute</option>
+                            <option value="5m">5 Minutes</option>
+                            <option value="15m">15 Minutes</option>
+                            <option value="30m">30 Minutes</option>
+                            <option value="1h">1 Hour</option>
+                            <option value="4h">4 Hours</option>
+                            <option value="1d">1 Day</option>
+                            <option value="1w">1 Week</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="setupFolder">Folder</label>
+                    <select id="setupFolder">
+                        <option value="">No folder</option>
+                        <!-- Folders will be populated dynamically -->
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="setupDescription">Description</label>
+                    <input type="text" id="setupDescription" placeholder="Brief description of the setup">
+                </div>
+                <div class="form-group">
+                    <label>Setup Images</label>
+                    <div class="multi-image-manager" id="multiImageManager">
+                        <!-- Timeframe Tabs -->
+                        <div class="image-tabs" id="imageTabs">
+                            <button type="button" class="image-tab add-tab" id="addImageTabBtn" title="Add Image">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                </svg>
+                                Add
+                            </button>
+                        </div>
+                        <!-- Image Content Area -->
+                        <div class="image-tab-content" id="imageTabContent">
+                            <div class="no-images-placeholder" id="noImagesPlaceholder">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                                    <polyline points="21 15 16 10 5 21"/>
+                                </svg>
+                                <p>Click "Add" to add images for different timeframes</p>
+                            </div>
+                            <div class="image-editor" id="imageEditor" style="display: none;">
+                                <div class="image-editor-header">
+                                    <select id="currentImageTimeframe" class="timeframe-select">
+                                        <option value="1m">1 Minute</option>
+                                        <option value="5m">5 Minutes</option>
+                                        <option value="15m">15 Minutes</option>
+                                        <option value="30m">30 Minutes</option>
+                                        <option value="1h">1 Hour</option>
+                                        <option value="4h">4 Hours</option>
+                                        <option value="1d">1 Day</option>
+                                        <option value="1w">1 Week</option>
+                                    </select>
+                                    <button type="button" class="delete-image-btn" id="deleteCurrentImageBtn" title="Delete this image">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polyline points="3 6 5 6 21 6"/>
+                                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div class="image-upload-area" id="currentImageUpload">
+                                    <div class="upload-placeholder" id="currentUploadPlaceholder">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                                            <polyline points="21 15 16 10 5 21"/>
+                                        </svg>
+                                        <p>Click to upload or drag and drop</p>
+                                        <span>PNG, JPG up to 10MB</span>
+                                    </div>
+                                    <div class="image-preview-container" id="currentImagePreview" style="display: none;">
+                                        <img id="currentPreviewImg" src="" alt="Preview">
+                                    </div>
+                                    <input type="file" id="currentImageInput" accept="image/*" style="display: none;">
+                                </div>
+                                <div class="image-notes-group">
+                                    <label for="currentImageNotes">Notes for this timeframe</label>
+                                    <textarea id="currentImageNotes" rows="2" placeholder="Notes specific to this timeframe..."></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="setupNotes">General Notes</label>
+                    <textarea id="setupNotes" rows="3" placeholder="General notes about the setup (entry, stop loss, targets, etc.)"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelSetupBtn">Cancel</button>
+                <button class="btn-primary" id="saveSetupBtn">Save Setup</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Setup Modal -->
+    <div class="modal-overlay" id="deleteSetupModal">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3>Delete Setup</h3>
+                <button class="modal-close" id="closeDeleteSetupModal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="warning-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                        <line x1="12" y1="9" x2="12" y2="13"/>
+                        <line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                </div>
+                <p>Are you sure you want to delete <strong id="deleteSetupName"></strong>?</p>
+                <p class="warning-text">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelDeleteSetupBtn">Cancel</button>
+                <button class="btn-danger" id="confirmDeleteSetupBtn">Delete Setup</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Viewer Modal -->
+    <div class="modal-overlay image-viewer-overlay" id="imageViewerModal">
+        <div class="image-viewer">
+            <button class="image-viewer-close" id="closeImageViewer">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+            <!-- Viewer Header with Setup Name -->
+            <div class="viewer-header">
+                <h3 id="viewerTitle"></h3>
+            </div>
+            <!-- Timeframe Tabs -->
+            <div class="viewer-tabs" id="viewerTabs">
+                <!-- Tabs will be populated dynamically -->
+            </div>
+            <!-- Image Container with Zoom -->
+            <div class="viewer-image-container" id="viewerImageContainer">
+                <img id="viewerImage" src="" alt="Setup Image">
+            </div>
+            <!-- Zoom Controls -->
+            <div class="viewer-controls">
+                <button class="viewer-control-btn" id="zoomOutBtn" title="Zoom Out">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        <line x1="8" y1="11" x2="14" y2="11"/>
+                    </svg>
+                </button>
+                <span class="zoom-level" id="zoomLevel">100%</span>
+                <button class="viewer-control-btn" id="zoomInBtn" title="Zoom In">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        <line x1="11" y1="8" x2="11" y2="14"/>
+                        <line x1="8" y1="11" x2="14" y2="11"/>
+                    </svg>
+                </button>
+                <button class="viewer-control-btn" id="zoomResetBtn" title="Reset Zoom">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                        <path d="M3 3v5h5"/>
+                    </svg>
+                </button>
+            </div>
+            <!-- Notes Section -->
+            <div class="viewer-notes" id="viewerNotes" style="display: none;">
+                <p id="viewerNotesText"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="/static/setups.js"></script>
+    <script>
+        // User dropdown toggle
+        const userAvatarBtn = document.getElementById('userAvatarBtn');
+        const userDropdown = document.getElementById('userDropdown');
+
+        if (userAvatarBtn && userDropdown) {
+            userAvatarBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                userDropdown.classList.toggle('active');
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!userDropdown.contains(e.target) && !userAvatarBtn.contains(e.target)) {
+                    userDropdown.classList.remove('active');
+                }
+            });
+        }
+
+        // Mobile menu toggle
+        const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+        const sidebar = document.querySelector('.sidebar');
+        const mobileOverlay = document.getElementById('mobileOverlay');
+
+        if (mobileMenuBtn && sidebar && mobileOverlay) {
+            mobileMenuBtn.addEventListener('click', () => {
+                sidebar.classList.toggle('open');
+                mobileOverlay.classList.toggle('active');
+            });
+
+            mobileOverlay.addEventListener('click', () => {
+                sidebar.classList.remove('open');
+                mobileOverlay.classList.remove('active');
+            });
+        }
+    </script>
+</body>
+</html>
