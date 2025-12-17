@@ -824,7 +824,7 @@ function updateImageEditor() {
 function addNewImage() {
     // Find a timeframe not already used
     const usedTimeframes = setupImages.filter(img => !img.toDelete).map(img => img.timeframe);
-    const allTimeframes = ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w'];
+    const allTimeframes = ['1m', '5m', '15m', '30m', '1h', '2h', '4h', '1d', '1w'];
     let newTimeframe = allTimeframes.find(tf => !usedTimeframes.includes(tf)) || '1h';
 
     setupImages.push({

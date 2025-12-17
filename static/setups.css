@@ -2,6 +2,7 @@
 
 .setups-page-content {
     display: flex;
+    flex-direction: row;
     min-height: 100vh;
     background:
         radial-gradient(ellipse at 10% 0%, rgba(245, 158, 11, 0.06) 0%, transparent 50%),

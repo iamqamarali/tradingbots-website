@@ -1468,14 +1468,14 @@ def get_all_setups(folder_id=None):
                 FROM setups s
                 LEFT JOIN setup_folders sf ON s.folder_id = sf.id
                 WHERE s.folder_id = ?
-                ORDER BY s.created_at DESC
+                ORDER BY s.created_at ASC
             ''', (folder_id,))
         else:
             cursor.execute('''
                 SELECT s.*, sf.name as folder_name, sf.color as folder_color
                 FROM setups s
                 LEFT JOIN setup_folders sf ON s.folder_id = sf.id
-                ORDER BY s.created_at DESC
+                ORDER BY s.created_at ASC
             ''')
 
         setups = []
@@ -1797,14 +1797,14 @@ def get_all_setups_with_stats(folder_id=None):
                 FROM setups s
                 LEFT JOIN setup_folders sf ON s.folder_id = sf.id
                 WHERE s.folder_id = ?
-                ORDER BY s.created_at DESC
+                ORDER BY s.created_at ASC
             ''', (folder_id,))
         else:
             cursor.execute('''
                 SELECT s.*, sf.name as folder_name, sf.color as folder_color
                 FROM setups s
                 LEFT JOIN setup_folders sf ON s.folder_id = sf.id
-                ORDER BY s.created_at DESC
+                ORDER BY s.created_at ASC
             ''')
 
         setups = []
