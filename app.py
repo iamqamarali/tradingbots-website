@@ -1246,13 +1246,21 @@ def api_upload_setup_image(setup_id):
     if not setup:
         return jsonify({'error': 'Setup not found'}), 404
 
-    timeframe = request.form.get('timeframe', '').strip()
+    # Handle both JSON and form data
+    if request.is_json:
+        data = request.json
+        timeframe = data.get('timeframe', '').strip() if data else ''
+        notes = data.get('notes', '').strip() or None if data else None
+        image_data_field = data.get('image_data') if data else None
+    else:
+        timeframe = request.form.get('timeframe', '').strip()
+        notes = request.form.get('notes', '').strip() or None
+        image_data_field = request.form.get('image_data')
+
     if not timeframe:
         return jsonify({'error': 'Timeframe is required'}), 400
 
-    notes = request.form.get('notes', '').strip() or None
-
-    # Handle file upload
+    # Handle file upload (form data only)
     if 'file' in request.files:
         file = request.files['file']
         if file.filename == '':
@@ -1269,9 +1277,9 @@ def api_upload_setup_image(setup_id):
         file.save(filepath)
         image_path = filename
 
-    # Handle base64 image data
-    elif request.form.get('image_data'):
-        image_data = request.form.get('image_data')
+    # Handle base64 image data (JSON or form data)
+    elif image_data_field:
+        image_data = image_data_field
         # Parse base64 data URL
         if ',' in image_data:
             header, data = image_data.split(',', 1)
@@ -3423,6 +3431,23 @@ def api_sync_account_trades(account_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/accounts/<int:account_id>/trades', methods=['DELETE'])
+def api_delete_account_trades(account_id):
+    """Delete all trades and closed positions for an account."""
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    trades_deleted, positions_deleted = db.delete_account_trades(account_id)
+
+    return jsonify({
+        'success': True,
+        'trades_deleted': trades_deleted,
+        'positions_deleted': positions_deleted,
+        'message': f'Deleted {trades_deleted} trades and {positions_deleted} closed positions'
+    })
+
+
 # ==================== TRADES API ====================
 
 @app.route('/api/trades', methods=['GET'])
@@ -3782,9 +3807,6 @@ except AttributeError:
 print("[STARTUP] Checking for scripts to auto-restart...")
 restart_persistent_scripts()
 
-# Delete all old trades and closed positions for fresh start
-print("[STARTUP] Clearing all trades and closed positions for fresh sync...")
-db.delete_all_trades_and_positions()
 
 
 if __name__ == '__main__':

@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadEquityCurve();
     loadSymbolPnL();
     setupSyncButton();
+    setupDeleteTradesButton();
 });
 
 // Toast notification
@@ -310,4 +311,60 @@ function setupSyncButton() {
             setTimeout(() => syncModal.classList.remove('active'), 2000);
         }
     });
+}
+
+function setupDeleteTradesButton() {
+    const deleteTradesBtn = document.getElementById('deleteTradesBtn');
+    const deleteTradesModal = document.getElementById('deleteTradesModal');
+    const closeDeleteTradesModal = document.getElementById('closeDeleteTradesModal');
+    const cancelDeleteTradesBtn = document.getElementById('cancelDeleteTradesBtn');
+    const confirmDeleteTradesBtn = document.getElementById('confirmDeleteTradesBtn');
+
+    if (!deleteTradesBtn) return;
+
+    deleteTradesBtn.addEventListener('click', () => {
+        deleteTradesModal.classList.add('active');
+    });
+
+    if (closeDeleteTradesModal) {
+        closeDeleteTradesModal.addEventListener('click', () => {
+            deleteTradesModal.classList.remove('active');
+        });
+    }
+
+    if (cancelDeleteTradesBtn) {
+        cancelDeleteTradesBtn.addEventListener('click', () => {
+            deleteTradesModal.classList.remove('active');
+        });
+    }
+
+    if (confirmDeleteTradesBtn) {
+        confirmDeleteTradesBtn.addEventListener('click', async () => {
+            confirmDeleteTradesBtn.disabled = true;
+            confirmDeleteTradesBtn.textContent = 'Deleting...';
+
+            try {
+                const response = await fetch(`/api/accounts/${ACCOUNT_ID}/trades`, { method: 'DELETE' });
+                const data = await response.json();
+
+                if (response.ok) {
+                    showToast(`Deleted ${data.trades_deleted} trades`, 'success');
+                    deleteTradesModal.classList.remove('active');
+
+                    // Reload stats
+                    loadStats();
+                    loadEquityCurve();
+                    loadSymbolPnL();
+                } else {
+                    showToast(data.error || 'Failed to delete trades', 'error');
+                }
+            } catch (error) {
+                console.error('Delete trades error:', error);
+                showToast('Failed to delete trades', 'error');
+            } finally {
+                confirmDeleteTradesBtn.disabled = false;
+                confirmDeleteTradesBtn.textContent = 'Delete All Trades';
+            }
+        });
+    }
 }

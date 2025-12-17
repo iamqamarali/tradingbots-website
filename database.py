@@ -760,6 +760,42 @@ def delete_all_trades_and_positions():
         return trades_deleted, positions_deleted
 
 
+def delete_account_trades(account_id):
+    """Delete all trades and closed positions for a specific account."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM trades WHERE account_id = ?', (account_id,))
+        trades_deleted = cursor.rowcount
+
+        cursor.execute('DELETE FROM closed_positions WHERE account_id = ?', (account_id,))
+        positions_deleted = cursor.rowcount
+
+        # Reset account stats
+        cursor.execute('''
+            UPDATE accounts SET
+                total_trades = 0,
+                total_pnl = 0,
+                total_commission = 0,
+                winning_trades = 0,
+                losing_trades = 0,
+                avg_win = 0,
+                avg_loss = 0,
+                largest_win = 0,
+                largest_loss = 0,
+                profit_factor = 0,
+                total_volume = 0,
+                last_sync_time = NULL
+            WHERE id = ?
+        ''', (account_id,))
+
+        conn.commit()
+        conn.close()
+        print(f"Deleted {trades_deleted} trades and {positions_deleted} closed positions for account {account_id}")
+        return trades_deleted, positions_deleted
+
+
 def get_last_sync_time(account_id):
     """Get the most recent trade time for an account."""
     with db_lock:
@@ -1163,6 +1199,7 @@ def process_trades_into_closed_positions(account_id):
             position_side = None
             entry_trades = []
             total_entry_cost = 0
+            total_entry_qty = 0  # Track entry quantity separately for accurate avg price calculation
             total_commission = 0
 
             for trade in symbol_trades:
@@ -1182,6 +1219,7 @@ def process_trades_into_closed_positions(account_id):
                     position_qty = trade_qty
                     entry_trades = [trade]
                     total_entry_cost = trade_qty * trade_price
+                    total_entry_qty = trade_qty
                     total_commission = trade_commission
                 elif (position_side == 'LONG' and trade_side == 'BUY') or \
                      (position_side == 'SHORT' and trade_side == 'SELL'):
@@ -1189,6 +1227,7 @@ def process_trades_into_closed_positions(account_id):
                     position_qty += trade_qty
                     entry_trades.append(trade)
                     total_entry_cost += trade_qty * trade_price
+                    total_entry_qty += trade_qty
                     total_commission += trade_commission
                 else:
                     # Closing position (partially or fully)
@@ -1196,8 +1235,7 @@ def process_trades_into_closed_positions(account_id):
                     total_commission += trade_commission
 
                     if close_qty > 0:
-                        # Calculate weighted average entry price
-                        total_entry_qty = sum(float(t['quantity']) for t in entry_trades)
+                        # Calculate weighted average entry price using tracked quantities
                         avg_entry_price = total_entry_cost / total_entry_qty if total_entry_qty > 0 else 0
 
                         # Calculate P&L for this close
@@ -1256,16 +1294,19 @@ def process_trades_into_closed_positions(account_id):
                             position_qty = remaining_to_close
                             entry_trades = [trade]
                             total_entry_cost = remaining_to_close * trade_price
+                            total_entry_qty = remaining_to_close
                             total_commission = 0
                         else:
                             position_side = None
                             entry_trades = []
                             total_entry_cost = 0
+                            total_entry_qty = 0
                             total_commission = 0
                     else:
                         # Position partially closed, adjust entry data proportionally
                         close_ratio = close_qty / (position_qty + close_qty)
                         total_entry_cost *= (1 - close_ratio)
+                        total_entry_qty *= (1 - close_ratio)
 
         conn.commit()
         conn.close()

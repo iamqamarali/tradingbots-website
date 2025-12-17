@@ -350,13 +350,18 @@ async function saveSetup() {
         }
 
         // Now handle images
+        let imageErrors = [];
         for (const img of setupImages) {
             if (img.toDelete && img.id) {
                 // Delete existing image
-                await fetch(`/api/setup-images/${img.id}`, { method: 'DELETE' });
+                const deleteRes = await fetch(`/api/setup-images/${img.id}`, { method: 'DELETE' });
+                if (!deleteRes.ok) {
+                    const errData = await deleteRes.json().catch(() => ({}));
+                    imageErrors.push(errData.error || `Failed to delete image (${img.timeframe})`);
+                }
             } else if (img.isNew && img.image_data) {
                 // Create new image
-                await fetch(`/api/setups/${setupId}/images`, {
+                const uploadRes = await fetch(`/api/setups/${setupId}/images`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -365,9 +370,13 @@ async function saveSetup() {
                         notes: img.notes || ''
                     })
                 });
+                if (!uploadRes.ok) {
+                    const errData = await uploadRes.json().catch(() => ({}));
+                    imageErrors.push(errData.error || `Failed to upload image (${img.timeframe})`);
+                }
             } else if (img.isModified && img.id) {
                 // Update existing image
-                await fetch(`/api/setup-images/${img.id}`, {
+                const updateRes = await fetch(`/api/setup-images/${img.id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -375,10 +384,19 @@ async function saveSetup() {
                         notes: img.notes || ''
                     })
                 });
+                if (!updateRes.ok) {
+                    const errData = await updateRes.json().catch(() => ({}));
+                    imageErrors.push(errData.error || `Failed to update image (${img.timeframe})`);
+                }
             }
         }
 
-        showToast(editingSetupId ? 'Setup updated' : 'Setup created', 'success');
+        // Show results
+        if (imageErrors.length > 0) {
+            showToast(`Setup saved but some images failed: ${imageErrors.join(', ')}`, 'error');
+        } else {
+            showToast(editingSetupId ? 'Setup updated' : 'Setup created', 'success');
+        }
         closeSetupModalFn();
         loadFolders();
         loadSetups();
