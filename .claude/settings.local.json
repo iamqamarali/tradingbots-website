@@ -8,7 +8,8 @@
       "Bash(dir /b \"C:\\trading bot\\tradingwebsite\\static\")",
       "Bash(dir /b \"C:\\trading bot\\tradingwebsite\")",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(dir \"C:\\trading bot\\tradingwebsite\" /s /b)"
     ]
   }
 }
