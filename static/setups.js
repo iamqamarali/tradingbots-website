@@ -95,10 +95,30 @@ const viewerPrevSetupBtn = document.getElementById('viewerPrevSetupBtn');
 const viewerNextSetupBtn = document.getElementById('viewerNextSetupBtn');
 const viewerSetupNav = document.getElementById('viewerSetupNav');
 const viewerSetupIndicator = document.getElementById('viewerSetupIndicator');
+const imageWrapper = document.getElementById('imageWrapper');
+const zoomControls = document.getElementById('zoomControls');
+const zoomInBtn = document.getElementById('zoomInBtn');
+const zoomOutBtn = document.getElementById('zoomOutBtn');
+const zoomResetBtn = document.getElementById('zoomResetBtn');
+const zoomLevelDisplay = document.getElementById('zoomLevel');
 let currentViewerSetupIndex = -1;
 let currentViewerSetup = null;
 let touchStartX = 0;
 let touchEndX = 0;
+
+// Zoom state
+let zoomLevel = 1;
+let minZoom = 1;
+let maxZoom = 5;
+let zoomStep = 0.5;
+let panX = 0;
+let panY = 0;
+let isPanning = false;
+let panStartX = 0;
+let panStartY = 0;
+let lastTapTime = 0;
+let initialPinchDistance = 0;
+let initialZoomLevel = 1;
 
 // Toast
 const toastContainer = document.getElementById('toastContainer');
@@ -173,15 +193,26 @@ function setupEventListeners() {
     viewerPrevSetupBtn.addEventListener('click', () => navigateToSetup(-1));
     viewerNextSetupBtn.addEventListener('click', () => navigateToSetup(1));
 
-    // Touch/swipe support for mobile
-    viewerImageContainer.addEventListener('touchstart', (e) => {
-        touchStartX = e.changedTouches[0].screenX;
-    }, { passive: true });
+    // Zoom button controls
+    zoomInBtn.addEventListener('click', () => zoomIn());
+    zoomOutBtn.addEventListener('click', () => zoomOut());
+    zoomResetBtn.addEventListener('click', () => resetZoom());
 
-    viewerImageContainer.addEventListener('touchend', (e) => {
-        touchEndX = e.changedTouches[0].screenX;
-        handleSwipe();
-    }, { passive: true });
+    // Mouse wheel zoom
+    viewerImageContainer.addEventListener('wheel', handleWheelZoom, { passive: false });
+
+    // Double-click to zoom (desktop)
+    viewerImage.addEventListener('dblclick', handleDoubleClickZoom);
+
+    // Touch/swipe and pinch-zoom support for mobile
+    viewerImageContainer.addEventListener('touchstart', handleTouchStart, { passive: false });
+    viewerImageContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+    viewerImageContainer.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    // Mouse pan when zoomed
+    imageWrapper.addEventListener('mousedown', handlePanStart);
+    document.addEventListener('mousemove', handlePanMove);
+    document.addEventListener('mouseup', handlePanEnd);
 
     // Close modals on escape and keyboard navigation for image viewer
     document.addEventListener('keydown', (e) => {
@@ -805,6 +836,8 @@ function closeImageViewerFn() {
     imageViewerModal.classList.remove('active');
     viewerImages = [];
     currentViewerSetup = null;
+    // Reset zoom state
+    resetZoom();
 }
 
 // Multi-image management functions
@@ -1002,6 +1035,9 @@ function renderViewerIndicators() {
 function showViewerImage(index) {
     if (index < 0 || index >= viewerImages.length) return;
 
+    // Reset zoom when changing images
+    resetZoom();
+
     viewerCurrentIndex = index;
     const img = viewerImages[index];
 
@@ -1024,6 +1060,9 @@ function navigateViewerImage(direction) {
 }
 
 function handleSwipe() {
+    // Don't swipe if zoomed in
+    if (zoomLevel > 1) return;
+
     const swipeThreshold = 50;
     const diff = touchStartX - touchEndX;
 
@@ -1034,6 +1073,226 @@ function handleSwipe() {
         } else {
             // Swipe right - previous image
             navigateViewerImage(-1);
+        }
+    }
+}
+
+// Zoom Functions
+function zoomIn() {
+    if (zoomLevel < maxZoom) {
+        zoomLevel = Math.min(zoomLevel + zoomStep, maxZoom);
+        applyZoom();
+    }
+}
+
+function zoomOut() {
+    if (zoomLevel > minZoom) {
+        zoomLevel = Math.max(zoomLevel - zoomStep, minZoom);
+        if (zoomLevel === minZoom) {
+            panX = 0;
+            panY = 0;
+        }
+        applyZoom();
+    }
+}
+
+function resetZoom() {
+    zoomLevel = 1;
+    panX = 0;
+    panY = 0;
+    applyZoom();
+}
+
+function applyZoom() {
+    // Constrain pan to keep image in view when zoomed
+    if (zoomLevel > 1) {
+        const maxPanX = (viewerImage.offsetWidth * (zoomLevel - 1)) / 2;
+        const maxPanY = (viewerImage.offsetHeight * (zoomLevel - 1)) / 2;
+        panX = Math.max(-maxPanX, Math.min(maxPanX, panX));
+        panY = Math.max(-maxPanY, Math.min(maxPanY, panY));
+    } else {
+        panX = 0;
+        panY = 0;
+    }
+
+    viewerImage.style.transform = `scale(${zoomLevel}) translate(${panX / zoomLevel}px, ${panY / zoomLevel}px)`;
+    zoomLevelDisplay.textContent = `${Math.round(zoomLevel * 100)}%`;
+
+    // Update button states
+    zoomInBtn.disabled = zoomLevel >= maxZoom;
+    zoomOutBtn.disabled = zoomLevel <= minZoom;
+
+    // Update cursor and class for pan state
+    if (zoomLevel > 1) {
+        imageWrapper.classList.add('zoomed');
+        viewerImage.style.cursor = 'grab';
+    } else {
+        imageWrapper.classList.remove('zoomed');
+        viewerImage.style.cursor = 'zoom-in';
+    }
+}
+
+// Mouse wheel zoom
+function handleWheelZoom(e) {
+    if (!imageViewerModal.classList.contains('active')) return;
+
+    e.preventDefault();
+
+    const delta = e.deltaY > 0 ? -0.25 : 0.25;
+    const newZoom = Math.max(minZoom, Math.min(maxZoom, zoomLevel + delta));
+
+    if (newZoom !== zoomLevel) {
+        // Zoom toward cursor position
+        if (newZoom > zoomLevel) {
+            const rect = viewerImage.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            const offsetX = (e.clientX - centerX) * 0.1;
+            const offsetY = (e.clientY - centerY) * 0.1;
+            panX -= offsetX;
+            panY -= offsetY;
+        }
+
+        zoomLevel = newZoom;
+        if (zoomLevel === minZoom) {
+            panX = 0;
+            panY = 0;
+        }
+        applyZoom();
+    }
+}
+
+// Double-click zoom (desktop)
+function handleDoubleClickZoom(e) {
+    e.preventDefault();
+
+    if (zoomLevel === 1) {
+        // Zoom in to 2x centered on click point
+        const rect = viewerImage.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        panX = (centerX - e.clientX) * 0.5;
+        panY = (centerY - e.clientY) * 0.5;
+        zoomLevel = 2;
+    } else {
+        // Reset zoom
+        zoomLevel = 1;
+        panX = 0;
+        panY = 0;
+    }
+    applyZoom();
+}
+
+// Touch handling for pinch zoom and double-tap
+let touchCount = 0;
+
+function handleTouchStart(e) {
+    touchCount = e.touches.length;
+
+    if (e.touches.length === 2) {
+        // Pinch start
+        e.preventDefault();
+        initialPinchDistance = getPinchDistance(e.touches);
+        initialZoomLevel = zoomLevel;
+    } else if (e.touches.length === 1) {
+        touchStartX = e.touches[0].screenX;
+
+        // Double-tap detection
+        const currentTime = new Date().getTime();
+        const tapLength = currentTime - lastTapTime;
+
+        if (tapLength < 300 && tapLength > 0) {
+            e.preventDefault();
+            handleDoubleTap(e);
+        }
+        lastTapTime = currentTime;
+
+        // Pan start if zoomed
+        if (zoomLevel > 1) {
+            e.preventDefault();
+            isPanning = true;
+            panStartX = e.touches[0].clientX - panX;
+            panStartY = e.touches[0].clientY - panY;
+        }
+    }
+}
+
+function handleTouchMove(e) {
+    if (e.touches.length === 2) {
+        // Pinch zoom
+        e.preventDefault();
+        const currentDistance = getPinchDistance(e.touches);
+        const scale = currentDistance / initialPinchDistance;
+        zoomLevel = Math.max(minZoom, Math.min(maxZoom, initialZoomLevel * scale));
+        applyZoom();
+    } else if (e.touches.length === 1 && isPanning && zoomLevel > 1) {
+        // Pan while zoomed
+        e.preventDefault();
+        panX = e.touches[0].clientX - panStartX;
+        panY = e.touches[0].clientY - panStartY;
+        applyZoom();
+    }
+}
+
+function handleTouchEnd(e) {
+    if (touchCount === 1 && zoomLevel === 1 && !isPanning) {
+        touchEndX = e.changedTouches[0].screenX;
+        handleSwipe();
+    }
+    isPanning = false;
+    touchCount = e.touches.length;
+}
+
+function handleDoubleTap(e) {
+    if (zoomLevel === 1) {
+        // Zoom in to 2.5x
+        const touch = e.touches[0];
+        const rect = viewerImage.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        panX = (centerX - touch.clientX) * 0.6;
+        panY = (centerY - touch.clientY) * 0.6;
+        zoomLevel = 2.5;
+    } else {
+        // Reset zoom
+        zoomLevel = 1;
+        panX = 0;
+        panY = 0;
+    }
+    applyZoom();
+}
+
+function getPinchDistance(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+// Mouse pan handlers
+function handlePanStart(e) {
+    if (zoomLevel > 1 && e.button === 0) {
+        e.preventDefault();
+        isPanning = true;
+        panStartX = e.clientX - panX;
+        panStartY = e.clientY - panY;
+        viewerImage.style.cursor = 'grabbing';
+    }
+}
+
+function handlePanMove(e) {
+    if (isPanning && zoomLevel > 1) {
+        e.preventDefault();
+        panX = e.clientX - panStartX;
+        panY = e.clientY - panStartY;
+        applyZoom();
+    }
+}
+
+function handlePanEnd() {
+    if (isPanning) {
+        isPanning = false;
+        if (zoomLevel > 1) {
+            viewerImage.style.cursor = 'grab';
         }
     }
 }
