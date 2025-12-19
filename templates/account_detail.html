@@ -862,6 +862,91 @@
         </div>
     </div>
 
+    <!-- Trade Journal Modal -->
+    <div class="modal-overlay" id="journalModal">
+        <div class="modal journal-modal">
+            <div class="modal-header">
+                <h3>Trade Journal</h3>
+                <button class="modal-close" id="closeJournalModal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <!-- Trade Summary -->
+                <div class="journal-trade-summary">
+                    <div class="trade-summary-row">
+                        <span class="journal-symbol" id="journalSymbol">BTCUSDT</span>
+                        <span class="journal-side" id="journalSide">LONG</span>
+                        <span class="journal-pnl" id="journalPnl">+$0.00</span>
+                    </div>
+                    <div class="trade-summary-details">
+                        <span id="journalDate">Dec 20, 2024</span>
+                        <span id="journalSize">$0.00</span>
+                    </div>
+                </div>
+
+                <!-- Rating -->
+                <div class="journal-section">
+                    <label>Trade Rating</label>
+                    <div class="star-rating" id="journalRating">
+                        <button class="star-btn" data-rating="1">&#9733;</button>
+                        <button class="star-btn" data-rating="2">&#9733;</button>
+                        <button class="star-btn" data-rating="3">&#9733;</button>
+                        <button class="star-btn" data-rating="4">&#9733;</button>
+                        <button class="star-btn" data-rating="5">&#9733;</button>
+                    </div>
+                </div>
+
+                <!-- Emotions -->
+                <div class="journal-section">
+                    <label>Emotions</label>
+                    <div class="tag-selector" id="emotionTags">
+                        <button class="tag-btn" data-tag="Confident">Confident</button>
+                        <button class="tag-btn" data-tag="Calm">Calm</button>
+                        <button class="tag-btn" data-tag="Anxious">Anxious</button>
+                        <button class="tag-btn" data-tag="FOMO">FOMO</button>
+                        <button class="tag-btn" data-tag="Revenge">Revenge</button>
+                        <button class="tag-btn" data-tag="Greedy">Greedy</button>
+                        <button class="tag-btn" data-tag="Fearful">Fearful</button>
+                    </div>
+                </div>
+
+                <!-- Mistakes -->
+                <div class="journal-section">
+                    <label>Mistakes</label>
+                    <div class="tag-selector" id="mistakeTags">
+                        <button class="tag-btn" data-tag="No stop loss">No stop loss</button>
+                        <button class="tag-btn" data-tag="Moved stop">Moved stop</button>
+                        <button class="tag-btn" data-tag="Oversize">Oversize</button>
+                        <button class="tag-btn" data-tag="Chased entry">Chased entry</button>
+                        <button class="tag-btn" data-tag="Early exit">Early exit</button>
+                        <button class="tag-btn" data-tag="Late exit">Late exit</button>
+                        <button class="tag-btn" data-tag="Against trend">Against trend</button>
+                    </div>
+                </div>
+
+                <!-- Notes -->
+                <div class="journal-section">
+                    <label for="journalNotes">Notes</label>
+                    <textarea id="journalNotes" rows="4" placeholder="What did you learn from this trade?"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelJournalBtn">Cancel</button>
+                <button class="btn-primary" id="saveJournalBtn">
+                    <span class="btn-text">Save Journal</span>
+                    <span class="btn-loading" style="display: none;">
+                        <span class="btn-spinner"></span>
+                        Saving...
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 

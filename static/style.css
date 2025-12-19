@@ -2426,3 +2426,532 @@ body {
     overflow-y: auto;
 }
 
+/* ========== Position Size Calculator ========== */
+.calc-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.calc-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.calc-btn:hover {
+    background: var(--bg-hover);
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+
+.risk-buttons {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.risk-btn {
+    flex: 1;
+    padding: 10px 12px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.risk-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.risk-btn.active {
+    background: rgba(245, 158, 11, 0.2);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}
+
+.calc-results {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    margin-top: 20px;
+}
+
+.calc-result-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-primary);
+}
+
+.calc-result-row:last-child {
+    border-bottom: none;
+}
+
+.calc-result-row span:first-child {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.result-value {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}
+
+.result-value.highlight {
+    color: var(--accent-primary);
+    font-size: 1.1rem;
+}
+
+.calc-result-row.highlight {
+    background: rgba(245, 158, 11, 0.1);
+    margin: 8px -16px;
+    padding: 12px 16px;
+    border-radius: var(--radius-sm);
+    border-bottom: none;
+}
+
+#calcRiskPercent {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+}
+
+#calcRiskPercent:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+}
+
+/* ========== Trade Journal Modal ========== */
+.journal-modal {
+    max-width: 500px;
+}
+
+.journal-trade-summary {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.trade-summary-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.journal-symbol {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--accent-primary);
+    font-family: var(--font-mono);
+}
+
+.journal-side {
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.journal-side.long {
+    background: rgba(74, 222, 128, 0.2);
+    color: #4ade80;
+}
+
+.journal-side.short {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+}
+
+.journal-pnl {
+    margin-left: auto;
+    font-size: 1.1rem;
+    font-weight: 600;
+    font-family: var(--font-mono);
+}
+
+.journal-pnl.positive {
+    color: #4ade80;
+}
+
+.journal-pnl.negative {
+    color: #f87171;
+}
+
+.trade-summary-details {
+    display: flex;
+    gap: 16px;
+    margin-top: 8px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.journal-section {
+    margin-bottom: 20px;
+}
+
+.journal-section label {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+    font-weight: 500;
+}
+
+.star-rating {
+    display: flex;
+    gap: 8px;
+}
+
+.star-btn {
+    font-size: 28px;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    padding: 0;
+    line-height: 1;
+}
+
+.star-btn:hover {
+    color: var(--accent-primary);
+    transform: scale(1.1);
+}
+
+.star-btn.active {
+    color: var(--accent-primary);
+}
+
+.tag-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.tag-btn {
+    padding: 8px 14px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-primary);
+    border-radius: 20px;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.tag-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.tag-btn.active {
+    background: rgba(245, 158, 11, 0.2);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}
+
+#journalNotes {
+    width: 100%;
+    padding: 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-primary);
+    font-size: 0.9rem;
+    resize: vertical;
+    min-height: 100px;
+}
+
+#journalNotes:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+}
+
+#journalNotes::placeholder {
+    color: var(--text-muted);
+}
+
+/* ========== Trade Notifications Modal ========== */
+.alerts-btn {
+    position: relative;
+}
+
+.alerts-modal {
+    max-width: 550px;
+}
+
+/* Toggle Switch */
+.notifications-toggle-section {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.toggle-label {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.toggle-description {
+    margin: 8px 0 0 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 26px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-primary);
+    transition: all var(--transition-fast);
+    border-radius: 26px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 2px;
+    bottom: 2px;
+    background: var(--text-muted);
+    transition: all var(--transition-fast);
+    border-radius: 50%;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+    transform: translateX(22px);
+    background: white;
+}
+
+.notifications-section {
+    margin-bottom: 20px;
+    padding: 16px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+}
+
+.enable-notifications-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    justify-content: center;
+}
+
+.enable-notifications-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.notifications-status {
+    margin: 12px 0 0 0;
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.section-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.section-header-row h4 {
+    margin: 0;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+}
+
+.btn-text {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+}
+
+.btn-text:hover {
+    color: var(--status-error);
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.alerts-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.empty-alerts {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 20px;
+    font-size: 0.9rem;
+}
+
+/* Notification Items */
+.notification-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    margin-bottom: 8px;
+    border-left: 3px solid var(--border-primary);
+}
+
+.notification-item.opened {
+    border-left-color: #4ade80;
+}
+
+.notification-item.closed {
+    border-left-color: #f87171;
+}
+
+.notification-icon {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.notification-item.opened .notification-icon {
+    background: rgba(74, 222, 128, 0.2);
+    color: #4ade80;
+}
+
+.notification-item.closed .notification-icon {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+}
+
+.notification-icon svg {
+    width: 14px;
+    height: 14px;
+}
+
+.notification-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.notification-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.notification-symbol {
+    font-weight: 600;
+    color: var(--accent-primary);
+    font-family: var(--font-mono);
+}
+
+.notification-side {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.notification-side.long {
+    background: rgba(74, 222, 128, 0.2);
+    color: #4ade80;
+}
+
+.notification-side.short {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+}
+
+.notification-event {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-transform: capitalize;
+}
+
+.notification-details {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 4px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.notification-account {
+    color: var(--text-secondary);
+}
+
+.notification-price {
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+}
+
+.notification-time {
+    color: var(--text-muted);
+}
+

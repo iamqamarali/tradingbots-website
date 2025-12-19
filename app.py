@@ -3,6 +3,9 @@ Trading Bot Script Manager
 A Flask web application to manage, run, and monitor Python trading bot scripts.
 """
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_from_directory
 from functools import wraps
 from werkzeug.utils import secure_filename
@@ -1063,6 +1066,12 @@ def account_stats_page(account_id):
 def setups_page():
     """Render the setups page."""
     return render_template('setups.html', active_page='setups')
+
+
+@app.route('/charts')
+def charts_page():
+    """Render the TradingView charts page."""
+    return render_template('charts.html', active_page='charts')
 
 
 # ==================== SETUPS API ====================
@@ -3525,6 +3534,86 @@ def api_delete_closed_position(position_id):
     return jsonify({'error': 'Position not found'}), 404
 
 
+@app.route('/api/closed-positions/<int:position_id>/journal', methods=['GET'])
+def api_get_position_journal(position_id):
+    """Get journal data for a closed position."""
+    journal = db.get_closed_position_journal(position_id)
+    if journal:
+        return jsonify(journal)
+    return jsonify({'error': 'Position not found'}), 404
+
+
+@app.route('/api/closed-positions/<int:position_id>/journal', methods=['PUT'])
+def api_update_position_journal(position_id):
+    """Update journal data for a closed position."""
+    data = request.get_json()
+
+    try:
+        db.update_closed_position_journal(
+            position_id,
+            journal_notes=data.get('journal_notes'),
+            emotion_tags=data.get('emotion_tags'),
+            mistake_tags=data.get('mistake_tags'),
+            rating=data.get('rating')
+        )
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ==================== TRADE NOTIFICATIONS API ====================
+
+@app.route('/api/notifications', methods=['GET'])
+def api_get_notifications():
+    """Get trade notifications history."""
+    notifications = db.get_trade_notifications(limit=50)
+    enabled = db.get_trade_notifications_enabled()
+    return jsonify({'notifications': notifications, 'enabled': enabled})
+
+
+@app.route('/api/notifications/toggle', methods=['POST'])
+def api_toggle_notifications():
+    """Toggle trade notifications on/off."""
+    data = request.get_json()
+    enabled = data.get('enabled', True)
+    db.set_trade_notifications_enabled(enabled)
+    return jsonify({'enabled': enabled, 'success': True})
+
+
+@app.route('/api/notifications/clear', methods=['POST'])
+def api_clear_notifications():
+    """Clear trade notifications history."""
+    db.clear_trade_notifications()
+    return jsonify({'success': True})
+
+
+@app.route('/api/push/subscribe', methods=['POST'])
+def api_push_subscribe():
+    """Subscribe to push notifications."""
+    data = request.get_json()
+
+    if not data or 'endpoint' not in data:
+        return jsonify({'error': 'Invalid subscription data'}), 400
+
+    try:
+        endpoint = data['endpoint']
+        keys = data.get('keys', {})
+        p256dh = keys.get('p256dh', '')
+        auth = keys.get('auth', '')
+
+        db.save_push_subscription(endpoint, p256dh, auth)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/push/vapid-key', methods=['GET'])
+def api_get_vapid_key():
+    """Get VAPID public key for push subscription."""
+    public_key = os.environ.get('VAPID_PUBLIC_KEY', '')
+    return jsonify({'publicKey': public_key})
+
+
 @app.route('/api/accounts/<int:account_id>/closed-positions/stats', methods=['GET'])
 def api_get_closed_positions_stats(account_id):
     """Get statistics for closed positions."""
@@ -3807,6 +3896,168 @@ except AttributeError:
 print("[STARTUP] Checking for scripts to auto-restart...")
 restart_persistent_scripts()
 
+
+# ==================== TRADE NOTIFICATIONS BACKGROUND CHECKER ====================
+
+# Try to import pywebpush for push notifications
+try:
+    from pywebpush import webpush, WebPushException
+    WEBPUSH_AVAILABLE = True
+except ImportError:
+    WEBPUSH_AVAILABLE = False
+    print("[NOTIFICATIONS] pywebpush not installed - push notifications disabled")
+
+notification_check_running = True
+
+
+def send_push_notification(title, body, symbol, event_type='trade'):
+    """Send push notification to all subscribers."""
+    if not WEBPUSH_AVAILABLE:
+        return
+
+    vapid_private_key = os.environ.get('VAPID_PRIVATE_KEY', '')
+    vapid_claims = {"sub": "mailto:alerts@tradingbot.local"}
+
+    if not vapid_private_key:
+        print("[NOTIFICATIONS] VAPID_PRIVATE_KEY not set - cannot send push notifications")
+        return
+
+    subscriptions = db.get_all_push_subscriptions()
+    for sub in subscriptions:
+        try:
+            webpush(
+                subscription_info=sub,
+                data=json.dumps({
+                    'title': title,
+                    'body': body,
+                    'symbol': symbol,
+                    'event_type': event_type
+                }),
+                vapid_private_key=vapid_private_key,
+                vapid_claims=vapid_claims
+            )
+        except WebPushException as e:
+            print(f"[NOTIFICATIONS] Push notification failed: {e}")
+            # Remove invalid subscription
+            if e.response and e.response.status_code in [404, 410]:
+                db.delete_push_subscription(sub['endpoint'])
+        except Exception as e:
+            print(f"[NOTIFICATIONS] Push error: {e}")
+
+
+def check_trade_positions():
+    """Background thread to check for new/closed positions."""
+    global notification_check_running
+
+    print("[NOTIFICATIONS] Starting trade position checker...")
+
+    while notification_check_running:
+        try:
+            # Check if notifications are enabled
+            if not db.get_trade_notifications_enabled():
+                time.sleep(15)
+                continue
+
+            if not BINANCE_AVAILABLE:
+                time.sleep(15)
+                continue
+
+            # Get all accounts
+            accounts = db.get_all_accounts()
+
+            for account in accounts:
+                try:
+                    account_id = account['id']
+                    account_name = account['name']
+
+                    # Get current positions from Binance
+                    if account['is_testnet']:
+                        client = BinanceClient(
+                            api_key=account['api_key'],
+                            api_secret=account['api_secret'],
+                            testnet=True
+                        )
+                    else:
+                        client = BinanceClient(
+                            api_key=account['api_key'],
+                            api_secret=account['api_secret']
+                        )
+
+                    positions = client.futures_position_information()
+                    current_positions = {}
+
+                    for pos in positions:
+                        amt = float(pos.get('positionAmt', 0))
+                        if amt != 0:
+                            symbol = pos['symbol']
+                            side = 'LONG' if amt > 0 else 'SHORT'
+                            entry_price = float(pos.get('entryPrice', 0))
+                            current_positions[symbol] = {
+                                'side': side,
+                                'entry_price': entry_price,
+                                'quantity': abs(amt)
+                            }
+
+                    # Get previous snapshots
+                    prev_snapshots = db.get_position_snapshots(account_id)
+
+                    # Check for new positions (opened)
+                    for symbol, pos in current_positions.items():
+                        if symbol not in prev_snapshots:
+                            # New position opened
+                            db.add_trade_notification(
+                                account_id, symbol, pos['side'], 'opened',
+                                entry_price=pos['entry_price']
+                            )
+                            print(f"[NOTIFICATIONS] {account_name}: {symbol} {pos['side']} opened @ ${pos['entry_price']:.4f}")
+
+                            title = f"Trade Opened: {symbol}"
+                            body = f"{account_name}: {pos['side']} @ ${pos['entry_price']:.4f}"
+                            send_push_notification(title, body, symbol, 'opened')
+
+                        # Update snapshot
+                        db.update_position_snapshot(
+                            account_id, symbol, pos['side'],
+                            pos['entry_price'], pos['quantity']
+                        )
+
+                    # Check for closed positions
+                    for symbol, prev_pos in prev_snapshots.items():
+                        if symbol not in current_positions:
+                            # Position closed
+                            db.add_trade_notification(
+                                account_id, symbol, prev_pos['side'], 'closed',
+                                entry_price=prev_pos['entry_price']
+                            )
+                            db.delete_position_snapshot(account_id, symbol)
+                            print(f"[NOTIFICATIONS] {account_name}: {symbol} {prev_pos['side']} closed")
+
+                            title = f"Trade Closed: {symbol}"
+                            body = f"{account_name}: {prev_pos['side']} closed (Entry: ${prev_pos['entry_price']:.4f})"
+                            send_push_notification(title, body, symbol, 'closed')
+
+                except Exception as e:
+                    print(f"[NOTIFICATIONS] Error checking account {account.get('name', account_id)}: {e}")
+
+        except Exception as e:
+            print(f"[NOTIFICATIONS] Position check error: {e}")
+
+        # Check every 15 seconds
+        time.sleep(15)
+
+
+def stop_notification_checker():
+    """Stop the notification checking thread."""
+    global notification_check_running
+    notification_check_running = False
+
+
+# Start notification checking thread
+notification_thread = Thread(target=check_trade_positions, daemon=True)
+notification_thread.start()
+
+# Register cleanup for notification checker
+atexit.register(stop_notification_checker)
 
 
 if __name__ == '__main__':

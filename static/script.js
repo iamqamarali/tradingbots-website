@@ -581,7 +581,371 @@ async function executeRemoveTakeProfit() {
     }
 }
 
+// ==================== POSITION SIZE CALCULATOR ====================
+
+function setupPositionCalculator() {
+    const modal = document.getElementById('positionCalcModal');
+    const openBtn = document.getElementById('positionCalcBtn');
+    const closeBtn = document.getElementById('closePositionCalcModal');
+    const doneBtn = document.getElementById('doneCalcBtn');
+    const clearBtn = document.getElementById('clearCalcBtn');
+
+    if (!modal) return;
+
+    // Open modal
+    if (openBtn) {
+        openBtn.addEventListener('click', () => {
+            modal.classList.add('active');
+        });
+    }
+
+    // Close handlers
+    if (closeBtn) closeBtn.addEventListener('click', () => modal.classList.remove('active'));
+    if (doneBtn) doneBtn.addEventListener('click', () => modal.classList.remove('active'));
+
+    // Close on overlay click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.classList.remove('active');
+    });
+
+    // Risk percentage buttons
+    document.querySelectorAll('.risk-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.risk-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('calcRiskPercent').value = btn.dataset.risk;
+            calculatePositionSize();
+        });
+    });
+
+    // Clear button
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            document.getElementById('calcBalance').value = '';
+            document.getElementById('calcEntryPrice').value = '';
+            document.getElementById('calcStopLoss').value = '';
+            document.getElementById('calcRiskPercent').value = '2';
+            document.querySelectorAll('.risk-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector('.risk-btn[data-risk="2"]').classList.add('active');
+            clearCalculatorResults();
+        });
+    }
+
+    // Auto-calculate on input change
+    ['calcBalance', 'calcRiskPercent', 'calcEntryPrice', 'calcStopLoss'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', () => {
+                // Update risk button state when manually typing
+                if (id === 'calcRiskPercent') {
+                    const val = el.value;
+                    document.querySelectorAll('.risk-btn').forEach(b => {
+                        b.classList.toggle('active', b.dataset.risk === val);
+                    });
+                }
+                calculatePositionSize();
+            });
+        }
+    });
+}
+
+function calculatePositionSize() {
+    const balance = parseFloat(document.getElementById('calcBalance').value) || 0;
+    const riskPercent = parseFloat(document.getElementById('calcRiskPercent').value) || 0;
+    const entryPrice = parseFloat(document.getElementById('calcEntryPrice').value) || 0;
+    const stopLoss = parseFloat(document.getElementById('calcStopLoss').value) || 0;
+
+    if (!balance || !riskPercent || !entryPrice || !stopLoss) {
+        clearCalculatorResults();
+        return;
+    }
+
+    // Calculate risk in USD
+    const riskUsd = balance * (riskPercent / 100);
+
+    // Calculate stop distance
+    const stopDistance = Math.abs(entryPrice - stopLoss);
+    const stopDistancePct = (stopDistance / entryPrice) * 100;
+
+    if (stopDistance === 0) {
+        clearCalculatorResults();
+        return;
+    }
+
+    // Position size in contracts (quantity)
+    const positionQty = riskUsd / stopDistance;
+
+    // Position size in USD
+    const positionUsd = positionQty * entryPrice;
+
+    // Update display
+    document.getElementById('calcRiskUsd').textContent = `$${riskUsd.toFixed(2)}`;
+    document.getElementById('calcStopDistance').textContent = `${stopDistancePct.toFixed(2)}%`;
+    document.getElementById('calcPositionUsd').textContent = `$${positionUsd.toFixed(2)}`;
+    document.getElementById('calcPositionQty').textContent = positionQty.toFixed(6);
+}
+
+function clearCalculatorResults() {
+    document.getElementById('calcRiskUsd').textContent = '$0.00';
+    document.getElementById('calcStopDistance').textContent = '0.00%';
+    document.getElementById('calcPositionUsd').textContent = '$0.00';
+    document.getElementById('calcPositionQty').textContent = '0.000';
+}
+
+// Initialize calculator when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    setupPositionCalculator();
+    setupAlertsModal();
+    registerServiceWorker();
+    loadNotifications();
+});
+
+// ==================== TRADE NOTIFICATIONS ====================
+
+function setupAlertsModal() {
+    const modal = document.getElementById('alertsModal');
+    const openBtn = document.getElementById('openAlertsBtn');
+    const closeBtn = document.getElementById('closeAlertsModal');
+    const closeFooterBtn = document.getElementById('closeAlertsBtn');
+    const notifToggle = document.getElementById('notificationsToggle');
+    const clearBtn = document.getElementById('clearNotificationsBtn');
+    const enableNotifBtn = document.getElementById('enableNotificationsBtn');
+
+    if (!modal) return;
+
+    // Open modal
+    if (openBtn) {
+        openBtn.addEventListener('click', () => {
+            modal.classList.add('active');
+            loadNotifications();
+            checkNotificationPermission();
+        });
+    }
+
+    // Close handlers
+    if (closeBtn) closeBtn.addEventListener('click', () => modal.classList.remove('active'));
+    if (closeFooterBtn) closeFooterBtn.addEventListener('click', () => modal.classList.remove('active'));
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.classList.remove('active');
+    });
+
+    // Toggle notifications
+    if (notifToggle) {
+        notifToggle.addEventListener('change', toggleNotifications);
+    }
+
+    // Clear notifications
+    if (clearBtn) {
+        clearBtn.addEventListener('click', clearNotifications);
+    }
+
+    // Enable push notifications
+    if (enableNotifBtn) {
+        enableNotifBtn.addEventListener('click', enablePushNotifications);
+    }
+}
+
+async function loadNotifications() {
+    try {
+        const response = await fetch('/api/notifications');
+        const data = await response.json();
+
+        const notifications = data.notifications || [];
+        const enabled = data.enabled;
+        const alertsList = document.getElementById('alertsList');
+        const notifToggle = document.getElementById('notificationsToggle');
+
+        // Update toggle state
+        if (notifToggle) {
+            notifToggle.checked = enabled;
+        }
+
+        // Update list
+        if (alertsList) {
+            if (notifications.length === 0) {
+                alertsList.innerHTML = '<p class="empty-alerts">No notifications yet</p>';
+            } else {
+                alertsList.innerHTML = notifications.map(notif => {
+                    const isOpened = notif.event_type === 'opened';
+                    const eventClass = isOpened ? 'opened' : 'closed';
+                    const eventIcon = isOpened ?
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>' :
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg>';
+                    const priceStr = notif.entry_price ? `$${parseFloat(notif.entry_price).toFixed(4)}` : '';
+                    const timeStr = formatNotificationTime(notif.created_at);
+
+                    return `
+                        <div class="notification-item ${eventClass}">
+                            <div class="notification-icon">${eventIcon}</div>
+                            <div class="notification-info">
+                                <div class="notification-header">
+                                    <span class="notification-symbol">${notif.symbol}</span>
+                                    <span class="notification-side ${notif.side.toLowerCase()}">${notif.side}</span>
+                                    <span class="notification-event">${notif.event_type}</span>
+                                </div>
+                                <div class="notification-details">
+                                    <span class="notification-account">${notif.account_name || 'Unknown'}</span>
+                                    ${priceStr ? `<span class="notification-price">${priceStr}</span>` : ''}
+                                    <span class="notification-time">${timeStr}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+        }
+    } catch (error) {
+        console.error('Error loading notifications:', error);
+    }
+}
+
+function formatNotificationTime(timestamp) {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
+}
+
+async function toggleNotifications() {
+    const toggle = document.getElementById('notificationsToggle');
+    const enabled = toggle.checked;
+
+    try {
+        await fetch('/api/notifications/toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled })
+        });
+        showToast(enabled ? 'Notifications enabled' : 'Notifications disabled', 'success');
+    } catch (error) {
+        console.error('Error toggling notifications:', error);
+        showToast('Failed to update setting', 'error');
+        toggle.checked = !enabled; // Revert
+    }
+}
+
+async function clearNotifications() {
+    try {
+        await fetch('/api/notifications/clear', { method: 'POST' });
+        showToast('Notifications cleared', 'success');
+        loadNotifications();
+    } catch (error) {
+        console.error('Error clearing notifications:', error);
+        showToast('Failed to clear notifications', 'error');
+    }
+}
+
+// ==================== PWA & PUSH NOTIFICATIONS ====================
+
+async function registerServiceWorker() {
+    if ('serviceWorker' in navigator) {
+        try {
+            const registration = await navigator.serviceWorker.register('/static/service-worker.js');
+            console.log('Service Worker registered:', registration.scope);
+        } catch (error) {
+            console.error('Service Worker registration failed:', error);
+        }
+    }
+}
+
+function checkNotificationPermission() {
+    const statusEl = document.getElementById('notificationsStatus');
+    const enableBtn = document.getElementById('enableNotificationsBtn');
+
+    if (!('Notification' in window)) {
+        if (statusEl) statusEl.textContent = 'Push notifications not supported';
+        if (enableBtn) enableBtn.style.display = 'none';
+        return;
+    }
+
+    if (Notification.permission === 'granted') {
+        if (statusEl) statusEl.textContent = 'Notifications enabled';
+        if (enableBtn) enableBtn.style.display = 'none';
+    } else if (Notification.permission === 'denied') {
+        if (statusEl) statusEl.textContent = 'Notifications blocked. Enable in browser settings.';
+        if (enableBtn) enableBtn.style.display = 'none';
+    } else {
+        if (statusEl) statusEl.textContent = '';
+        if (enableBtn) enableBtn.style.display = 'flex';
+    }
+}
+
+async function enablePushNotifications() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        showToast('Push notifications not supported', 'error');
+        return;
+    }
+
+    try {
+        // Request notification permission
+        const permission = await Notification.requestPermission();
+
+        if (permission !== 'granted') {
+            showToast('Notification permission denied', 'error');
+            checkNotificationPermission();
+            return;
+        }
+
+        // Get service worker registration
+        const registration = await navigator.serviceWorker.ready;
+
+        // Get VAPID public key
+        const vapidResponse = await fetch('/api/push/vapid-key');
+        const { publicKey } = await vapidResponse.json();
+
+        if (!publicKey) {
+            showToast('Push notifications not configured on server', 'error');
+            return;
+        }
+
+        // Subscribe to push
+        const subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(publicKey)
+        });
+
+        // Send subscription to server
+        const response = await fetch('/api/push/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(subscription.toJSON())
+        });
+
+        if (response.ok) {
+            showToast('Push notifications enabled', 'success');
+            checkNotificationPermission();
+        } else {
+            showToast('Failed to enable notifications', 'error');
+        }
+
+    } catch (error) {
+        console.error('Error enabling push notifications:', error);
+        showToast('Failed to enable notifications', 'error');
+    }
+}
+
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+}
+
 // Expose functions to global scope
 window.openClosePositionModal = openClosePositionModal;
 window.openEditStopLossModal = openEditStopLossModal;
 window.openEditTakeProfitModal = openEditTakeProfitModal;
+window.deleteAlert = deleteAlert;

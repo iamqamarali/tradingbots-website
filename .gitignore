@@ -11,3 +11,6 @@ trades.db
 trades.db-wal
 trades.db-shm
 
+# Environment variables (contains secrets)
+.env
+

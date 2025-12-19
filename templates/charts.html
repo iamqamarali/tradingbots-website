@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Charts - Trading Bot Manager</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/charts.css">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- PWA Support -->
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#fbbf24">
+</head>
+<body>
+    <div class="app-container">
+        {% include 'includes/sidebar.html' %}
+
+        <main class="main-content charts-page">
+            <!-- Header -->
+            <header class="charts-header">
+                <div class="header-left">
+                    <h1>Charts</h1>
+                </div>
+                <div class="header-controls">
+                    <div class="symbol-selector">
+                        <label for="chartSymbol">Symbol</label>
+                        <input type="text" id="chartSymbolSearch" placeholder="Search..." autocomplete="off">
+                        <select id="chartSymbol">
+                            <optgroup label="USDT Pairs">
+                                <option value="BTCUSDT">BTCUSDT</option>
+                                <option value="ETHUSDT">ETHUSDT</option>
+                                <option value="SOLUSDT">SOLUSDT</option>
+                                <option value="BNBUSDT">BNBUSDT</option>
+                                <option value="XRPUSDT">XRPUSDT</option>
+                                <option value="DOGEUSDT">DOGEUSDT</option>
+                                <option value="ADAUSDT">ADAUSDT</option>
+                                <option value="AVAXUSDT">AVAXUSDT</option>
+                                <option value="LINKUSDT">LINKUSDT</option>
+                                <option value="MATICUSDT">MATICUSDT</option>
+                                <option value="DOTUSDT">DOTUSDT</option>
+                                <option value="LTCUSDT">LTCUSDT</option>
+                            </optgroup>
+                            <optgroup label="USDC Pairs">
+                                <option value="BTCUSDC">BTCUSDC</option>
+                                <option value="ETHUSDC">ETHUSDC</option>
+                                <option value="SOLUSDC">SOLUSDC</option>
+                                <option value="BNBUSDC">BNBUSDC</option>
+                                <option value="XRPUSDC">XRPUSDC</option>
+                                <option value="DOGEUSDC">DOGEUSDC</option>
+                                <option value="ADAUSDC">ADAUSDC</option>
+                                <option value="AVAXUSDC">AVAXUSDC</option>
+                                <option value="LINKUSDC">LINKUSDC</option>
+                                <option value="MATICUSDC">MATICUSDC</option>
+                                <option value="DOTUSDC">DOTUSDC</option>
+                                <option value="LTCUSDC">LTCUSDC</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                    <div class="position-selector" id="positionSelector">
+                        <label>Position</label>
+                        <select id="positionSelect">
+                            <option value="">Select position...</option>
+                        </select>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Chart Container -->
+            <div class="chart-wrapper">
+                <div class="chart-container" id="tradingview_chart"></div>
+
+                <!-- Position Overlay -->
+                <div class="position-overlay" id="positionOverlay" style="display: none;">
+                    <h4>Position Levels</h4>
+                    <div class="position-level entry">
+                        <span class="level-label">Entry</span>
+                        <span class="level-value" id="overlayEntry">-</span>
+                    </div>
+                    <div class="position-level stop">
+                        <span class="level-label">Stop Loss</span>
+                        <span class="level-value" id="overlayStop">-</span>
+                    </div>
+                    <div class="position-level take-profit">
+                        <span class="level-label">Take Profit</span>
+                        <span class="level-value" id="overlayTP">-</span>
+                    </div>
+                    <div class="position-level pnl">
+                        <span class="level-label">Unrealized P&L</span>
+                        <span class="level-value" id="overlayPnl">-</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- TradingView Widget -->
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+    <script src="/static/charts.js"></script>
+    <script>
+        // Mobile menu toggle
+        const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+        const sidebar = document.querySelector('.sidebar');
+        const mobileOverlay = document.getElementById('mobileOverlay');
+
+        if (mobileMenuBtn && sidebar && mobileOverlay) {
+            mobileMenuBtn.addEventListener('click', () => {
+                sidebar.classList.toggle('open');
+                mobileOverlay.classList.toggle('active');
+            });
+
+            mobileOverlay.addEventListener('click', () => {
+                sidebar.classList.remove('open');
+                mobileOverlay.classList.remove('active');
+            });
+        }
+    </script>
+</body>
+</html>

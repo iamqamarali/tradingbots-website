@@ -1006,6 +1006,9 @@ async function loadTrades(page = 1) {
                                     </svg>
                                 </button>
                                 <div class="action-dropdown" id="tradeMenu-${pos.id}">
+                                    <button onclick="openJournalModal(${pos.id})">
+                                        Journal
+                                    </button>
                                     <button onclick="openLinkSetupModal(${pos.id}, '${pos.symbol}', '${pos.side}', ${pos.realized_pnl}, ${pos.setup_id || 'null'})">
                                         ${pos.setup_id ? 'Change Setup' : 'Link to Setup'}
                                     </button>
@@ -2899,4 +2902,176 @@ async function unlinkSetup(positionId) {
         showToast('Failed to unlink setup', 'error');
     }
 }
+
+
+// ==================== TRADE JOURNAL ====================
+
+let currentJournalPositionId = null;
+
+async function openJournalModal(positionId) {
+    // Close any open dropdown
+    document.querySelectorAll('.action-dropdown.active').forEach(d => d.classList.remove('active'));
+
+    currentJournalPositionId = positionId;
+
+    // Load journal data from API
+    try {
+        const response = await fetch(`/api/closed-positions/${positionId}/journal`);
+        const data = await response.json();
+
+        if (response.ok) {
+            // Update trade summary
+            document.getElementById('journalSymbol').textContent = data.symbol || '';
+            const sideEl = document.getElementById('journalSide');
+            sideEl.textContent = data.side || '';
+            sideEl.className = `journal-side ${(data.side || '').toLowerCase()}`;
+
+            const pnl = data.realized_pnl || 0;
+            const pnlEl = document.getElementById('journalPnl');
+            pnlEl.textContent = `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`;
+            pnlEl.className = `journal-pnl ${pnl >= 0 ? 'positive' : 'negative'}`;
+
+            document.getElementById('journalDate').textContent = data.exit_time
+                ? new Date(data.exit_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                : '';
+            document.getElementById('journalSize').textContent = data.size_usd
+                ? `$${data.size_usd.toFixed(2)}`
+                : '';
+
+            // Set rating
+            const rating = data.rating || 0;
+            document.querySelectorAll('#journalRating .star-btn').forEach(btn => {
+                btn.classList.toggle('active', parseInt(btn.dataset.rating) <= rating);
+            });
+
+            // Set emotion tags
+            const emotionTags = data.emotion_tags || [];
+            document.querySelectorAll('#emotionTags .tag-btn').forEach(btn => {
+                btn.classList.toggle('active', emotionTags.includes(btn.dataset.tag));
+            });
+
+            // Set mistake tags
+            const mistakeTags = data.mistake_tags || [];
+            document.querySelectorAll('#mistakeTags .tag-btn').forEach(btn => {
+                btn.classList.toggle('active', mistakeTags.includes(btn.dataset.tag));
+            });
+
+            // Set notes
+            document.getElementById('journalNotes').value = data.journal_notes || '';
+
+            // Show modal
+            document.getElementById('journalModal').classList.add('active');
+        } else {
+            showToast(data.error || 'Failed to load journal', 'error');
+        }
+    } catch (error) {
+        console.error('Error loading journal:', error);
+        showToast('Failed to load journal', 'error');
+    }
+}
+
+function closeJournalModal() {
+    document.getElementById('journalModal').classList.remove('active');
+    currentJournalPositionId = null;
+}
+
+async function saveJournal() {
+    if (!currentJournalPositionId) return;
+
+    const saveBtn = document.getElementById('saveJournalBtn');
+    const btnText = saveBtn.querySelector('.btn-text');
+    const btnLoading = saveBtn.querySelector('.btn-loading');
+
+    // Collect rating
+    let rating = 0;
+    document.querySelectorAll('#journalRating .star-btn.active').forEach(btn => {
+        const r = parseInt(btn.dataset.rating);
+        if (r > rating) rating = r;
+    });
+
+    // Collect emotion tags
+    const emotionTags = [];
+    document.querySelectorAll('#emotionTags .tag-btn.active').forEach(btn => {
+        emotionTags.push(btn.dataset.tag);
+    });
+
+    // Collect mistake tags
+    const mistakeTags = [];
+    document.querySelectorAll('#mistakeTags .tag-btn.active').forEach(btn => {
+        mistakeTags.push(btn.dataset.tag);
+    });
+
+    const notes = document.getElementById('journalNotes').value;
+
+    // Show loading state
+    btnText.style.display = 'none';
+    btnLoading.style.display = 'inline-flex';
+    saveBtn.disabled = true;
+
+    try {
+        const response = await fetch(`/api/closed-positions/${currentJournalPositionId}/journal`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                rating: rating,
+                emotion_tags: emotionTags,
+                mistake_tags: mistakeTags,
+                journal_notes: notes
+            })
+        });
+
+        if (response.ok) {
+            showToast('Journal saved', 'success');
+            closeJournalModal();
+        } else {
+            const data = await response.json();
+            showToast(data.error || 'Failed to save journal', 'error');
+        }
+    } catch (error) {
+        console.error('Error saving journal:', error);
+        showToast('Failed to save journal', 'error');
+    } finally {
+        btnText.style.display = 'inline';
+        btnLoading.style.display = 'none';
+        saveBtn.disabled = false;
+    }
+}
+
+function setupJournalModal() {
+    const modal = document.getElementById('journalModal');
+    if (!modal) return;
+
+    // Close handlers
+    document.getElementById('closeJournalModal')?.addEventListener('click', closeJournalModal);
+    document.getElementById('cancelJournalBtn')?.addEventListener('click', closeJournalModal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeJournalModal();
+    });
+
+    // Star rating
+    document.querySelectorAll('#journalRating .star-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const rating = parseInt(btn.dataset.rating);
+            document.querySelectorAll('#journalRating .star-btn').forEach(s => {
+                s.classList.toggle('active', parseInt(s.dataset.rating) <= rating);
+            });
+        });
+    });
+
+    // Tag toggles
+    document.querySelectorAll('.tag-btn').forEach(btn => {
+        btn.addEventListener('click', () => btn.classList.toggle('active'));
+    });
+
+    // Save button
+    document.getElementById('saveJournalBtn')?.addEventListener('click', saveJournal);
+}
+
+// Initialize journal modal on load
+document.addEventListener('DOMContentLoaded', () => {
+    setupJournalModal();
+});
+
+// Expose to global scope
+window.openJournalModal = openJournalModal;
 

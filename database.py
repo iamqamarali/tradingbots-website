@@ -261,6 +261,72 @@ def init_db():
             pass  # Column already exists
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_closed_positions_setup_id ON closed_positions(setup_id)')
 
+        # Add journal columns to closed_positions for trade journaling
+        for col, col_type in [
+            ('journal_notes', 'TEXT'),
+            ('emotion_tags', 'TEXT'),  # JSON array string
+            ('mistake_tags', 'TEXT'),  # JSON array string
+            ('rating', 'INTEGER'),
+        ]:
+            try:
+                cursor.execute(f'ALTER TABLE closed_positions ADD COLUMN {col} {col_type}')
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
+        # Trade notifications history table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS trade_notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                event_type TEXT NOT NULL CHECK(event_type IN ('opened', 'closed')),
+                entry_price REAL,
+                exit_price REAL,
+                pnl REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (account_id) REFERENCES accounts(id)
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_trade_notifications_account ON trade_notifications(account_id)')
+
+        # Position snapshots for tracking changes
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS position_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                entry_price REAL,
+                quantity REAL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(account_id, symbol),
+                FOREIGN KEY (account_id) REFERENCES accounts(id)
+            )
+        ''')
+
+        # Settings table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        ''')
+        # Default: trade notifications enabled
+        cursor.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
+                      ('trade_notifications_enabled', '1'))
+
+        # Push subscriptions table for PWA notifications
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                endpoint TEXT UNIQUE NOT NULL,
+                p256dh TEXT NOT NULL,
+                auth TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         conn.commit()
         conn.close()
 
@@ -1930,6 +1996,268 @@ def get_setups_simple_list():
 
         conn.close()
         return setups
+
+
+# ==================== TRADE NOTIFICATIONS OPERATIONS ====================
+
+def get_setting(key, default=None):
+    """Get a setting value."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT value FROM settings WHERE key = ?', (key,))
+        row = cursor.fetchone()
+        conn.close()
+        return row['value'] if row else default
+
+
+def set_setting(key, value):
+    """Set a setting value."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', (key, str(value)))
+        conn.commit()
+        conn.close()
+        return True
+
+
+def get_trade_notifications_enabled():
+    """Check if trade notifications are enabled."""
+    return get_setting('trade_notifications_enabled', '1') == '1'
+
+
+def set_trade_notifications_enabled(enabled):
+    """Enable or disable trade notifications."""
+    return set_setting('trade_notifications_enabled', '1' if enabled else '0')
+
+
+def add_trade_notification(account_id, symbol, side, event_type, entry_price=None, exit_price=None, pnl=None):
+    """Add a trade notification to history."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            INSERT INTO trade_notifications (account_id, symbol, side, event_type, entry_price, exit_price, pnl)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (account_id, symbol.upper(), side, event_type, entry_price, exit_price, pnl))
+
+        notification_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return notification_id
+
+
+def get_trade_notifications(limit=50):
+    """Get recent trade notifications."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT tn.*, a.name as account_name
+            FROM trade_notifications tn
+            LEFT JOIN accounts a ON tn.account_id = a.id
+            ORDER BY tn.created_at DESC
+            LIMIT ?
+        ''', (limit,))
+
+        notifications = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return notifications
+
+
+def clear_trade_notifications():
+    """Clear all trade notifications."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM trade_notifications')
+        conn.commit()
+        conn.close()
+        return True
+
+
+def get_position_snapshots(account_id):
+    """Get position snapshots for an account."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT symbol, side, entry_price, quantity
+            FROM position_snapshots
+            WHERE account_id = ?
+        ''', (account_id,))
+
+        snapshots = {row['symbol']: dict(row) for row in cursor.fetchall()}
+        conn.close()
+        return snapshots
+
+
+def update_position_snapshot(account_id, symbol, side, entry_price, quantity):
+    """Update or insert a position snapshot."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            INSERT OR REPLACE INTO position_snapshots (account_id, symbol, side, entry_price, quantity, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ''', (account_id, symbol.upper(), side, entry_price, quantity))
+
+        conn.commit()
+        conn.close()
+        return True
+
+
+def delete_position_snapshot(account_id, symbol):
+    """Delete a position snapshot (when position is closed)."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM position_snapshots WHERE account_id = ? AND symbol = ?',
+                      (account_id, symbol.upper()))
+
+        conn.commit()
+        conn.close()
+        return True
+
+
+def clear_position_snapshots(account_id=None):
+    """Clear position snapshots for an account or all accounts."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        if account_id:
+            cursor.execute('DELETE FROM position_snapshots WHERE account_id = ?', (account_id,))
+        else:
+            cursor.execute('DELETE FROM position_snapshots')
+
+        conn.commit()
+        conn.close()
+        return True
+
+
+# ==================== PUSH SUBSCRIPTION OPERATIONS ====================
+
+def save_push_subscription(endpoint, p256dh, auth):
+    """Save a push notification subscription."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            INSERT OR REPLACE INTO push_subscriptions (endpoint, p256dh, auth)
+            VALUES (?, ?, ?)
+        ''', (endpoint, p256dh, auth))
+
+        conn.commit()
+        conn.close()
+        return True
+
+
+def get_all_push_subscriptions():
+    """Get all push subscriptions."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT endpoint, p256dh, auth FROM push_subscriptions')
+
+        subscriptions = []
+        for row in cursor.fetchall():
+            subscriptions.append({
+                'endpoint': row['endpoint'],
+                'keys': {
+                    'p256dh': row['p256dh'],
+                    'auth': row['auth']
+                }
+            })
+
+        conn.close()
+        return subscriptions
+
+
+def delete_push_subscription(endpoint):
+    """Delete a push subscription."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM push_subscriptions WHERE endpoint = ?', (endpoint,))
+        conn.commit()
+        conn.close()
+
+
+# ==================== TRADE JOURNAL OPERATIONS ====================
+
+def get_closed_position_journal(position_id):
+    """Get journal data for a closed position."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT id, symbol, side, realized_pnl, size_usd, exit_time,
+                   journal_notes, emotion_tags, mistake_tags, rating
+            FROM closed_positions WHERE id = ?
+        ''', (position_id,))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            import json
+            return {
+                'id': row['id'],
+                'symbol': row['symbol'],
+                'side': row['side'],
+                'realized_pnl': row['realized_pnl'],
+                'size_usd': row['size_usd'],
+                'exit_time': row['exit_time'],
+                'journal_notes': row['journal_notes'],
+                'emotion_tags': json.loads(row['emotion_tags']) if row['emotion_tags'] else [],
+                'mistake_tags': json.loads(row['mistake_tags']) if row['mistake_tags'] else [],
+                'rating': row['rating']
+            }
+        return None
+
+
+def update_closed_position_journal(position_id, journal_notes=None, emotion_tags=None,
+                                   mistake_tags=None, rating=None):
+    """Update journal data for a closed position."""
+    import json
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        updates = []
+        params = []
+
+        if journal_notes is not None:
+            updates.append('journal_notes = ?')
+            params.append(journal_notes)
+        if emotion_tags is not None:
+            updates.append('emotion_tags = ?')
+            params.append(json.dumps(emotion_tags))
+        if mistake_tags is not None:
+            updates.append('mistake_tags = ?')
+            params.append(json.dumps(mistake_tags))
+        if rating is not None:
+            updates.append('rating = ?')
+            params.append(rating)
+
+        if updates:
+            params.append(position_id)
+            cursor.execute(f'UPDATE closed_positions SET {", ".join(updates)} WHERE id = ?', params)
+
+        conn.commit()
+        conn.close()
+        return True
 
 
 # Initialize database on module load

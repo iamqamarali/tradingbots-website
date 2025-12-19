@@ -6,6 +6,13 @@
     <title>Dashboard - Trading Bot Manager</title>
     <link rel="stylesheet" href="/static/style.css">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- PWA Support -->
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#fbbf24">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="TradingBot">
+    <link rel="apple-touch-icon" href="/static/icon-192.png">
 </head>
 <body>
     <div class="app-container">
@@ -36,6 +43,23 @@
                             <span class="position-count" id="positionCount">0</span>
                         </h2>
                         <div class="section-actions">
+                            <button class="action-btn alerts-btn" id="openAlertsBtn" title="Trade Notifications">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                                    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                                </svg>
+                                <span>Notifications</span>
+                            </button>
+                            <button class="action-btn calc-btn" id="positionCalcBtn" title="Position Size Calculator">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="4" y="2" width="16" height="20" rx="2"/>
+                                    <line x1="8" y1="6" x2="16" y2="6"/>
+                                    <line x1="8" y1="10" x2="16" y2="10"/>
+                                    <rect x="8" y="14" width="3" height="3"/>
+                                    <rect x="13" y="14" width="3" height="3"/>
+                                </svg>
+                                <span>Calculator</span>
+                            </button>
                             <button class="refresh-btn" id="refreshPositionsBtn" title="Refresh Positions">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M23 4v6h-6"/>
@@ -212,6 +236,121 @@
                 <button class="btn-secondary" id="removeTakeProfitBtn" style="margin-right: auto;">Remove TP</button>
                 <button class="btn-secondary" id="cancelEditTakeProfit">Cancel</button>
                 <button class="btn-primary" id="confirmEditTakeProfit">Update Take Profit</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Position Size Calculator Modal -->
+    <div class="modal-overlay" id="positionCalcModal">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3>Position Size Calculator</h3>
+                <button class="modal-close" id="closePositionCalcModal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="calcBalance">Account Balance (USD)</label>
+                    <input type="number" id="calcBalance" step="0.01" placeholder="Enter your balance...">
+                </div>
+                <div class="form-group">
+                    <label>Risk Percentage</label>
+                    <div class="risk-buttons">
+                        <button class="risk-btn" data-risk="1">1%</button>
+                        <button class="risk-btn active" data-risk="2">2%</button>
+                        <button class="risk-btn" data-risk="3">3%</button>
+                        <button class="risk-btn" data-risk="5">5%</button>
+                    </div>
+                    <input type="number" id="calcRiskPercent" value="2" min="0.1" max="100" step="0.1" placeholder="Custom %">
+                </div>
+                <div class="form-group">
+                    <label for="calcEntryPrice">Entry Price</label>
+                    <input type="number" id="calcEntryPrice" step="any" placeholder="Enter entry price...">
+                </div>
+                <div class="form-group">
+                    <label for="calcStopLoss">Stop Loss Price</label>
+                    <input type="number" id="calcStopLoss" step="any" placeholder="Enter stop loss price...">
+                </div>
+                <div class="calc-results">
+                    <div class="calc-result-row">
+                        <span>Risk Amount</span>
+                        <span id="calcRiskUsd" class="result-value">$0.00</span>
+                    </div>
+                    <div class="calc-result-row">
+                        <span>Stop Distance</span>
+                        <span id="calcStopDistance" class="result-value">0.00%</span>
+                    </div>
+                    <div class="calc-result-row highlight">
+                        <span>Position Size</span>
+                        <span id="calcPositionUsd" class="result-value highlight">$0.00</span>
+                    </div>
+                    <div class="calc-result-row">
+                        <span>Quantity</span>
+                        <span id="calcPositionQty" class="result-value">0.000</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="clearCalcBtn">Clear</button>
+                <button class="btn-primary" id="doneCalcBtn">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trade Notifications Modal -->
+    <div class="modal-overlay" id="alertsModal">
+        <div class="modal alerts-modal">
+            <div class="modal-header">
+                <h3>Trade Notifications</h3>
+                <button class="modal-close" id="closeAlertsModal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <!-- Toggle Notifications -->
+                <div class="notifications-toggle-section">
+                    <div class="toggle-row">
+                        <span class="toggle-label">Trade Notifications</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="notificationsToggle" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <p class="toggle-description">Get notified when trades are opened or closed</p>
+                </div>
+
+                <!-- Enable Push Notifications -->
+                <div class="notifications-section" id="notificationsSection">
+                    <button class="btn-secondary enable-notifications-btn" id="enableNotificationsBtn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                        </svg>
+                        Enable Push Notifications
+                    </button>
+                    <p class="notifications-status" id="notificationsStatus"></p>
+                </div>
+
+                <!-- Notifications History -->
+                <div class="alerts-list-section">
+                    <div class="section-header-row">
+                        <h4>Recent Notifications</h4>
+                        <button class="btn-text" id="clearNotificationsBtn">Clear All</button>
+                    </div>
+                    <div class="alerts-list" id="alertsList">
+                        <p class="empty-alerts">No notifications yet</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="closeAlertsBtn">Close</button>
             </div>
         </div>
     </div>
