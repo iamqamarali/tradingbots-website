@@ -2270,6 +2270,34 @@
     border-color: rgba(239, 68, 68, 0.5);
 }
 
+/* Potential Loss Display */
+.potential-loss-display {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 8px;
+}
+
+.potential-loss-display .detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.potential-loss-display .loss-amount {
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+.potential-loss-display .loss-amount.negative {
+    color: #f87171;
+}
+
+.potential-loss-display .loss-amount.positive {
+    color: #4ade80;
+}
+
 /* Take Profit Modal Styles */
 .take-profit-hint {
     margin-top: 0.5rem;

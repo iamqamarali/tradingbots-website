@@ -2067,6 +2067,69 @@ body {
     border-color: rgba(239, 68, 68, 0.5);
 }
 
+.add-position-btn {
+    padding: 6px 12px;
+    background: rgba(74, 222, 128, 0.15);
+    color: #4ade80;
+    border: 1px solid rgba(74, 222, 128, 0.3);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    margin-right: 6px;
+}
+
+.add-position-btn:hover {
+    background: rgba(74, 222, 128, 0.25);
+    border-color: rgba(74, 222, 128, 0.5);
+}
+
+/* Add to Position Modal Styles */
+.add-pos-quick-btns {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.add-pos-quick-btns .quick-btn {
+    flex: 1;
+    padding: 6px 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.add-pos-quick-btns .quick-btn:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}
+
+.calculated-qty {
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.calculated-qty span {
+    color: var(--accent-primary);
+    font-weight: 600;
+}
+
+.add-pos-hint {
+    margin-top: 8px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
 .empty-positions {
     display: flex;
     flex-direction: column;
@@ -2277,6 +2340,34 @@ body {
 #removeStopLossBtn:hover {
     background: rgba(239, 68, 68, 0.2);
     border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* Potential Loss Display */
+.potential-loss-display {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 8px;
+}
+
+.potential-loss-display .detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.potential-loss-display .loss-amount {
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+.potential-loss-display .loss-amount.negative {
+    color: #f87171;
+}
+
+.potential-loss-display .loss-amount.positive {
+    color: #4ade80;
 }
 
 /* Take Profit Modal Styles */

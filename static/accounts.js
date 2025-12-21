@@ -1552,14 +1552,14 @@ function openEditStopLossModal(posData) {
     const sideEl = document.getElementById('slSide');
     sideEl.textContent = currentStopLossPosition.side;
     sideEl.className = `position-side ${currentStopLossPosition.side.toLowerCase()}`;
-    
+
     document.getElementById('slEntryPrice').textContent = `$${currentStopLossPosition.entryPrice.toFixed(4)}`;
     document.getElementById('slMarkPrice').textContent = `$${currentStopLossPosition.markPrice.toFixed(4)}`;
     document.getElementById('slQuantity').textContent = currentStopLossPosition.quantity;
-    
+
     const currentStopEl = document.getElementById('slCurrentStop');
     const removeBtn = document.getElementById('removeStopLossBtn');
-    
+
     if (currentStopLossPosition.stopPrice) {
         currentStopEl.textContent = `$${currentStopLossPosition.stopPrice.toFixed(4)}`;
         currentStopEl.className = 'has-sl';
@@ -1571,7 +1571,7 @@ function openEditStopLossModal(posData) {
         document.getElementById('newStopPrice').value = '';
         removeBtn.style.display = 'none';
     }
-    
+
     // Show hint based on position side
     const hintEl = document.getElementById('slHint');
     if (currentStopLossPosition.side === 'LONG') {
@@ -1580,8 +1580,55 @@ function openEditStopLossModal(posData) {
         hintEl.innerHTML = `<span class="hint-warning">For SHORT position, stop loss should be <strong>above</strong> entry price ($${currentStopLossPosition.entryPrice.toFixed(2)})</span>`;
     }
 
+    // Calculate initial potential loss if stop price exists
+    calculateStopLossPotentialLoss();
+
     // Show modal
     document.getElementById('editStopLossModal').classList.add('active');
+}
+
+// Calculate potential loss based on stop price
+function calculateStopLossPotentialLoss() {
+    const stopPriceInput = document.getElementById('newStopPrice');
+    const lossSection = document.getElementById('slPotentialLossSection');
+    const lossDisplay = document.getElementById('slPotentialLoss');
+
+    if (!stopPriceInput || !lossSection || !lossDisplay || !currentStopLossPosition) {
+        return;
+    }
+
+    const stopPrice = parseFloat(stopPriceInput.value);
+
+    if (!stopPrice || stopPrice <= 0) {
+        lossSection.style.display = 'none';
+        return;
+    }
+
+    const entryPrice = currentStopLossPosition.entryPrice;
+    const quantity = currentStopLossPosition.quantity;
+    const side = currentStopLossPosition.side;
+
+    // Calculate loss: For LONG, loss = qty * (entry - stop), For SHORT, loss = qty * (stop - entry)
+    let loss;
+    if (side === 'LONG') {
+        loss = quantity * (entryPrice - stopPrice);
+    } else {
+        loss = quantity * (stopPrice - entryPrice);
+    }
+
+    // Only show if it's a valid stop (would result in a loss, not a profit)
+    if (loss > 0) {
+        lossSection.style.display = 'block';
+        lossDisplay.textContent = `-$${loss.toFixed(2)}`;
+        lossDisplay.className = 'loss-amount negative';
+    } else if (loss < 0) {
+        // This would actually be a profit (invalid stop placement)
+        lossSection.style.display = 'block';
+        lossDisplay.textContent = `+$${Math.abs(loss).toFixed(2)}`;
+        lossDisplay.className = 'loss-amount positive';
+    } else {
+        lossSection.style.display = 'none';
+    }
 }
 
 function setupEditStopLossModal() {
@@ -1620,10 +1667,16 @@ function setupEditStopLossModal() {
     if (confirmBtn) {
         confirmBtn.addEventListener('click', updateStopLoss);
     }
-    
+
     // Remove stop loss
     if (removeBtn) {
         removeBtn.addEventListener('click', removeStopLoss);
+    }
+
+    // Calculate potential loss on input change
+    const stopPriceInput = document.getElementById('newStopPrice');
+    if (stopPriceInput) {
+        stopPriceInput.addEventListener('input', calculateStopLossPotentialLoss);
     }
 }
 

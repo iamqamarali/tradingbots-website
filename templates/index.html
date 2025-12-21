@@ -43,13 +43,6 @@
                             <span class="position-count" id="positionCount">0</span>
                         </h2>
                         <div class="section-actions">
-                            <button class="action-btn alerts-btn" id="openAlertsBtn" title="Trade Notifications">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-                                    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-                                </svg>
-                                <span>Notifications</span>
-                            </button>
                             <button class="action-btn calc-btn" id="positionCalcBtn" title="Position Size Calculator">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <rect x="4" y="2" width="16" height="20" rx="2"/>
@@ -193,6 +186,12 @@
                         <span class="hint-warning" id="slHint"></span>
                     </p>
                 </div>
+                <div class="potential-loss-display" id="slPotentialLossSection" style="display: none;">
+                    <div class="detail-row loss-row">
+                        <span>Potential Loss:</span>
+                        <span id="slPotentialLoss" class="loss-amount">$0.00</span>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn-secondary" id="removeStopLossBtn" style="margin-right: auto;">Remove SL</button>
@@ -236,6 +235,66 @@
                 <button class="btn-secondary" id="removeTakeProfitBtn" style="margin-right: auto;">Remove TP</button>
                 <button class="btn-secondary" id="cancelEditTakeProfit">Cancel</button>
                 <button class="btn-primary" id="confirmEditTakeProfit">Update Take Profit</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add to Position Modal -->
+    <div class="modal-overlay" id="addToPositionModal">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3>Add to Position</h3>
+                <button class="modal-close" id="closeAddToPositionModal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="position-info">
+                    <span class="position-symbol" id="addPosSymbol">BTCUSDT</span>
+                    <span class="position-side" id="addPosSide">LONG</span>
+                    <span class="position-account" id="addPosAccount"></span>
+                </div>
+                <div class="position-details">
+                    <div class="detail-row">
+                        <span>Current Size:</span>
+                        <span id="addPosCurrentSize">0.00</span>
+                    </div>
+                    <div class="detail-row">
+                        <span>Entry Price:</span>
+                        <span id="addPosEntryPrice">$0.00</span>
+                    </div>
+                    <div class="detail-row">
+                        <span>Mark Price:</span>
+                        <span id="addPosMarkPrice">$0.00</span>
+                    </div>
+                    <div class="detail-row">
+                        <span>Leverage:</span>
+                        <span id="addPosLeverage">1x</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="addPosUsdc">Size to Add (USDC)</label>
+                    <input type="number" id="addPosUsdc" step="any" placeholder="Enter USDC amount...">
+                    <div class="add-pos-quick-btns">
+                        <button type="button" class="quick-btn" data-pct="25">25%</button>
+                        <button type="button" class="quick-btn" data-pct="50">50%</button>
+                        <button type="button" class="quick-btn" data-pct="75">75%</button>
+                        <button type="button" class="quick-btn" data-pct="100">Max</button>
+                    </div>
+                    <div class="calculated-qty">
+                        Quantity: <span id="addPosCalcQty">0.00</span>
+                    </div>
+                    <div class="add-pos-hint">
+                        This will place a market order to increase your position size
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelAddToPosition">Cancel</button>
+                <button class="btn-primary" id="confirmAddToPosition">Add to Position</button>
             </div>
         </div>
     </div>
@@ -297,60 +356,6 @@
             <div class="modal-footer">
                 <button class="btn-secondary" id="clearCalcBtn">Clear</button>
                 <button class="btn-primary" id="doneCalcBtn">Done</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Trade Notifications Modal -->
-    <div class="modal-overlay" id="alertsModal">
-        <div class="modal alerts-modal">
-            <div class="modal-header">
-                <h3>Trade Notifications</h3>
-                <button class="modal-close" id="closeAlertsModal">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="6" x2="6" y2="18"/>
-                        <line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                </button>
-            </div>
-            <div class="modal-body">
-                <!-- Toggle Notifications -->
-                <div class="notifications-toggle-section">
-                    <div class="toggle-row">
-                        <span class="toggle-label">Trade Notifications</span>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="notificationsToggle" checked>
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-                    <p class="toggle-description">Get notified when trades are opened or closed</p>
-                </div>
-
-                <!-- Enable Push Notifications -->
-                <div class="notifications-section" id="notificationsSection">
-                    <button class="btn-secondary enable-notifications-btn" id="enableNotificationsBtn">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-                            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-                        </svg>
-                        Enable Push Notifications
-                    </button>
-                    <p class="notifications-status" id="notificationsStatus"></p>
-                </div>
-
-                <!-- Notifications History -->
-                <div class="alerts-list-section">
-                    <div class="section-header-row">
-                        <h4>Recent Notifications</h4>
-                        <button class="btn-text" id="clearNotificationsBtn">Clear All</button>
-                    </div>
-                    <div class="alerts-list" id="alertsList">
-                        <p class="empty-alerts">No notifications yet</p>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn-secondary" id="closeAlertsBtn">Close</button>
             </div>
         </div>
     </div>

@@ -53,7 +53,21 @@ const positionElements = {
     tpHint: document.getElementById('tpHint'),
     removeTakeProfitBtn: document.getElementById('removeTakeProfitBtn'),
     cancelEditTakeProfit: document.getElementById('cancelEditTakeProfit'),
-    confirmEditTakeProfit: document.getElementById('confirmEditTakeProfit')
+    confirmEditTakeProfit: document.getElementById('confirmEditTakeProfit'),
+    // Add to position modal
+    addToPositionModal: document.getElementById('addToPositionModal'),
+    closeAddToPositionModal: document.getElementById('closeAddToPositionModal'),
+    addPosSymbol: document.getElementById('addPosSymbol'),
+    addPosSide: document.getElementById('addPosSide'),
+    addPosAccount: document.getElementById('addPosAccount'),
+    addPosCurrentSize: document.getElementById('addPosCurrentSize'),
+    addPosEntryPrice: document.getElementById('addPosEntryPrice'),
+    addPosMarkPrice: document.getElementById('addPosMarkPrice'),
+    addPosLeverage: document.getElementById('addPosLeverage'),
+    addPosUsdc: document.getElementById('addPosUsdc'),
+    addPosCalcQty: document.getElementById('addPosCalcQty'),
+    cancelAddToPosition: document.getElementById('cancelAddToPosition'),
+    confirmAddToPosition: document.getElementById('confirmAddToPosition')
 };
 
 // Load all positions on page load (uses server-side cache)
@@ -122,6 +136,10 @@ function setupPositionEventListeners() {
             if (e.target === positionElements.editStopLossModal) closeEditStopLossModal();
         });
     }
+    // Calculate potential loss on input change
+    if (positionElements.newStopPrice) {
+        positionElements.newStopPrice.addEventListener('input', calculateStopLossPotentialLoss);
+    }
 
     // Take profit modal
     if (positionElements.editTakeProfitModalClose) {
@@ -141,6 +159,37 @@ function setupPositionEventListeners() {
             if (e.target === positionElements.editTakeProfitModal) closeEditTakeProfitModal();
         });
     }
+
+    // Add to position modal
+    if (positionElements.closeAddToPositionModal) {
+        positionElements.closeAddToPositionModal.addEventListener('click', closeAddToPositionModal);
+    }
+    if (positionElements.cancelAddToPosition) {
+        positionElements.cancelAddToPosition.addEventListener('click', closeAddToPositionModal);
+    }
+    if (positionElements.confirmAddToPosition) {
+        positionElements.confirmAddToPosition.addEventListener('click', executeAddToPosition);
+    }
+    if (positionElements.addToPositionModal) {
+        positionElements.addToPositionModal.addEventListener('click', (e) => {
+            if (e.target === positionElements.addToPositionModal) closeAddToPositionModal();
+        });
+    }
+    // Calculate quantity on USDC input change
+    if (positionElements.addPosUsdc) {
+        positionElements.addPosUsdc.addEventListener('input', calculateAddPositionQty);
+    }
+    // Quick percentage buttons for add to position
+    document.querySelectorAll('#addToPositionModal .quick-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (!currentPositionData || !currentPositionData.availableBalance) return;
+            const pct = parseInt(btn.dataset.pct);
+            const maxUsdc = currentPositionData.availableBalance * currentPositionData.leverage;
+            const usdcAmount = (maxUsdc * pct / 100).toFixed(2);
+            positionElements.addPosUsdc.value = usdcAmount;
+            calculateAddPositionQty();
+        });
+    });
 }
 
 // Load all positions from all accounts
@@ -204,7 +253,7 @@ function renderPositions() {
                     <div class="sl-tp-row">
                         <span class="sl-label">SL:</span>
                         <span class="${pos.stop_price ? 'has-sl' : 'no-sl'}">${pos.stop_price ? formatPrice(pos.stop_price) : '—'}</span>
-                        <button class="edit-sl-btn" onclick="openEditStopLossModal(${pos.account_id}, '${pos.symbol}', '${pos.side}', ${pos.quantity}, ${pos.stop_price || 'null'}, ${pos.stop_order_id || 'null'}, '${escapeHtml(pos.account_name)}')" title="Edit Stop Loss">
+                        <button class="edit-sl-btn" onclick="openEditStopLossModal(${pos.account_id}, '${pos.symbol}', '${pos.side}', ${pos.quantity}, ${pos.stop_price || 'null'}, ${pos.stop_order_id || 'null'}, '${escapeHtml(pos.account_name)}', ${pos.entry_price})" title="Edit Stop Loss">
                             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
@@ -225,6 +274,7 @@ function renderPositions() {
                 <td class="${pnlClass}">${pnlPrefix}$${pos.unrealized_pnl.toFixed(2)}</td>
                 <td><span class="leverage-badge">${pos.leverage}x</span></td>
                 <td class="actions-cell">
+                    <button class="add-position-btn" onclick="openAddToPositionModal(${pos.account_id}, '${pos.symbol}', '${pos.side}', ${pos.quantity}, ${pos.entry_price}, ${pos.mark_price}, ${pos.leverage}, '${escapeHtml(pos.account_name)}')">Add</button>
                     <button class="close-position-btn" onclick="openClosePositionModal(${pos.account_id}, '${pos.symbol}', '${pos.side}', ${pos.quantity}, ${pos.unrealized_pnl}, '${escapeHtml(pos.account_name)}')">Close</button>
                 </td>
             </tr>
@@ -315,8 +365,8 @@ async function executeClosePosition() {
 }
 
 // Open edit stop loss modal
-function openEditStopLossModal(accountId, symbol, side, quantity, stopPrice, stopOrderId, accountName) {
-    currentPositionData = { accountId, symbol, side, quantity, stopPrice, stopOrderId, accountName };
+function openEditStopLossModal(accountId, symbol, side, quantity, stopPrice, stopOrderId, accountName, entryPrice) {
+    currentPositionData = { accountId, symbol, side, quantity, stopPrice, stopOrderId, accountName, entryPrice };
 
     positionElements.slSymbol.textContent = symbol;
     positionElements.slSide.textContent = side;
@@ -336,7 +386,55 @@ function openEditStopLossModal(accountId, symbol, side, quantity, stopPrice, sto
     positionElements.newStopPrice.value = '';
     positionElements.slHint.textContent = side === 'LONG' ? 'Set below entry price' : 'Set above entry price';
 
+    // Calculate initial potential loss
+    calculateStopLossPotentialLoss();
+
     positionElements.editStopLossModal.classList.add('active');
+}
+
+// Calculate potential loss based on stop price
+function calculateStopLossPotentialLoss() {
+    const stopPriceInput = positionElements.newStopPrice;
+    const lossSection = document.getElementById('slPotentialLossSection');
+    const lossDisplay = document.getElementById('slPotentialLoss');
+
+    if (!stopPriceInput || !lossSection || !lossDisplay || !currentPositionData || !currentPositionData.entryPrice) {
+        if (lossSection) lossSection.style.display = 'none';
+        return;
+    }
+
+    const stopPrice = parseFloat(stopPriceInput.value);
+
+    if (!stopPrice || stopPrice <= 0) {
+        lossSection.style.display = 'none';
+        return;
+    }
+
+    const entryPrice = currentPositionData.entryPrice;
+    const quantity = currentPositionData.quantity;
+    const side = currentPositionData.side;
+
+    // Calculate loss: For LONG, loss = qty * (entry - stop), For SHORT, loss = qty * (stop - entry)
+    let loss;
+    if (side === 'LONG') {
+        loss = quantity * (entryPrice - stopPrice);
+    } else {
+        loss = quantity * (stopPrice - entryPrice);
+    }
+
+    // Only show if it's a valid stop (would result in a loss, not a profit)
+    if (loss > 0) {
+        lossSection.style.display = 'block';
+        lossDisplay.textContent = `-$${loss.toFixed(2)}`;
+        lossDisplay.className = 'loss-amount negative';
+    } else if (loss < 0) {
+        // This would actually be a profit (invalid stop placement)
+        lossSection.style.display = 'block';
+        lossDisplay.textContent = `+$${Math.abs(loss).toFixed(2)}`;
+        lossDisplay.className = 'loss-amount positive';
+    } else {
+        lossSection.style.display = 'none';
+    }
 }
 
 // Close edit stop loss modal
@@ -581,6 +679,110 @@ async function executeRemoveTakeProfit() {
     }
 }
 
+// ==================== ADD TO POSITION ====================
+
+// Open add to position modal
+async function openAddToPositionModal(accountId, symbol, side, quantity, entryPrice, markPrice, leverage, accountName) {
+    currentPositionData = { accountId, symbol, side, quantity, entryPrice, markPrice, leverage, accountName, availableBalance: 0 };
+
+    positionElements.addPosSymbol.textContent = symbol;
+    positionElements.addPosSide.textContent = side;
+    positionElements.addPosSide.className = `position-side ${side.toLowerCase()}`;
+    positionElements.addPosAccount.textContent = accountName;
+    positionElements.addPosCurrentSize.textContent = quantity.toFixed(6);
+    positionElements.addPosEntryPrice.textContent = `$${formatPrice(entryPrice)}`;
+    positionElements.addPosMarkPrice.textContent = `$${formatPrice(markPrice)}`;
+    positionElements.addPosLeverage.textContent = `${leverage}x`;
+
+    // Clear inputs
+    positionElements.addPosUsdc.value = '';
+    positionElements.addPosCalcQty.textContent = '0.00';
+
+    // Fetch available balance
+    try {
+        const response = await fetch(`/api/accounts/${accountId}/balance`);
+        if (response.ok) {
+            const data = await response.json();
+            currentPositionData.availableBalance = data.available || data.balance || 0;
+        }
+    } catch (error) {
+        console.error('Error fetching balance:', error);
+    }
+
+    positionElements.addToPositionModal.classList.add('active');
+}
+
+// Close add to position modal
+function closeAddToPositionModal() {
+    positionElements.addToPositionModal.classList.remove('active');
+    currentPositionData = null;
+}
+
+// Calculate quantity based on USDC input
+function calculateAddPositionQty() {
+    if (!currentPositionData || !positionElements.addPosUsdc) return;
+
+    const usdcAmount = parseFloat(positionElements.addPosUsdc.value) || 0;
+    const markPrice = currentPositionData.markPrice || 0;
+
+    if (markPrice > 0 && usdcAmount > 0) {
+        const qty = usdcAmount / markPrice;
+        positionElements.addPosCalcQty.textContent = qty.toFixed(6);
+    } else {
+        positionElements.addPosCalcQty.textContent = '0.00';
+    }
+}
+
+// Execute add to position
+async function executeAddToPosition() {
+    if (!currentPositionData) return;
+
+    const usdcAmount = parseFloat(positionElements.addPosUsdc.value);
+    if (!usdcAmount || usdcAmount <= 0) {
+        showToast('Please enter a valid USDC amount', 'error');
+        return;
+    }
+
+    const markPrice = currentPositionData.markPrice || 0;
+    if (markPrice <= 0) {
+        showToast('Invalid mark price', 'error');
+        return;
+    }
+
+    const quantity = usdcAmount / markPrice;
+
+    positionElements.confirmAddToPosition.disabled = true;
+    positionElements.confirmAddToPosition.innerHTML = '<span class="btn-loading"><span class="btn-spinner"></span>Adding...</span>';
+
+    try {
+        const response = await fetch(`/api/accounts/${currentPositionData.accountId}/add-to-position`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol: currentPositionData.symbol,
+                side: currentPositionData.side,
+                quantity: quantity
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showToast(`Added to ${currentPositionData.symbol} position`, 'success');
+            closeAddToPositionModal();
+            loadAllPositions(true);  // Force refresh to get updated data
+        } else {
+            showToast(data.error || 'Failed to add to position', 'error');
+        }
+    } catch (error) {
+        console.error('Error adding to position:', error);
+        showToast('Failed to add to position', 'error');
+    } finally {
+        positionElements.confirmAddToPosition.disabled = false;
+        positionElements.confirmAddToPosition.innerHTML = 'Add to Position';
+    }
+}
+
 // ==================== POSITION SIZE CALCULATOR ====================
 
 function setupPositionCalculator() {
@@ -695,257 +897,10 @@ function clearCalculatorResults() {
 // Initialize calculator when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     setupPositionCalculator();
-    setupAlertsModal();
-    registerServiceWorker();
-    loadNotifications();
 });
-
-// ==================== TRADE NOTIFICATIONS ====================
-
-function setupAlertsModal() {
-    const modal = document.getElementById('alertsModal');
-    const openBtn = document.getElementById('openAlertsBtn');
-    const closeBtn = document.getElementById('closeAlertsModal');
-    const closeFooterBtn = document.getElementById('closeAlertsBtn');
-    const notifToggle = document.getElementById('notificationsToggle');
-    const clearBtn = document.getElementById('clearNotificationsBtn');
-    const enableNotifBtn = document.getElementById('enableNotificationsBtn');
-
-    if (!modal) return;
-
-    // Open modal
-    if (openBtn) {
-        openBtn.addEventListener('click', () => {
-            modal.classList.add('active');
-            loadNotifications();
-            checkNotificationPermission();
-        });
-    }
-
-    // Close handlers
-    if (closeBtn) closeBtn.addEventListener('click', () => modal.classList.remove('active'));
-    if (closeFooterBtn) closeFooterBtn.addEventListener('click', () => modal.classList.remove('active'));
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) modal.classList.remove('active');
-    });
-
-    // Toggle notifications
-    if (notifToggle) {
-        notifToggle.addEventListener('change', toggleNotifications);
-    }
-
-    // Clear notifications
-    if (clearBtn) {
-        clearBtn.addEventListener('click', clearNotifications);
-    }
-
-    // Enable push notifications
-    if (enableNotifBtn) {
-        enableNotifBtn.addEventListener('click', enablePushNotifications);
-    }
-}
-
-async function loadNotifications() {
-    try {
-        const response = await fetch('/api/notifications');
-        const data = await response.json();
-
-        const notifications = data.notifications || [];
-        const enabled = data.enabled;
-        const alertsList = document.getElementById('alertsList');
-        const notifToggle = document.getElementById('notificationsToggle');
-
-        // Update toggle state
-        if (notifToggle) {
-            notifToggle.checked = enabled;
-        }
-
-        // Update list
-        if (alertsList) {
-            if (notifications.length === 0) {
-                alertsList.innerHTML = '<p class="empty-alerts">No notifications yet</p>';
-            } else {
-                alertsList.innerHTML = notifications.map(notif => {
-                    const isOpened = notif.event_type === 'opened';
-                    const eventClass = isOpened ? 'opened' : 'closed';
-                    const eventIcon = isOpened ?
-                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>' :
-                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg>';
-                    const priceStr = notif.entry_price ? `$${parseFloat(notif.entry_price).toFixed(4)}` : '';
-                    const timeStr = formatNotificationTime(notif.created_at);
-
-                    return `
-                        <div class="notification-item ${eventClass}">
-                            <div class="notification-icon">${eventIcon}</div>
-                            <div class="notification-info">
-                                <div class="notification-header">
-                                    <span class="notification-symbol">${notif.symbol}</span>
-                                    <span class="notification-side ${notif.side.toLowerCase()}">${notif.side}</span>
-                                    <span class="notification-event">${notif.event_type}</span>
-                                </div>
-                                <div class="notification-details">
-                                    <span class="notification-account">${notif.account_name || 'Unknown'}</span>
-                                    ${priceStr ? `<span class="notification-price">${priceStr}</span>` : ''}
-                                    <span class="notification-time">${timeStr}</span>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-            }
-        }
-    } catch (error) {
-        console.error('Error loading notifications:', error);
-    }
-}
-
-function formatNotificationTime(timestamp) {
-    if (!timestamp) return '';
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
-}
-
-async function toggleNotifications() {
-    const toggle = document.getElementById('notificationsToggle');
-    const enabled = toggle.checked;
-
-    try {
-        await fetch('/api/notifications/toggle', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ enabled })
-        });
-        showToast(enabled ? 'Notifications enabled' : 'Notifications disabled', 'success');
-    } catch (error) {
-        console.error('Error toggling notifications:', error);
-        showToast('Failed to update setting', 'error');
-        toggle.checked = !enabled; // Revert
-    }
-}
-
-async function clearNotifications() {
-    try {
-        await fetch('/api/notifications/clear', { method: 'POST' });
-        showToast('Notifications cleared', 'success');
-        loadNotifications();
-    } catch (error) {
-        console.error('Error clearing notifications:', error);
-        showToast('Failed to clear notifications', 'error');
-    }
-}
-
-// ==================== PWA & PUSH NOTIFICATIONS ====================
-
-async function registerServiceWorker() {
-    if ('serviceWorker' in navigator) {
-        try {
-            const registration = await navigator.serviceWorker.register('/static/service-worker.js');
-            console.log('Service Worker registered:', registration.scope);
-        } catch (error) {
-            console.error('Service Worker registration failed:', error);
-        }
-    }
-}
-
-function checkNotificationPermission() {
-    const statusEl = document.getElementById('notificationsStatus');
-    const enableBtn = document.getElementById('enableNotificationsBtn');
-
-    if (!('Notification' in window)) {
-        if (statusEl) statusEl.textContent = 'Push notifications not supported';
-        if (enableBtn) enableBtn.style.display = 'none';
-        return;
-    }
-
-    if (Notification.permission === 'granted') {
-        if (statusEl) statusEl.textContent = 'Notifications enabled';
-        if (enableBtn) enableBtn.style.display = 'none';
-    } else if (Notification.permission === 'denied') {
-        if (statusEl) statusEl.textContent = 'Notifications blocked. Enable in browser settings.';
-        if (enableBtn) enableBtn.style.display = 'none';
-    } else {
-        if (statusEl) statusEl.textContent = '';
-        if (enableBtn) enableBtn.style.display = 'flex';
-    }
-}
-
-async function enablePushNotifications() {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        showToast('Push notifications not supported', 'error');
-        return;
-    }
-
-    try {
-        // Request notification permission
-        const permission = await Notification.requestPermission();
-
-        if (permission !== 'granted') {
-            showToast('Notification permission denied', 'error');
-            checkNotificationPermission();
-            return;
-        }
-
-        // Get service worker registration
-        const registration = await navigator.serviceWorker.ready;
-
-        // Get VAPID public key
-        const vapidResponse = await fetch('/api/push/vapid-key');
-        const { publicKey } = await vapidResponse.json();
-
-        if (!publicKey) {
-            showToast('Push notifications not configured on server', 'error');
-            return;
-        }
-
-        // Subscribe to push
-        const subscription = await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(publicKey)
-        });
-
-        // Send subscription to server
-        const response = await fetch('/api/push/subscribe', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(subscription.toJSON())
-        });
-
-        if (response.ok) {
-            showToast('Push notifications enabled', 'success');
-            checkNotificationPermission();
-        } else {
-            showToast('Failed to enable notifications', 'error');
-        }
-
-    } catch (error) {
-        console.error('Error enabling push notifications:', error);
-        showToast('Failed to enable notifications', 'error');
-    }
-}
-
-function urlBase64ToUint8Array(base64String) {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-    for (let i = 0; i < rawData.length; ++i) {
-        outputArray[i] = rawData.charCodeAt(i);
-    }
-    return outputArray;
-}
 
 // Expose functions to global scope
 window.openClosePositionModal = openClosePositionModal;
 window.openEditStopLossModal = openEditStopLossModal;
 window.openEditTakeProfitModal = openEditTakeProfitModal;
-window.deleteAlert = deleteAlert;
+window.openAddToPositionModal = openAddToPositionModal;
