@@ -3446,9 +3446,16 @@ function updateQtLimitPreview() {
     const isValid = newSlPercent >= qt.sl_min_percent && newSlPercent <= qt.sl_max_percent;
     const validClass = isValid ? 'valid' : 'invalid';
 
+    // Calculate potential loss (risk amount is fixed based on account balance * risk%)
+    const potentialLoss = riskAmount;
+
     preview.innerHTML = `
         <div class="preview-row">
-            <span class="label">SL Price:</span>
+            <span class="label">Entry Price:</span>
+            <span class="value">$${formatQtPrice(limitPrice)}</span>
+        </div>
+        <div class="preview-row">
+            <span class="label">Stop Loss:</span>
             <span class="value">$${formatQtPrice(slPrice)}</span>
         </div>
         <div class="preview-row">
@@ -3457,7 +3464,11 @@ function updateQtLimitPreview() {
         </div>
         <div class="preview-row">
             <span class="label">Position Size:</span>
-            <span class="value">$${newPositionSize.toFixed(2)}</span>
+            <span class="value highlight">$${newPositionSize.toFixed(2)}</span>
+        </div>
+        <div class="preview-row">
+            <span class="label">Risk Amount:</span>
+            <span class="value risk">$${potentialLoss.toFixed(2)}</span>
         </div>
         ${!isValid ? `<div class="preview-warning">SL outside valid range (${qt.sl_min_percent}% - ${qt.sl_max_percent}%)</div>` : ''}
     `;

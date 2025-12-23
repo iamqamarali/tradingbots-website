@@ -460,6 +460,16 @@
     color: #ef4444;
 }
 
+.preview-row .value.highlight {
+    color: var(--accent-primary);
+    font-weight: 600;
+}
+
+.preview-row .value.risk {
+    color: #f97316;
+    font-weight: 600;
+}
+
 .preview-warning {
     background: rgba(239, 68, 68, 0.1);
     border: 1px solid #ef4444;

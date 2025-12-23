@@ -345,9 +345,16 @@ function updateLimitPreview() {
     const isValid = newSlPercent >= strategy.sl_min_percent && newSlPercent <= strategy.sl_max_percent;
     const validClass = isValid ? 'valid' : 'invalid';
 
+    // Calculate potential loss (risk amount is fixed based on account balance * risk%)
+    const potentialLoss = riskAmount;
+
     preview.innerHTML = `
         <div class="preview-row">
-            <span class="label">SL Price:</span>
+            <span class="label">Entry Price:</span>
+            <span class="value">$${formatPrice(limitPrice)}</span>
+        </div>
+        <div class="preview-row">
+            <span class="label">Stop Loss:</span>
             <span class="value">$${formatPrice(slPrice)}</span>
         </div>
         <div class="preview-row">
@@ -356,7 +363,11 @@ function updateLimitPreview() {
         </div>
         <div class="preview-row">
             <span class="label">Position Size:</span>
-            <span class="value">$${newPositionSize.toFixed(2)}</span>
+            <span class="value highlight">$${newPositionSize.toFixed(2)}</span>
+        </div>
+        <div class="preview-row">
+            <span class="label">Risk Amount:</span>
+            <span class="value risk">$${potentialLoss.toFixed(2)}</span>
         </div>
         ${!isValid ? `<div class="preview-warning">SL outside valid range (${strategy.sl_min_percent}% - ${strategy.sl_max_percent}%)</div>` : ''}
     `;
@@ -791,3 +802,9 @@ function showToast(message, type = 'info') {
 window.addEventListener('beforeunload', () => {
     Object.values(refreshIntervals).forEach(clearInterval);
 });
+
+// Expose functions for inline onclick handlers
+window.setOrderType = setOrderType;
+window.handleTradeClick = handleTradeClick;
+window.editStrategy = editStrategy;
+window.deleteStrategy = deleteStrategy;
