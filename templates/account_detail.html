@@ -80,6 +80,39 @@
             </div>
         </section>
 
+        <!-- Quick Trade Section -->
+        <section class="quick-trade-section" id="quickTradeSection">
+            <div class="section-header">
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                    </svg>
+                    Quick Trade
+                </h2>
+                <button class="action-btn" id="addQuickTradeBtn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19"/>
+                        <line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                    Add Quick Trade
+                </button>
+            </div>
+            <div class="quick-trade-grid" id="quickTradeGrid">
+                <!-- Quick trade cards will be inserted here -->
+            </div>
+            <div class="loading-state" id="quickTradeLoading" style="display: none;">
+                <div class="spinner"></div>
+                <p>Loading quick trades...</p>
+            </div>
+            <div class="empty-quick-trades" id="emptyQuickTrades" style="display: none;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                </svg>
+                <p>No quick trades configured for this account</p>
+                <button class="btn-secondary" id="addFirstQuickTradeBtn">Add Quick Trade</button>
+            </div>
+        </section>
+
         <!-- Open Positions & Orders Section -->
         <section class="positions-orders-section">
             <div class="section-header">
