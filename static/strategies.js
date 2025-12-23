@@ -82,7 +82,7 @@ function renderStrategies() {
     }
 
     emptyState.style.display = 'none';
-    strategyCount.textContent = `${strategies.length} ${strategies.length === 1 ? 'strategy' : 'strategies'}`;
+    strategyCount.textContent = `${strategies.length} quick ${strategies.length === 1 ? 'trade' : 'trades'}`;
 
     strategiesGrid.innerHTML = strategies.map(createStrategyCard).join('');
 }

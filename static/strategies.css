@@ -85,7 +85,7 @@
 
 .strategy-actions button {
     background: transparent;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border-primary);
     color: var(--text-secondary);
     padding: 0.375rem 0.75rem;
     border-radius: 6px;
@@ -363,7 +363,7 @@
     display: flex;
     justify-content: space-between;
     padding: 0.5rem 0;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-primary);
     font-size: 0.9rem;
 }
 
@@ -503,6 +503,41 @@
     gap: 1rem;
 }
 
+/* Form Select Styling */
+.form-group select {
+    width: 100%;
+    padding: 12px 16px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-sm, 6px);
+    font-family: var(--font-primary);
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    outline: none;
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a1a1aa' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 36px;
+}
+
+.form-group select:focus {
+    border-color: var(--accent-primary);
+}
+
+.form-group select option {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    padding: 8px;
+}
+
+/* Modal form spacing fix */
+.modal-body .form-group:last-child {
+    margin-bottom: 0;
+}
+
 /* Loading State */
 .loading-state {
     grid-column: 1 / -1;
@@ -517,7 +552,7 @@
 .loading-state .spinner {
     width: 40px;
     height: 40px;
-    border: 3px solid var(--border-color);
+    border: 3px solid var(--border-primary);
     border-top-color: var(--accent-primary);
     border-radius: 50%;
     animation: spin 1s linear infinite;

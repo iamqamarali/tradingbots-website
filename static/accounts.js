@@ -4,6 +4,8 @@ let accountsData = [];
 let accountToDelete = null;
 let accountToEdit = null;
 let availableBalance = 0;  // Store available balance for Add to Position modal
+let usdtBalance = 0;  // Store USDT balance
+let usdcBalance = 0;  // Store USDC balance
 
 // Pagination state for closed positions (trade history)
 let tradesPage = 1;
@@ -600,6 +602,10 @@ async function loadBalance() {
 
             // Store available balance for Add to Position modal
             availableBalance = data.available_balance || data.balance || 0;
+
+            // Store individual balances for currency-specific display
+            usdtBalance = data.usdt_balance || 0;
+            usdcBalance = data.usdc_balance || 0;
 
             // Update starting balance if available
             if (data.starting_balance !== undefined) {
@@ -2595,26 +2601,34 @@ function updateTradeInfo() {
     const sizeInput = document.getElementById('tradeSize');
     const size = parseFloat(sizeInput?.value) || 0;
     const leverage = tradeState.leverage;
-    const available = tradeState.availableBalance || 0;
+
+    // Get the correct balance based on selected symbol
+    const symbol = tradeState.symbol || '';
+    const isUsdt = symbol.endsWith('USDT');
+    const currency = isUsdt ? 'USDT' : 'USDC';
+    const available = isUsdt ? (usdtBalance || 0) : (usdcBalance || 0);
+
+    // Update tradeState with correct balance
+    tradeState.availableBalance = available;
 
     // Available balance
     const availEl = document.getElementById('tradeAvailable');
     if (availEl) {
-        availEl.textContent = `${available.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC`;
+        availEl.textContent = `${available.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
     }
 
     // Max position size = Available * Leverage
     const maxSize = available * leverage;
     const maxEl = document.getElementById('tradeMax');
     if (maxEl) {
-        maxEl.textContent = `${maxSize.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC`;
+        maxEl.textContent = `${maxSize.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
     }
 
     // Cost = Size / Leverage (margin required)
     const cost = size / leverage;
     const costEl = document.getElementById('tradeCost');
     if (costEl) {
-        costEl.textContent = `${cost.toFixed(2)} USDC`;
+        costEl.textContent = `${cost.toFixed(2)} ${currency}`;
     }
 }
 
@@ -3127,4 +3141,707 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Expose to global scope
 window.openJournalModal = openJournalModal;
+
+
+// ==================== QUICK TRADE SECTION ====================
+
+let quickTrades = [];
+let qtRefreshIntervals = {};
+let qtOrderTypes = {};
+let editingQuickTradeId = null;
+let pendingQtTrade = null;
+let pendingQtLimitOrder = null;
+
+// DOM Elements
+const quickTradeGrid = document.getElementById('quickTradeGrid');
+const quickTradeLoading = document.getElementById('quickTradeLoading');
+const emptyQuickTrades = document.getElementById('emptyQuickTrades');
+
+// Modals
+const quickTradeModal = document.getElementById('quickTradeModal');
+const qtTradeConfirmModal = document.getElementById('qtTradeConfirmModal');
+const qtLimitPriceModal = document.getElementById('qtLimitPriceModal');
+
+// Load quick trades for this account
+async function loadQuickTrades() {
+    if (!quickTradeGrid) return;
+
+    quickTradeLoading.style.display = 'flex';
+    emptyQuickTrades.style.display = 'none';
+    quickTradeGrid.innerHTML = '';
+
+    try {
+        const response = await fetch(`/api/accounts/${ACCOUNT_ID}/strategies`);
+        if (!response.ok) throw new Error('Failed to load quick trades');
+        quickTrades = await response.json();
+        renderQuickTrades();
+
+        // Start refresh intervals for each quick trade
+        quickTrades.forEach(qt => startQuickTradeRefresh(qt.id));
+    } catch (error) {
+        console.error('Error loading quick trades:', error);
+        showToast('Failed to load quick trades', 'error');
+        quickTradeLoading.style.display = 'none';
+    }
+}
+
+// Render quick trades to the grid
+function renderQuickTrades() {
+    quickTradeLoading.style.display = 'none';
+
+    if (quickTrades.length === 0) {
+        quickTradeGrid.innerHTML = '';
+        emptyQuickTrades.style.display = 'flex';
+        return;
+    }
+
+    emptyQuickTrades.style.display = 'none';
+    quickTradeGrid.innerHTML = quickTrades.map(createQuickTradeCard).join('');
+}
+
+// Create quick trade card HTML
+function createQuickTradeCard(qt) {
+    return `
+        <div class="quick-trade-card" data-qt-id="${qt.id}">
+            <div class="card-header">
+                <div class="card-name">${escapeHtml(qt.name)}</div>
+                <div class="card-actions">
+                    <button class="edit-btn" onclick="editQuickTrade(${qt.id})">Edit</button>
+                    <button class="delete-btn" onclick="deleteQuickTrade(${qt.id})">Delete</button>
+                </div>
+            </div>
+
+            <div class="card-info">
+                <div class="info-row">
+                    <span class="label">Symbol:</span>
+                    <span class="value">${qt.symbol}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">EMA:</span>
+                    <span class="value">${qt.fast_ema}/${qt.slow_ema}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Timeframe:</span>
+                    <span class="value">${qt.timeframe}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Risk:</span>
+                    <span class="value">${qt.risk_percent}%</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Leverage:</span>
+                    <span class="value">${qt.leverage}x</span>
+                </div>
+            </div>
+
+            <div class="card-data" id="qtData-${qt.id}">
+                <div class="data-loading">Loading market data...</div>
+            </div>
+
+            <div class="order-type-toggle" id="qtOrderTypeToggle-${qt.id}">
+                <button class="toggle-btn active" data-type="MARKET" onclick="setQtOrderType(${qt.id}, 'MARKET')">Market</button>
+                <button class="toggle-btn" data-type="LIMIT" onclick="setQtOrderType(${qt.id}, 'LIMIT')">Limit</button>
+            </div>
+
+            <div class="trade-buttons">
+                <button class="take-long-btn" id="qtLongBtn-${qt.id}"
+                        onclick="handleQtTradeClick(${qt.id}, 'LONG')" disabled>
+                    Take Long
+                </button>
+                <button class="take-short-btn" id="qtShortBtn-${qt.id}"
+                        onclick="handleQtTradeClick(${qt.id}, 'SHORT')" disabled>
+                    Take Short
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+// Start auto-refresh for a quick trade
+function startQuickTradeRefresh(qtId) {
+    // Clear existing interval if any
+    if (qtRefreshIntervals[qtId]) {
+        clearInterval(qtRefreshIntervals[qtId]);
+    }
+
+    // Initial fetch
+    fetchQuickTradeData(qtId);
+
+    // Set up 30-second interval
+    qtRefreshIntervals[qtId] = setInterval(() => {
+        fetchQuickTradeData(qtId);
+    }, 30000);
+}
+
+// Fetch real-time data for a quick trade
+async function fetchQuickTradeData(qtId) {
+    const dataContainer = document.getElementById(`qtData-${qtId}`);
+    if (!dataContainer) return;
+
+    try {
+        const response = await fetch(`/api/strategies/${qtId}/data`);
+        const data = await response.json();
+
+        if (!response.ok) {
+            dataContainer.innerHTML = `<div class="data-error">${data.error || 'Failed to load data'}</div>`;
+            disableQtTradeButtons(qtId);
+            return;
+        }
+
+        // Store data for trade confirmation
+        dataContainer.dataset.qtData = JSON.stringify(data);
+
+        const qt = quickTrades.find(q => q.id === qtId);
+        const trendClass = data.trend === 'BULLISH' ? 'trend-bullish' : 'trend-bearish';
+        const crossoverIndicator = data.crossover_just_happened ? '<span class="crossover-new">NEW</span>' : '';
+        const crossoverTimeDisplay = data.crossover_time ? formatQtCrossoverTime(data.crossover_time) : '';
+
+        dataContainer.innerHTML = `
+            <div class="data-row">
+                <span class="label">Price:</span>
+                <span class="value price">$${formatQtPrice(data.current_price)}</span>
+            </div>
+            <div class="data-row">
+                <span class="label">Fast EMA (${qt.fast_ema}):</span>
+                <span class="value">${formatQtPrice(data.fast_ema)}</span>
+            </div>
+            <div class="data-row">
+                <span class="label">Slow EMA (${qt.slow_ema}):</span>
+                <span class="value">${formatQtPrice(data.slow_ema)}</span>
+            </div>
+            <div class="data-row">
+                <span class="label">Trend:</span>
+                <span class="value ${trendClass}">${data.trend} ${crossoverIndicator}</span>
+            </div>
+            ${crossoverTimeDisplay ? `<div class="crossover-time">Crossover: ${crossoverTimeDisplay}</div>` : ''}
+            <div class="data-row">
+                <span class="label">Balance:</span>
+                <span class="value">$${data.balance.toFixed(2)}</span>
+            </div>
+            <div class="data-row">
+                <span class="label">Risk Amount:</span>
+                <span class="value">$${data.risk_amount.toFixed(2)}</span>
+            </div>
+
+            <div class="direction-section">
+                <div class="direction-header long">LONG (Crossover SL)</div>
+                <div class="data-row">
+                    <span class="label">SL:</span>
+                    <span class="value">$${formatQtPrice(data.long.sl_price)} (${data.long.sl_percent.toFixed(2)}%)</span>
+                </div>
+                <div class="data-row">
+                    <span class="label">Size:</span>
+                    <span class="value ${data.long.is_valid ? 'valid' : 'invalid'}">$${data.long.position_size.toFixed(2)}</span>
+                </div>
+                ${!data.long.is_valid ? `<div class="invalid-warning">${data.long.invalid_reason}</div>` : ''}
+            </div>
+
+            <div class="direction-section">
+                <div class="direction-header short">SHORT (Crossover SL)</div>
+                <div class="data-row">
+                    <span class="label">SL:</span>
+                    <span class="value">$${formatQtPrice(data.short.sl_price)} (${data.short.sl_percent.toFixed(2)}%)</span>
+                </div>
+                <div class="data-row">
+                    <span class="label">Size:</span>
+                    <span class="value ${data.short.is_valid ? 'valid' : 'invalid'}">$${data.short.position_size.toFixed(2)}</span>
+                </div>
+                ${!data.short.is_valid ? `<div class="invalid-warning">${data.short.invalid_reason}</div>` : ''}
+            </div>
+        `;
+
+        // Enable/disable trade buttons based on validity
+        const longBtn = document.getElementById(`qtLongBtn-${qtId}`);
+        const shortBtn = document.getElementById(`qtShortBtn-${qtId}`);
+
+        if (longBtn) longBtn.disabled = !data.long.is_valid;
+        if (shortBtn) shortBtn.disabled = !data.short.is_valid;
+
+    } catch (error) {
+        console.error(`Error fetching data for quick trade ${qtId}:`, error);
+        dataContainer.innerHTML = `<div class="data-error">Failed to load market data</div>`;
+        disableQtTradeButtons(qtId);
+    }
+}
+
+// Disable trade buttons
+function disableQtTradeButtons(qtId) {
+    const longBtn = document.getElementById(`qtLongBtn-${qtId}`);
+    const shortBtn = document.getElementById(`qtShortBtn-${qtId}`);
+    if (longBtn) longBtn.disabled = true;
+    if (shortBtn) shortBtn.disabled = true;
+}
+
+// Set order type for a quick trade (Market/Limit toggle)
+function setQtOrderType(qtId, type) {
+    qtOrderTypes[qtId] = type;
+
+    const toggleContainer = document.getElementById(`qtOrderTypeToggle-${qtId}`);
+    if (toggleContainer) {
+        toggleContainer.querySelectorAll('.toggle-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.type === type);
+        });
+    }
+}
+
+// Get order type for a quick trade
+function getQtOrderType(qtId) {
+    return qtOrderTypes[qtId] || 'MARKET';
+}
+
+// Handle trade button click
+function handleQtTradeClick(qtId, direction) {
+    const orderType = getQtOrderType(qtId);
+
+    if (orderType === 'LIMIT') {
+        openQtLimitPriceModal(qtId, direction);
+    } else {
+        openQtTradeConfirm(qtId, direction, 'MARKET', null);
+    }
+}
+
+// Open limit price modal
+function openQtLimitPriceModal(qtId, direction) {
+    const dataContainer = document.getElementById(`qtData-${qtId}`);
+    if (!dataContainer || !dataContainer.dataset.qtData) {
+        showToast('Market data not loaded', 'error');
+        return;
+    }
+
+    const qtData = JSON.parse(dataContainer.dataset.qtData);
+    const qt = quickTrades.find(q => q.id === qtId);
+
+    pendingQtLimitOrder = { qtId, direction, qtData, qt };
+
+    document.getElementById('qtLimitPriceModalTitle').textContent = `Enter Limit Price for ${direction}`;
+    document.getElementById('qtLimitModalCurrentPrice').textContent = `$${formatQtPrice(qtData.current_price)}`;
+    document.getElementById('qtLimitPriceInput').value = '';
+    document.getElementById('qtLimitCalcPreview').innerHTML = '';
+
+    qtLimitPriceModal.classList.add('active');
+    document.getElementById('qtLimitPriceInput').focus();
+}
+
+// Update limit price preview
+function updateQtLimitPreview() {
+    if (!pendingQtLimitOrder) return;
+
+    const limitPriceInput = document.getElementById('qtLimitPriceInput');
+    const limitPrice = parseFloat(limitPriceInput.value);
+    const preview = document.getElementById('qtLimitCalcPreview');
+
+    if (!limitPrice || limitPrice <= 0) {
+        preview.innerHTML = '';
+        return;
+    }
+
+    const { direction, qtData, qt } = pendingQtLimitOrder;
+    const directionData = direction === 'LONG' ? qtData.long : qtData.short;
+
+    const slPrice = directionData.sl_price;
+    const newSlPercent = Math.abs(limitPrice - slPrice) / limitPrice * 100;
+    const riskAmount = qtData.risk_amount;
+    const newPositionSize = riskAmount / (newSlPercent / 100);
+
+    const isValid = newSlPercent >= qt.sl_min_percent && newSlPercent <= qt.sl_max_percent;
+    const validClass = isValid ? 'valid' : 'invalid';
+
+    preview.innerHTML = `
+        <div class="preview-row">
+            <span class="label">SL Price:</span>
+            <span class="value">$${formatQtPrice(slPrice)}</span>
+        </div>
+        <div class="preview-row">
+            <span class="label">SL Distance:</span>
+            <span class="value ${validClass}">${newSlPercent.toFixed(2)}%</span>
+        </div>
+        <div class="preview-row">
+            <span class="label">Position Size:</span>
+            <span class="value">$${newPositionSize.toFixed(2)}</span>
+        </div>
+        ${!isValid ? `<div class="preview-warning">SL outside valid range (${qt.sl_min_percent}% - ${qt.sl_max_percent}%)</div>` : ''}
+    `;
+
+    document.getElementById('confirmQtLimitPriceBtn').disabled = !isValid;
+}
+
+// Confirm limit price and proceed to trade confirmation
+function confirmQtLimitPrice() {
+    if (!pendingQtLimitOrder) return;
+
+    const limitPrice = parseFloat(document.getElementById('qtLimitPriceInput').value);
+    if (!limitPrice || limitPrice <= 0) {
+        showToast('Please enter a valid limit price', 'error');
+        return;
+    }
+
+    const { qtId, direction, qtData, qt } = pendingQtLimitOrder;
+    const directionData = direction === 'LONG' ? qtData.long : qtData.short;
+
+    const slPrice = directionData.sl_price;
+    const newSlPercent = Math.abs(limitPrice - slPrice) / limitPrice * 100;
+
+    if (newSlPercent < qt.sl_min_percent || newSlPercent > qt.sl_max_percent) {
+        showToast('SL outside valid range', 'error');
+        return;
+    }
+
+    qtLimitPriceModal.classList.remove('active');
+    openQtTradeConfirm(qtId, direction, 'LIMIT', limitPrice);
+}
+
+// Close limit price modal
+function closeQtLimitPriceModal() {
+    qtLimitPriceModal.classList.remove('active');
+    pendingQtLimitOrder = null;
+}
+
+// Open trade confirmation modal
+function openQtTradeConfirm(qtId, direction, orderType = 'MARKET', limitPrice = null) {
+    const dataContainer = document.getElementById(`qtData-${qtId}`);
+    if (!dataContainer || !dataContainer.dataset.qtData) {
+        showToast('Market data not loaded', 'error');
+        return;
+    }
+
+    const qtData = JSON.parse(dataContainer.dataset.qtData);
+    const qt = quickTrades.find(q => q.id === qtId);
+    const directionData = direction === 'LONG' ? qtData.long : qtData.short;
+
+    if (orderType === 'MARKET' && !directionData.is_valid) {
+        showToast('Trade conditions not met', 'error');
+        return;
+    }
+
+    let entryPrice, slPercent, positionSize;
+
+    if (orderType === 'LIMIT' && limitPrice) {
+        entryPrice = limitPrice;
+        slPercent = Math.abs(limitPrice - directionData.sl_price) / limitPrice * 100;
+        positionSize = qtData.risk_amount / (slPercent / 100);
+    } else {
+        entryPrice = qtData.current_price;
+        slPercent = directionData.sl_percent;
+        positionSize = directionData.position_size;
+    }
+
+    pendingQtTrade = {
+        qtId,
+        direction,
+        data: qtData,
+        qt,
+        orderType,
+        limitPrice,
+        entryPrice,
+        slPercent,
+        positionSize
+    };
+
+    document.getElementById('qtTradeConfirmTitle').textContent = `Confirm ${direction} Trade`;
+
+    const orderTypeBadge = document.getElementById('qtConfirmOrderType');
+    orderTypeBadge.textContent = orderType;
+    orderTypeBadge.className = `order-type-badge ${orderType.toLowerCase()}`;
+
+    const directionBadge = document.getElementById('qtConfirmDirection');
+    directionBadge.textContent = direction;
+    directionBadge.className = `direction-badge ${direction.toLowerCase()}`;
+
+    document.getElementById('qtConfirmSymbol').textContent = qt.symbol;
+    document.getElementById('qtConfirmEntry').textContent = `$${formatQtPrice(entryPrice)}`;
+    document.getElementById('qtConfirmSL').textContent = `$${formatQtPrice(directionData.sl_price)}`;
+    document.getElementById('qtConfirmSLPercent').textContent = `${slPercent.toFixed(2)}%`;
+    document.getElementById('qtConfirmSize').textContent = `$${positionSize.toFixed(2)}`;
+    document.getElementById('qtConfirmRisk').textContent = `$${qtData.risk_amount.toFixed(2)}`;
+
+    const executeBtn = document.getElementById('executeQtTradeBtn');
+    executeBtn.style.background = direction === 'LONG'
+        ? 'linear-gradient(135deg, #22c55e, #16a34a)'
+        : 'linear-gradient(135deg, #ef4444, #dc2626)';
+
+    qtTradeConfirmModal.classList.add('active');
+}
+
+// Execute trade
+async function executeQtTrade() {
+    if (!pendingQtTrade) return;
+
+    const btn = document.getElementById('executeQtTradeBtn');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Executing...';
+
+    try {
+        const requestBody = {
+            direction: pendingQtTrade.direction,
+            order_type: pendingQtTrade.orderType || 'MARKET'
+        };
+
+        if (pendingQtTrade.orderType === 'LIMIT' && pendingQtTrade.limitPrice) {
+            requestBody.limit_price = pendingQtTrade.limitPrice;
+        }
+
+        const response = await fetch(`/api/strategies/${pendingQtTrade.qtId}/trade`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            const orderTypeLabel = pendingQtTrade.orderType === 'LIMIT' ? 'Limit' : 'Market';
+            if (data.warning) {
+                showToast(`${orderTypeLabel} ${pendingQtTrade.direction} position opened, but SL failed! Set SL manually.`, 'warning');
+            } else {
+                showToast(`${orderTypeLabel} ${pendingQtTrade.direction} trade executed successfully!`, 'success');
+            }
+            closeQtTradeConfirmModal();
+            fetchQuickTradeData(pendingQtTrade.qtId);
+            // Also refresh positions
+            if (typeof loadPositions === 'function') loadPositions();
+        } else {
+            showToast(data.error || 'Trade execution failed', 'error');
+        }
+    } catch (error) {
+        console.error('Error executing trade:', error);
+        showToast('Failed to execute trade', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+        pendingQtTrade = null;
+    }
+}
+
+// Close trade confirmation modal
+function closeQtTradeConfirmModal() {
+    qtTradeConfirmModal.classList.remove('active');
+    pendingQtTrade = null;
+}
+
+// Open add quick trade modal
+function openAddQuickTradeModal() {
+    editingQuickTradeId = null;
+    document.getElementById('quickTradeModalTitle').textContent = 'Add Quick Trade';
+    clearQuickTradeForm();
+    quickTradeModal.classList.add('active');
+}
+
+// Edit quick trade
+function editQuickTrade(qtId) {
+    const qt = quickTrades.find(q => q.id === qtId);
+    if (!qt) return;
+
+    editingQuickTradeId = qtId;
+    document.getElementById('quickTradeModalTitle').textContent = 'Edit Quick Trade';
+
+    document.getElementById('qtName').value = qt.name;
+    document.getElementById('qtSymbol').value = qt.symbol;
+    document.getElementById('qtFastEma').value = qt.fast_ema;
+    document.getElementById('qtSlowEma').value = qt.slow_ema;
+    document.getElementById('qtRiskPercent').value = qt.risk_percent;
+    document.getElementById('qtLeverage').value = qt.leverage;
+    document.getElementById('qtSlLookback').value = qt.sl_lookback;
+    document.getElementById('qtTimeframe').value = qt.timeframe;
+    document.getElementById('qtSlMinPercent').value = qt.sl_min_percent;
+    document.getElementById('qtSlMaxPercent').value = qt.sl_max_percent;
+
+    quickTradeModal.classList.add('active');
+}
+
+// Clear quick trade form
+function clearQuickTradeForm() {
+    document.getElementById('qtName').value = '';
+    document.getElementById('qtSymbol').value = 'BTCUSDC';
+    document.getElementById('qtFastEma').value = '7';
+    document.getElementById('qtSlowEma').value = '19';
+    document.getElementById('qtRiskPercent').value = '1.3';
+    document.getElementById('qtLeverage').value = '5';
+    document.getElementById('qtSlLookback').value = '4';
+    document.getElementById('qtTimeframe').value = '30m';
+    document.getElementById('qtSlMinPercent').value = '0.25';
+    document.getElementById('qtSlMaxPercent').value = '1.81';
+}
+
+// Close quick trade modal
+function closeQuickTradeModal() {
+    quickTradeModal.classList.remove('active');
+    editingQuickTradeId = null;
+}
+
+// Save quick trade
+async function saveQuickTrade() {
+    const name = document.getElementById('qtName').value.trim();
+
+    if (!name) {
+        showToast('Please enter a name', 'error');
+        return;
+    }
+
+    const qtData = {
+        name,
+        account_id: ACCOUNT_ID,
+        symbol: document.getElementById('qtSymbol').value.trim().toUpperCase(),
+        fast_ema: parseInt(document.getElementById('qtFastEma').value),
+        slow_ema: parseInt(document.getElementById('qtSlowEma').value),
+        risk_percent: parseFloat(document.getElementById('qtRiskPercent').value),
+        leverage: parseInt(document.getElementById('qtLeverage').value),
+        sl_lookback: parseInt(document.getElementById('qtSlLookback').value),
+        timeframe: document.getElementById('qtTimeframe').value,
+        sl_min_percent: parseFloat(document.getElementById('qtSlMinPercent').value),
+        sl_max_percent: parseFloat(document.getElementById('qtSlMaxPercent').value)
+    };
+
+    const btn = document.getElementById('saveQuickTradeBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    try {
+        const url = editingQuickTradeId
+            ? `/api/strategies/${editingQuickTradeId}`
+            : '/api/strategies';
+        const method = editingQuickTradeId ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(qtData)
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showToast(editingQuickTradeId ? 'Quick trade updated!' : 'Quick trade created!', 'success');
+            closeQuickTradeModal();
+
+            if (editingQuickTradeId && qtRefreshIntervals[editingQuickTradeId]) {
+                clearInterval(qtRefreshIntervals[editingQuickTradeId]);
+            }
+
+            await loadQuickTrades();
+        } else {
+            showToast(data.error || 'Failed to save quick trade', 'error');
+        }
+    } catch (error) {
+        console.error('Error saving quick trade:', error);
+        showToast('Failed to save quick trade', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save';
+    }
+}
+
+// Delete quick trade
+async function deleteQuickTrade(qtId) {
+    const qt = quickTrades.find(q => q.id === qtId);
+    if (!confirm(`Delete quick trade "${qt?.name || qtId}"?`)) return;
+
+    try {
+        const response = await fetch(`/api/strategies/${qtId}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            showToast('Quick trade deleted', 'success');
+
+            if (qtRefreshIntervals[qtId]) {
+                clearInterval(qtRefreshIntervals[qtId]);
+                delete qtRefreshIntervals[qtId];
+            }
+
+            quickTrades = quickTrades.filter(q => q.id !== qtId);
+            renderQuickTrades();
+        } else {
+            const data = await response.json();
+            showToast(data.error || 'Failed to delete quick trade', 'error');
+        }
+    } catch (error) {
+        console.error('Error deleting quick trade:', error);
+        showToast('Failed to delete quick trade', 'error');
+    }
+}
+
+// Helper: Format price
+function formatQtPrice(price) {
+    if (price >= 1000) return price.toFixed(2);
+    if (price >= 1) return price.toFixed(4);
+    return price.toFixed(6);
+}
+
+// Helper: Format crossover time
+function formatQtCrossoverTime(timeStr) {
+    if (!timeStr || timeStr === 'Just now') return 'Just now';
+    try {
+        const date = new Date(timeStr);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
+
+        if (diffMins < 1) return 'Just now';
+        if (diffMins < 60) return `${diffMins}m ago`;
+        if (diffHours < 24) return `${diffHours}h ${diffMins % 60}m ago`;
+        if (diffDays < 7) return `${diffDays}d ago`;
+        return date.toLocaleDateString();
+    } catch {
+        return timeStr;
+    }
+}
+
+// Setup Quick Trade event listeners
+function setupQuickTradeListeners() {
+    // Add button
+    document.getElementById('addQuickTradeBtn')?.addEventListener('click', openAddQuickTradeModal);
+    document.getElementById('refreshQuickTradesBtn')?.addEventListener('click', () => {
+        quickTrades.forEach(qt => fetchQuickTradeData(qt.id));
+        showToast('Refreshing quick trades...', 'info');
+    });
+
+    // Quick trade modal
+    document.getElementById('closeQuickTradeModal')?.addEventListener('click', closeQuickTradeModal);
+    document.getElementById('cancelQuickTradeBtn')?.addEventListener('click', closeQuickTradeModal);
+    document.getElementById('saveQuickTradeBtn')?.addEventListener('click', saveQuickTrade);
+
+    // Trade confirm modal
+    document.getElementById('closeQtTradeConfirmModal')?.addEventListener('click', closeQtTradeConfirmModal);
+    document.getElementById('cancelQtTradeBtn')?.addEventListener('click', closeQtTradeConfirmModal);
+    document.getElementById('executeQtTradeBtn')?.addEventListener('click', executeQtTrade);
+
+    // Limit price modal
+    document.getElementById('closeQtLimitPriceModal')?.addEventListener('click', closeQtLimitPriceModal);
+    document.getElementById('cancelQtLimitPriceBtn')?.addEventListener('click', closeQtLimitPriceModal);
+    document.getElementById('confirmQtLimitPriceBtn')?.addEventListener('click', confirmQtLimitPrice);
+    document.getElementById('qtLimitPriceInput')?.addEventListener('input', updateQtLimitPreview);
+
+    // Close modals on overlay click
+    quickTradeModal?.addEventListener('click', (e) => {
+        if (e.target === quickTradeModal) closeQuickTradeModal();
+    });
+    qtTradeConfirmModal?.addEventListener('click', (e) => {
+        if (e.target === qtTradeConfirmModal) closeQtTradeConfirmModal();
+    });
+    qtLimitPriceModal?.addEventListener('click', (e) => {
+        if (e.target === qtLimitPriceModal) closeQtLimitPriceModal();
+    });
+}
+
+// Initialize Quick Trade section
+document.addEventListener('DOMContentLoaded', () => {
+    if (document.getElementById('quickTradeGrid')) {
+        setupQuickTradeListeners();
+        loadQuickTrades();
+    }
+});
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+    Object.values(qtRefreshIntervals).forEach(clearInterval);
+});
+
+// Expose functions to global scope
+window.editQuickTrade = editQuickTrade;
+window.deleteQuickTrade = deleteQuickTrade;
+window.setQtOrderType = setQtOrderType;
+window.handleQtTradeClick = handleQtTradeClick;
 

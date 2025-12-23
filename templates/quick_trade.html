@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Strategies - Trading Bot Manager</title>
+    <title>Quick Trade - Trading Bot Manager</title>
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="/static/strategies.css">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -17,29 +17,29 @@
             <!-- Header -->
             <header class="page-header">
                 <div class="header-left">
-                    <h1>Trading Strategies</h1>
+                    <h1>Quick Trade</h1>
                 </div>
                 <button class="add-strategy-btn" id="addStrategyBtn">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="12" y1="5" x2="12" y2="19"></line>
                         <line x1="5" y1="12" x2="19" y2="12"></line>
                     </svg>
-                    Add Strategy
+                    Add Quick Trade
                 </button>
             </header>
 
             <!-- Strategies Grid -->
             <div class="strategies-main">
                 <div class="section-header">
-                    <h2>Your Strategies</h2>
-                    <span class="strategy-count" id="strategyCount">0 strategies</span>
+                    <h2>Your Quick Trades</h2>
+                    <span class="strategy-count" id="strategyCount">0 quick trades</span>
                 </div>
 
                 <div class="strategies-grid" id="strategiesGrid">
                     <!-- Strategy cards will be inserted here -->
                     <div class="loading-state" id="loadingState">
                         <div class="spinner"></div>
-                        <p>Loading strategies...</p>
+                        <p>Loading quick trades...</p>
                     </div>
                 </div>
 
@@ -48,14 +48,14 @@
                         <path d="M3 3v18h18"/>
                         <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/>
                     </svg>
-                    <h3>No Strategies Yet</h3>
-                    <p>Create a manual trading strategy to execute EMA crossover trades with one click.</p>
+                    <h3>No Quick Trades Yet</h3>
+                    <p>Create a quick trade setup to execute EMA crossover trades with one click.</p>
                     <button class="btn-primary" onclick="document.getElementById('addStrategyBtn').click()">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <line x1="12" y1="5" x2="12" y2="19"></line>
                             <line x1="5" y1="12" x2="19" y2="12"></line>
                         </svg>
-                        Create Your First Strategy
+                        Create Your First Quick Trade
                     </button>
                 </div>
             </div>
@@ -66,7 +66,7 @@
     <div class="modal-overlay" id="strategyModal">
         <div class="modal">
             <div class="modal-header">
-                <h3 id="strategyModalTitle">Add Strategy</h3>
+                <h3 id="strategyModalTitle">Add Quick Trade</h3>
                 <button class="modal-close" id="closeStrategyModal">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"/>
@@ -76,7 +76,7 @@
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label for="strategyName">Strategy Name</label>
+                    <label for="strategyName">Name</label>
                     <input type="text" id="strategyName" placeholder="e.g., BTC 7/19 EMA">
                 </div>
                 <div class="form-group">
@@ -139,7 +139,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn-secondary" id="cancelStrategyBtn">Cancel</button>
-                <button class="btn-primary" id="saveStrategyBtn">Save Strategy</button>
+                <button class="btn-primary" id="saveStrategyBtn">Save</button>
             </div>
         </div>
     </div>

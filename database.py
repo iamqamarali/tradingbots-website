@@ -2372,6 +2372,50 @@ def get_all_strategies():
         return strategies
 
 
+def get_strategies_by_account(account_id):
+    """Get all strategies for a specific account."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT s.*, a.name as account_name, a.is_testnet
+            FROM strategies s
+            JOIN accounts a ON s.account_id = a.id
+            WHERE s.account_id = ?
+            ORDER BY s.created_at DESC
+        ''', (account_id,))
+
+        strategies = []
+        for row in cursor.fetchall():
+            strategies.append({
+                'id': row['id'],
+                'name': row['name'],
+                'account_id': row['account_id'],
+                'account_name': row['account_name'],
+                'is_testnet': bool(row['is_testnet']),
+                'symbol': row['symbol'],
+                'fast_ema': row['fast_ema'],
+                'slow_ema': row['slow_ema'],
+                'risk_percent': row['risk_percent'],
+                'sl_lookback': row['sl_lookback'],
+                'sl_min_percent': row['sl_min_percent'],
+                'sl_max_percent': row['sl_max_percent'],
+                'leverage': row['leverage'],
+                'timeframe': row['timeframe'],
+                'is_active': bool(row['is_active']),
+                'crossover_direction': row['crossover_direction'],
+                'crossover_sl_long': row['crossover_sl_long'],
+                'crossover_sl_short': row['crossover_sl_short'],
+                'crossover_time': row['crossover_time'],
+                'created_at': row['created_at'],
+                'updated_at': row['updated_at']
+            })
+
+        conn.close()
+        return strategies
+
+
 def get_strategy(strategy_id):
     """Get a single strategy by ID."""
     with db_lock:

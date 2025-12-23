@@ -1074,11 +1074,11 @@ def charts_page():
     return render_template('charts.html', active_page='charts')
 
 
-@app.route('/strategies')
+@app.route('/quick-trade')
 @login_required
-def strategies_page():
-    """Render the strategies page."""
-    return render_template('strategies.html', active_page='strategies')
+def quick_trade_page():
+    """Render the quick trade page."""
+    return render_template('quick_trade.html', active_page='quick-trade')
 
 
 # ==================== SETUPS API ====================
@@ -1432,6 +1432,18 @@ def calculate_ema(data, period):
 def api_get_strategies():
     """Get all strategies."""
     strategies = db.get_all_strategies()
+    return jsonify(strategies)
+
+
+@app.route('/api/accounts/<int:account_id>/strategies', methods=['GET'])
+@login_required
+def api_get_account_strategies(account_id):
+    """Get strategies for a specific account."""
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    strategies = db.get_strategies_by_account(account_id)
     return jsonify(strategies)
 
 
