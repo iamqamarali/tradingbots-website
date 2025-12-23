@@ -327,6 +327,51 @@ def init_db():
             )
         ''')
 
+        # Strategies table for manual EMA crossover trading
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS strategies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                account_id INTEGER NOT NULL,
+                symbol TEXT NOT NULL DEFAULT 'BTCUSDC',
+                fast_ema INTEGER NOT NULL DEFAULT 7,
+                slow_ema INTEGER NOT NULL DEFAULT 19,
+                risk_percent REAL NOT NULL DEFAULT 1.3,
+                sl_lookback INTEGER NOT NULL DEFAULT 4,
+                sl_min_percent REAL NOT NULL DEFAULT 0.25,
+                sl_max_percent REAL NOT NULL DEFAULT 1.81,
+                leverage INTEGER NOT NULL DEFAULT 5,
+                timeframe TEXT NOT NULL DEFAULT '30m',
+                is_active INTEGER DEFAULT 1,
+                crossover_direction TEXT,
+                crossover_sl_long REAL,
+                crossover_sl_short REAL,
+                crossover_time TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_strategies_account_id ON strategies(account_id)')
+
+        # Migration: Add crossover columns if they don't exist
+        try:
+            cursor.execute('ALTER TABLE strategies ADD COLUMN crossover_direction TEXT')
+        except:
+            pass
+        try:
+            cursor.execute('ALTER TABLE strategies ADD COLUMN crossover_sl_long REAL')
+        except:
+            pass
+        try:
+            cursor.execute('ALTER TABLE strategies ADD COLUMN crossover_sl_short REAL')
+        except:
+            pass
+        try:
+            cursor.execute('ALTER TABLE strategies ADD COLUMN crossover_time TEXT')
+        except:
+            pass
+
         conn.commit()
         conn.close()
 
@@ -2254,6 +2299,207 @@ def update_closed_position_journal(position_id, journal_notes=None, emotion_tags
         if updates:
             params.append(position_id)
             cursor.execute(f'UPDATE closed_positions SET {", ".join(updates)} WHERE id = ?', params)
+
+        conn.commit()
+        conn.close()
+        return True
+
+
+# ==================== STRATEGIES OPERATIONS ====================
+
+def create_strategy(name, account_id, symbol='BTCUSDC', fast_ema=7, slow_ema=19,
+                    risk_percent=1.3, sl_lookback=4, sl_min_percent=0.25,
+                    sl_max_percent=1.81, leverage=5, timeframe='30m'):
+    """Create a new trading strategy. Returns strategy id."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            INSERT INTO strategies (name, account_id, symbol, fast_ema, slow_ema,
+                                    risk_percent, sl_lookback, sl_min_percent,
+                                    sl_max_percent, leverage, timeframe)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (name, account_id, symbol, fast_ema, slow_ema, risk_percent,
+              sl_lookback, sl_min_percent, sl_max_percent, leverage, timeframe))
+
+        strategy_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return strategy_id
+
+
+def get_all_strategies():
+    """Get all strategies with account info."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT s.*, a.name as account_name, a.is_testnet
+            FROM strategies s
+            JOIN accounts a ON s.account_id = a.id
+            ORDER BY s.created_at DESC
+        ''')
+
+        strategies = []
+        for row in cursor.fetchall():
+            strategies.append({
+                'id': row['id'],
+                'name': row['name'],
+                'account_id': row['account_id'],
+                'account_name': row['account_name'],
+                'is_testnet': bool(row['is_testnet']),
+                'symbol': row['symbol'],
+                'fast_ema': row['fast_ema'],
+                'slow_ema': row['slow_ema'],
+                'risk_percent': row['risk_percent'],
+                'sl_lookback': row['sl_lookback'],
+                'sl_min_percent': row['sl_min_percent'],
+                'sl_max_percent': row['sl_max_percent'],
+                'leverage': row['leverage'],
+                'timeframe': row['timeframe'],
+                'is_active': bool(row['is_active']),
+                'crossover_direction': row['crossover_direction'],
+                'crossover_sl_long': row['crossover_sl_long'],
+                'crossover_sl_short': row['crossover_sl_short'],
+                'crossover_time': row['crossover_time'],
+                'created_at': row['created_at'],
+                'updated_at': row['updated_at']
+            })
+
+        conn.close()
+        return strategies
+
+
+def get_strategy(strategy_id):
+    """Get a single strategy by ID."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT s.*, a.name as account_name, a.is_testnet
+            FROM strategies s
+            JOIN accounts a ON s.account_id = a.id
+            WHERE s.id = ?
+        ''', (strategy_id,))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            return {
+                'id': row['id'],
+                'name': row['name'],
+                'account_id': row['account_id'],
+                'account_name': row['account_name'],
+                'is_testnet': bool(row['is_testnet']),
+                'symbol': row['symbol'],
+                'fast_ema': row['fast_ema'],
+                'slow_ema': row['slow_ema'],
+                'risk_percent': row['risk_percent'],
+                'sl_lookback': row['sl_lookback'],
+                'sl_min_percent': row['sl_min_percent'],
+                'sl_max_percent': row['sl_max_percent'],
+                'leverage': row['leverage'],
+                'timeframe': row['timeframe'],
+                'is_active': bool(row['is_active']),
+                'crossover_direction': row['crossover_direction'],
+                'crossover_sl_long': row['crossover_sl_long'],
+                'crossover_sl_short': row['crossover_sl_short'],
+                'crossover_time': row['crossover_time'],
+                'created_at': row['created_at'],
+                'updated_at': row['updated_at']
+            }
+        return None
+
+
+def update_strategy(strategy_id, name=None, account_id=None, symbol=None,
+                    fast_ema=None, slow_ema=None, risk_percent=None,
+                    sl_lookback=None, sl_min_percent=None, sl_max_percent=None,
+                    leverage=None, timeframe=None, is_active=None):
+    """Update a strategy."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        updates = ['updated_at = CURRENT_TIMESTAMP']
+        params = []
+
+        if name is not None:
+            updates.append('name = ?')
+            params.append(name)
+        if account_id is not None:
+            updates.append('account_id = ?')
+            params.append(account_id)
+        if symbol is not None:
+            updates.append('symbol = ?')
+            params.append(symbol)
+        if fast_ema is not None:
+            updates.append('fast_ema = ?')
+            params.append(fast_ema)
+        if slow_ema is not None:
+            updates.append('slow_ema = ?')
+            params.append(slow_ema)
+        if risk_percent is not None:
+            updates.append('risk_percent = ?')
+            params.append(risk_percent)
+        if sl_lookback is not None:
+            updates.append('sl_lookback = ?')
+            params.append(sl_lookback)
+        if sl_min_percent is not None:
+            updates.append('sl_min_percent = ?')
+            params.append(sl_min_percent)
+        if sl_max_percent is not None:
+            updates.append('sl_max_percent = ?')
+            params.append(sl_max_percent)
+        if leverage is not None:
+            updates.append('leverage = ?')
+            params.append(leverage)
+        if timeframe is not None:
+            updates.append('timeframe = ?')
+            params.append(timeframe)
+        if is_active is not None:
+            updates.append('is_active = ?')
+            params.append(1 if is_active else 0)
+
+        params.append(strategy_id)
+        cursor.execute(f'UPDATE strategies SET {", ".join(updates)} WHERE id = ?', params)
+
+        conn.commit()
+        conn.close()
+        return True
+
+
+def delete_strategy(strategy_id):
+    """Delete a strategy."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM strategies WHERE id = ?', (strategy_id,))
+        deleted = cursor.rowcount > 0
+
+        conn.commit()
+        conn.close()
+        return deleted
+
+
+def update_strategy_crossover(strategy_id, direction, sl_long, sl_short):
+    """Update strategy crossover data when a new crossover is detected."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            UPDATE strategies
+            SET crossover_direction = ?,
+                crossover_sl_long = ?,
+                crossover_sl_short = ?,
+                crossover_time = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (direction, sl_long, sl_short, strategy_id))
 
         conn.commit()
         conn.close()

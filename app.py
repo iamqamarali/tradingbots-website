@@ -1074,6 +1074,13 @@ def charts_page():
     return render_template('charts.html', active_page='charts')
 
 
+@app.route('/strategies')
+@login_required
+def strategies_page():
+    """Render the strategies page."""
+    return render_template('strategies.html', active_page='strategies')
+
+
 # ==================== SETUPS API ====================
 
 @app.route('/api/setup-folders', methods=['GET'])
@@ -1402,6 +1409,470 @@ def api_unlink_position_from_setup(position_id):
     if updated:
         return jsonify({'message': 'Position unlinked from setup successfully'})
     return jsonify({'error': 'Position not found'}), 404
+
+
+# ==================== STRATEGIES API ====================
+
+def calculate_ema(data, period):
+    """Calculate EMA for given data and period."""
+    if len(data) < period:
+        return data[-1] if data else 0
+
+    multiplier = 2 / (period + 1)
+    ema = sum(data[:period]) / period  # Start with SMA
+
+    for price in data[period:]:
+        ema = (price * multiplier) + (ema * (1 - multiplier))
+
+    return ema
+
+
+@app.route('/api/strategies', methods=['GET'])
+@login_required
+def api_get_strategies():
+    """Get all strategies."""
+    strategies = db.get_all_strategies()
+    return jsonify(strategies)
+
+
+@app.route('/api/strategies', methods=['POST'])
+@login_required
+def api_create_strategy():
+    """Create a new strategy."""
+    data = request.json
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    name = data.get('name', '').strip()
+    account_id = data.get('account_id')
+
+    if not name:
+        return jsonify({'error': 'Strategy name is required'}), 400
+    if not account_id:
+        return jsonify({'error': 'Account is required'}), 400
+
+    # Verify account exists
+    account = db.get_account(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    strategy_id = db.create_strategy(
+        name=name,
+        account_id=account_id,
+        symbol=data.get('symbol', 'BTCUSDC'),
+        fast_ema=data.get('fast_ema', 7),
+        slow_ema=data.get('slow_ema', 19),
+        risk_percent=data.get('risk_percent', 1.3),
+        sl_lookback=data.get('sl_lookback', 4),
+        sl_min_percent=data.get('sl_min_percent', 0.25),
+        sl_max_percent=data.get('sl_max_percent', 1.81),
+        leverage=data.get('leverage', 5),
+        timeframe=data.get('timeframe', '30m')
+    )
+
+    return jsonify({'id': strategy_id, 'message': 'Strategy created successfully'})
+
+
+@app.route('/api/strategies/<int:strategy_id>', methods=['GET'])
+@login_required
+def api_get_strategy(strategy_id):
+    """Get a single strategy."""
+    strategy = db.get_strategy(strategy_id)
+    if not strategy:
+        return jsonify({'error': 'Strategy not found'}), 404
+    return jsonify(strategy)
+
+
+@app.route('/api/strategies/<int:strategy_id>', methods=['PUT'])
+@login_required
+def api_update_strategy(strategy_id):
+    """Update a strategy."""
+    data = request.json
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    strategy = db.get_strategy(strategy_id)
+    if not strategy:
+        return jsonify({'error': 'Strategy not found'}), 404
+
+    db.update_strategy(
+        strategy_id,
+        name=data.get('name'),
+        account_id=data.get('account_id'),
+        symbol=data.get('symbol'),
+        fast_ema=data.get('fast_ema'),
+        slow_ema=data.get('slow_ema'),
+        risk_percent=data.get('risk_percent'),
+        sl_lookback=data.get('sl_lookback'),
+        sl_min_percent=data.get('sl_min_percent'),
+        sl_max_percent=data.get('sl_max_percent'),
+        leverage=data.get('leverage'),
+        timeframe=data.get('timeframe'),
+        is_active=data.get('is_active')
+    )
+    return jsonify({'message': 'Strategy updated successfully'})
+
+
+@app.route('/api/strategies/<int:strategy_id>', methods=['DELETE'])
+@login_required
+def api_delete_strategy(strategy_id):
+    """Delete a strategy."""
+    deleted = db.delete_strategy(strategy_id)
+    if deleted:
+        return jsonify({'message': 'Strategy deleted successfully'})
+    return jsonify({'error': 'Strategy not found'}), 404
+
+
+@app.route('/api/strategies/<int:strategy_id>/data', methods=['GET'])
+@login_required
+def api_get_strategy_data(strategy_id):
+    """
+    Get real-time data for a strategy:
+    - Current price, EMAs, trend
+    - Calculated SL price, position size, risk amount
+    """
+    if not BINANCE_AVAILABLE:
+        return jsonify({'error': 'Binance API not available'}), 500
+
+    strategy = db.get_strategy(strategy_id)
+    if not strategy:
+        return jsonify({'error': 'Strategy not found'}), 404
+
+    account = db.get_account(strategy['account_id'])
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    try:
+        client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
+        if account['is_testnet']:
+            client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+
+        # Get klines for EMA calculation
+        limit = max(strategy['slow_ema'] + 10, strategy['sl_lookback'] + 5)
+        klines = client.futures_klines(
+            symbol=strategy['symbol'],
+            interval=strategy['timeframe'],
+            limit=limit
+        )
+
+        if not klines or len(klines) < strategy['slow_ema']:
+            return jsonify({'error': 'Not enough candle data'}), 400
+
+        # Calculate EMAs from close prices
+        closes = [float(k[4]) for k in klines]
+        fast_ema = calculate_ema(closes, strategy['fast_ema'])
+        slow_ema = calculate_ema(closes, strategy['slow_ema'])
+
+        current_price = closes[-1]
+        trend = 'BULLISH' if fast_ema > slow_ema else 'BEARISH'
+
+        # Calculate current SL based on last N closed candles (skip the last live candle)
+        sl_candles = klines[-(strategy['sl_lookback'] + 1):-1]  # Get last N closed candles
+        if len(sl_candles) < strategy['sl_lookback']:
+            sl_candles = klines[-strategy['sl_lookback']:]
+
+        # For LONG: SL = lowest low, For SHORT: SL = highest high
+        current_long_sl = min(float(k[3]) for k in sl_candles)  # k[3] = low
+        current_short_sl = max(float(k[2]) for k in sl_candles)  # k[2] = high
+
+        # Detect crossover: if trend changed from stored direction
+        stored_direction = strategy.get('crossover_direction')
+        crossover_detected = stored_direction is None or stored_direction != trend
+
+        if crossover_detected:
+            # Lock in the SL values at crossover
+            db.update_strategy_crossover(strategy_id, trend, current_long_sl, current_short_sl)
+            # Use current SL as the locked values
+            long_sl = current_long_sl
+            short_sl = current_short_sl
+            crossover_time = 'Just now'
+        else:
+            # Use the stored crossover SL values
+            long_sl = strategy.get('crossover_sl_long') or current_long_sl
+            short_sl = strategy.get('crossover_sl_short') or current_short_sl
+            crossover_time = strategy.get('crossover_time') or ''
+
+        # Calculate SL percentages based on locked crossover SL
+        long_sl_percent = abs(current_price - long_sl) / current_price * 100
+        short_sl_percent = abs(short_sl - current_price) / current_price * 100
+
+        # Get account balance - use correct quote currency based on symbol
+        balances = client.futures_account_balance()
+        symbol = strategy['symbol'].upper()
+        if symbol.endswith('USDC'):
+            quote_asset = 'USDC'
+        elif symbol.endswith('USDT'):
+            quote_asset = 'USDT'
+        else:
+            quote_asset = 'USDT'  # Default fallback
+
+        total_balance = 0
+        for b in balances:
+            if b['asset'] == quote_asset:
+                total_balance = float(b['balance'])
+                break
+
+        # Calculate risk amount
+        risk_amount = total_balance * (strategy['risk_percent'] / 100)
+
+        # Calculate position sizes based on locked crossover SL
+        long_position_size = risk_amount / (long_sl_percent / 100) if long_sl_percent > 0 else 0
+        short_position_size = risk_amount / (short_sl_percent / 100) if short_sl_percent > 0 else 0
+
+        # Check validity for both directions
+        long_valid = strategy['sl_min_percent'] <= long_sl_percent <= strategy['sl_max_percent']
+        short_valid = strategy['sl_min_percent'] <= short_sl_percent <= strategy['sl_max_percent']
+
+        return jsonify({
+            'current_price': round(current_price, 4),
+            'fast_ema': round(fast_ema, 4),
+            'slow_ema': round(slow_ema, 4),
+            'trend': trend,
+            'crossover_time': crossover_time,
+            'crossover_just_happened': crossover_detected,
+            'long': {
+                'sl_price': round(long_sl, 4),
+                'sl_percent': round(long_sl_percent, 4),
+                'position_size': round(long_position_size, 2),
+                'is_valid': long_valid,
+                'invalid_reason': None if long_valid else f'SL {long_sl_percent:.2f}% outside range ({strategy["sl_min_percent"]}-{strategy["sl_max_percent"]}%)'
+            },
+            'short': {
+                'sl_price': round(short_sl, 4),
+                'sl_percent': round(short_sl_percent, 4),
+                'position_size': round(short_position_size, 2),
+                'is_valid': short_valid,
+                'invalid_reason': None if short_valid else f'SL {short_sl_percent:.2f}% outside range ({strategy["sl_min_percent"]}-{strategy["sl_max_percent"]}%)'
+            },
+            'balance': round(total_balance, 2),
+            'risk_amount': round(risk_amount, 2)
+        })
+
+    except BinanceAPIException as e:
+        return jsonify({'error': f'Binance error: {e.message}'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/strategies/<int:strategy_id>/trade', methods=['POST'])
+@login_required
+def api_execute_strategy_trade(strategy_id):
+    """
+    Execute a trade based on strategy parameters.
+    Request body: {
+        "direction": "LONG" | "SHORT",
+        "order_type": "MARKET" | "LIMIT" (optional, default MARKET),
+        "limit_price": float (required if order_type is LIMIT)
+    }
+    """
+    if not BINANCE_AVAILABLE:
+        return jsonify({'error': 'Binance API not available'}), 500
+
+    strategy = db.get_strategy(strategy_id)
+    if not strategy:
+        return jsonify({'error': 'Strategy not found'}), 404
+
+    data = request.get_json()
+    direction = data.get('direction')
+    order_type = data.get('order_type', 'MARKET').upper()
+    limit_price = data.get('limit_price')
+
+    if direction not in ['LONG', 'SHORT']:
+        return jsonify({'error': 'Invalid direction. Must be LONG or SHORT'}), 400
+
+    if order_type not in ['MARKET', 'LIMIT']:
+        return jsonify({'error': 'Invalid order_type. Must be MARKET or LIMIT'}), 400
+
+    if order_type == 'LIMIT' and not limit_price:
+        return jsonify({'error': 'limit_price is required for LIMIT orders'}), 400
+
+    account = db.get_account(strategy['account_id'])
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+
+    try:
+        client = BinanceClient(account['api_key'], account['api_secret'], testnet=account['is_testnet'])
+        if account['is_testnet']:
+            client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+
+        # Get current price
+        ticker = client.futures_symbol_ticker(symbol=strategy['symbol'])
+        current_price = float(ticker['price'])
+
+        # For LIMIT orders, use limit_price as entry; for MARKET, use current_price
+        entry_price = float(limit_price) if order_type == 'LIMIT' else current_price
+
+        # Use locked crossover SL from strategy (not recalculated)
+        if direction == 'LONG':
+            sl_price = strategy.get('crossover_sl_long')
+        else:
+            sl_price = strategy.get('crossover_sl_short')
+
+        if not sl_price:
+            return jsonify({'error': 'No crossover detected yet. Wait for EMA crossover.'}), 400
+
+        # Calculate SL percent based on entry price (limit or current)
+        sl_percent = abs(entry_price - sl_price) / entry_price * 100
+
+        # Validate SL range
+        if not (strategy['sl_min_percent'] <= sl_percent <= strategy['sl_max_percent']):
+            return jsonify({
+                'error': f'SL {sl_percent:.2f}% outside allowed range ({strategy["sl_min_percent"]}-{strategy["sl_max_percent"]}%)'
+            }), 400
+
+        # Get balance and calculate position size - use correct quote currency
+        balances = client.futures_account_balance()
+        symbol = strategy['symbol'].upper()
+        if symbol.endswith('USDC'):
+            quote_asset = 'USDC'
+        elif symbol.endswith('USDT'):
+            quote_asset = 'USDT'
+        else:
+            quote_asset = 'USDT'  # Default fallback
+
+        total_balance = 0
+        for b in balances:
+            if b['asset'] == quote_asset:
+                total_balance = float(b['balance'])
+                break
+
+        risk_amount = total_balance * (strategy['risk_percent'] / 100)
+        position_size_usd = risk_amount / (sl_percent / 100)
+
+        # Get symbol precision
+        exchange_info = client.futures_exchange_info()
+        symbol_info = next((s for s in exchange_info['symbols']
+                           if s['symbol'] == strategy['symbol']), None)
+
+        if not symbol_info:
+            return jsonify({'error': f'Symbol {strategy["symbol"]} not found'}), 400
+
+        qty_precision = 3
+        price_precision = 2
+        for f in symbol_info.get('filters', []):
+            if f['filterType'] == 'LOT_SIZE':
+                step_size = float(f['stepSize'])
+                qty_precision = int(round(-math.log10(step_size))) if step_size < 1 else 0
+            if f['filterType'] == 'PRICE_FILTER':
+                tick_size = float(f['tickSize'])
+                price_precision = int(round(-math.log10(tick_size))) if tick_size < 1 else 0
+
+        # Calculate quantity in contracts (use entry_price for calculation)
+        qty_in_contracts = round(position_size_usd / entry_price, qty_precision)
+
+        if qty_in_contracts <= 0:
+            return jsonify({'error': 'Position size too small'}), 400
+
+        # Set leverage
+        try:
+            client.futures_change_leverage(
+                symbol=strategy['symbol'],
+                leverage=strategy['leverage']
+            )
+        except:
+            pass  # Leverage may already be set
+
+        # Execute order (MARKET or LIMIT)
+        side = 'BUY' if direction == 'LONG' else 'SELL'
+        limit_price_formatted = None
+
+        if order_type == 'LIMIT':
+            # Format limit price with proper precision
+            limit_price_formatted = round(float(limit_price), price_precision)
+            order = client.futures_create_order(
+                symbol=strategy['symbol'],
+                side=side,
+                type='LIMIT',
+                quantity=qty_in_contracts,
+                price=str(limit_price_formatted),
+                timeInForce='GTC'
+            )
+        else:
+            order = client.futures_create_order(
+                symbol=strategy['symbol'],
+                side=side,
+                type='MARKET',
+                quantity=qty_in_contracts
+            )
+
+        # For MARKET orders, wait and place SL immediately
+        # For LIMIT orders, place SL order (it will be ready when limit fills)
+        if order_type == 'MARKET':
+            time.sleep(0.3)  # Wait for position to settle
+
+        # Place stop loss with retry logic
+        sl_side = 'SELL' if direction == 'LONG' else 'BUY'
+        sl_price_formatted = round(sl_price, price_precision)
+
+        sl_order = None
+        max_retries = 3
+        last_error = None
+
+        for attempt in range(max_retries):
+            try:
+                sl_order = client.futures_create_order(
+                    symbol=strategy['symbol'],
+                    side=sl_side,
+                    type='STOP_MARKET',
+                    stopPrice=str(sl_price_formatted),
+                    closePosition='true',
+                    workingType='MARK_PRICE'
+                )
+                break  # Success, exit retry loop
+            except BinanceAPIException as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    time.sleep(1)  # Wait before retry
+                else:
+                    # All retries failed - return partial success with warning
+                    return jsonify({
+                        'success': True,
+                        'warning': f'Order placed but SL failed after {max_retries} attempts: {e.message}',
+                        'order': {
+                            'orderId': order.get('orderId'),
+                            'symbol': strategy['symbol'],
+                            'side': side,
+                            'type': order_type,
+                            'quantity': qty_in_contracts,
+                            'price': limit_price_formatted if order_type == 'LIMIT' else None,
+                            'status': order.get('status')
+                        },
+                        'sl_order': None,
+                        'details': {
+                            'entry_price': entry_price,
+                            'sl_percent': round(sl_percent, 2),
+                            'position_size_usd': round(position_size_usd, 2),
+                            'risk_amount': round(risk_amount, 2)
+                        }
+                    })
+
+        return jsonify({
+            'success': True,
+            'order': {
+                'orderId': order.get('orderId'),
+                'symbol': strategy['symbol'],
+                'side': side,
+                'type': order_type,
+                'quantity': qty_in_contracts,
+                'price': limit_price_formatted if order_type == 'LIMIT' else None,
+                'status': order.get('status')
+            },
+            'sl_order': {
+                'orderId': sl_order.get('orderId') or sl_order.get('algoId'),
+                'stop_price': sl_price_formatted
+            },
+            'details': {
+                'entry_price': entry_price,
+                'sl_percent': round(sl_percent, 2),
+                'position_size_usd': round(position_size_usd, 2),
+                'risk_amount': round(risk_amount, 2)
+            }
+        })
+
+    except BinanceAPIException as e:
+        return jsonify({'error': f'Binance error: {e.message}'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 # ==================== ACCOUNTS API ====================

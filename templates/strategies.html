@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strategies - Trading Bot Manager</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/strategies.css">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        {% include 'includes/sidebar.html' %}
+
+        <!-- Main Content -->
+        <main class="main-content strategies-page-content">
+            <!-- Header -->
+            <header class="page-header">
+                <div class="header-left">
+                    <h1>Trading Strategies</h1>
+                </div>
+                <button class="add-strategy-btn" id="addStrategyBtn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Add Strategy
+                </button>
+            </header>
+
+            <!-- Strategies Grid -->
+            <div class="strategies-main">
+                <div class="section-header">
+                    <h2>Your Strategies</h2>
+                    <span class="strategy-count" id="strategyCount">0 strategies</span>
+                </div>
+
+                <div class="strategies-grid" id="strategiesGrid">
+                    <!-- Strategy cards will be inserted here -->
+                    <div class="loading-state" id="loadingState">
+                        <div class="spinner"></div>
+                        <p>Loading strategies...</p>
+                    </div>
+                </div>
+
+                <div class="empty-state" id="emptyState" style="display: none;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M3 3v18h18"/>
+                        <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/>
+                    </svg>
+                    <h3>No Strategies Yet</h3>
+                    <p>Create a manual trading strategy to execute EMA crossover trades with one click.</p>
+                    <button class="btn-primary" onclick="document.getElementById('addStrategyBtn').click()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        Create Your First Strategy
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Add/Edit Strategy Modal -->
+    <div class="modal-overlay" id="strategyModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="strategyModalTitle">Add Strategy</h3>
+                <button class="modal-close" id="closeStrategyModal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="strategyName">Strategy Name</label>
+                    <input type="text" id="strategyName" placeholder="e.g., BTC 7/19 EMA">
+                </div>
+                <div class="form-group">
+                    <label for="strategyAccount">Account</label>
+                    <select id="strategyAccount">
+                        <option value="">Select an account...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="strategySymbol">Symbol</label>
+                    <input type="text" id="strategySymbol" value="BTCUSDC" placeholder="e.g., BTCUSDC, ETHUSDC">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="fastEma">Fast EMA</label>
+                        <input type="number" id="fastEma" value="7" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="slowEma">Slow EMA</label>
+                        <input type="number" id="slowEma" value="19" min="1">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="riskPercent">Risk %</label>
+                        <input type="number" id="riskPercent" value="1.3" step="0.1" min="0.1" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label for="leverage">Leverage</label>
+                        <input type="number" id="leverage" value="5" min="1" max="125">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="slLookback">SL Candles</label>
+                        <input type="number" id="slLookback" value="4" min="1" max="20">
+                    </div>
+                    <div class="form-group">
+                        <label for="timeframe">Timeframe</label>
+                        <select id="timeframe">
+                            <option value="5m">5m</option>
+                            <option value="15m">15m</option>
+                            <option value="30m" selected>30m</option>
+                            <option value="1h">1h</option>
+                            <option value="4h">4h</option>
+                            <option value="1d">1d</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="slMinPercent">SL Min %</label>
+                        <input type="number" id="slMinPercent" value="0.25" step="0.01" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="slMaxPercent">SL Max %</label>
+                        <input type="number" id="slMaxPercent" value="1.81" step="0.01" min="0">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelStrategyBtn">Cancel</button>
+                <button class="btn-primary" id="saveStrategyBtn">Save Strategy</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trade Confirmation Modal -->
+    <div class="modal-overlay" id="tradeConfirmModal">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3 id="tradeConfirmTitle">Confirm Trade</h3>
+                <button class="modal-close" id="closeTradeConfirmModal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="trade-confirm-details">
+                    <div class="trade-detail-row">
+                        <span class="label">Order Type:</span>
+                        <span id="confirmOrderType" class="order-type-badge"></span>
+                    </div>
+                    <div class="trade-detail-row">
+                        <span class="label">Direction:</span>
+                        <span id="confirmDirection" class="direction-badge"></span>
+                    </div>
+                    <div class="trade-detail-row">
+                        <span class="label">Symbol:</span>
+                        <span id="confirmSymbol"></span>
+                    </div>
+                    <div class="trade-detail-row">
+                        <span class="label">Entry Price:</span>
+                        <span id="confirmEntry"></span>
+                    </div>
+                    <div class="trade-detail-row">
+                        <span class="label">Stop Loss:</span>
+                        <span id="confirmSL"></span>
+                    </div>
+                    <div class="trade-detail-row">
+                        <span class="label">SL Distance:</span>
+                        <span id="confirmSLPercent"></span>
+                    </div>
+                    <div class="trade-detail-row">
+                        <span class="label">Position Size:</span>
+                        <span id="confirmSize"></span>
+                    </div>
+                    <div class="trade-detail-row">
+                        <span class="label">Risk Amount:</span>
+                        <span id="confirmRisk"></span>
+                    </div>
+                </div>
+                <div class="trade-warning">
+                    This will execute a real trade on your account.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelTradeBtn">Cancel</button>
+                <button class="btn-primary" id="executeTradeBtnConfirm">Execute Trade</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Limit Price Modal -->
+    <div class="modal-overlay" id="limitPriceModal">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3 id="limitPriceModalTitle">Enter Limit Price</h3>
+                <button class="modal-close" id="closeLimitPriceModal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="current-price-display">
+                    <span class="label">Current Price:</span>
+                    <span id="limitModalCurrentPrice" class="value">--</span>
+                </div>
+                <div class="form-group">
+                    <label for="limitPriceInput">Limit Price</label>
+                    <input type="number" id="limitPriceInput" step="any" placeholder="Enter limit price">
+                </div>
+                <div class="limit-calc-preview" id="limitCalcPreview">
+                    <!-- Will show recalculated SL% and position size -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelLimitPriceBtn">Cancel</button>
+                <button class="btn-primary" id="confirmLimitPriceBtn">Continue</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="/static/strategies.js"></script>
+</body>
+</html>
