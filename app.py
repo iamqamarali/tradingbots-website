@@ -1547,8 +1547,9 @@ def api_get_strategy_data(strategy_id):
         if account['is_testnet']:
             client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
 
-        # Get klines for EMA calculation
-        limit = max(strategy['slow_ema'] + 10, strategy['sl_lookback'] + 5)
+        # Get more klines to scan back for crossover (100 candles = ~50 hours on 30m)
+        lookback_candles = 100
+        limit = max(strategy['slow_ema'] + lookback_candles, strategy['sl_lookback'] + 5)
         klines = client.futures_klines(
             symbol=strategy['symbol'],
             interval=strategy['timeframe'],
@@ -1566,31 +1567,62 @@ def api_get_strategy_data(strategy_id):
         current_price = closes[-1]
         trend = 'BULLISH' if fast_ema > slow_ema else 'BEARISH'
 
-        # Calculate current SL based on last N closed candles (skip the last live candle)
-        sl_candles = klines[-(strategy['sl_lookback'] + 1):-1]  # Get last N closed candles
-        if len(sl_candles) < strategy['sl_lookback']:
-            sl_candles = klines[-strategy['sl_lookback']:]
+        # Find actual crossover candle by scanning back through history
+        # We need to calculate rolling EMAs to find where the crossover happened
+        crossover_candle_idx = None
+        crossover_time = ''
+
+        # Need at least slow_ema periods to calculate EMA
+        min_periods = strategy['slow_ema']
+
+        # Scan backwards from the most recent candle to find crossover
+        for i in range(len(closes) - 1, min_periods, -1):
+            # Calculate EMAs up to candle i
+            fast_ema_at_i = calculate_ema(closes[:i+1], strategy['fast_ema'])
+            slow_ema_at_i = calculate_ema(closes[:i+1], strategy['slow_ema'])
+            trend_at_i = 'BULLISH' if fast_ema_at_i > slow_ema_at_i else 'BEARISH'
+
+            # Calculate EMAs for previous candle
+            fast_ema_prev = calculate_ema(closes[:i], strategy['fast_ema'])
+            slow_ema_prev = calculate_ema(closes[:i], strategy['slow_ema'])
+            trend_prev = 'BULLISH' if fast_ema_prev > slow_ema_prev else 'BEARISH'
+
+            # Found crossover if trend changed
+            if trend_at_i != trend_prev:
+                crossover_candle_idx = i
+                # Get timestamp from kline (k[0] is open time in ms)
+                crossover_timestamp = int(klines[i][0]) / 1000
+                crossover_time = datetime.fromtimestamp(crossover_timestamp).isoformat()
+                break
+
+        # Calculate SL based on candles at crossover time (or current if no crossover found)
+        if crossover_candle_idx is not None:
+            # Get sl_lookback candles from the crossover point
+            sl_start = max(0, crossover_candle_idx - strategy['sl_lookback'])
+            sl_end = crossover_candle_idx
+            sl_candles = klines[sl_start:sl_end] if sl_end > sl_start else klines[crossover_candle_idx:crossover_candle_idx+1]
+        else:
+            # No crossover found in range, use current candles
+            sl_candles = klines[-(strategy['sl_lookback'] + 1):-1]
+            if len(sl_candles) < strategy['sl_lookback']:
+                sl_candles = klines[-strategy['sl_lookback']:]
 
         # For LONG: SL = lowest low, For SHORT: SL = highest high
-        current_long_sl = min(float(k[3]) for k in sl_candles)  # k[3] = low
-        current_short_sl = max(float(k[2]) for k in sl_candles)  # k[2] = high
-
-        # Detect crossover: if trend changed from stored direction
-        stored_direction = strategy.get('crossover_direction')
-        crossover_detected = stored_direction is None or stored_direction != trend
-
-        if crossover_detected:
-            # Lock in the SL values at crossover
-            db.update_strategy_crossover(strategy_id, trend, current_long_sl, current_short_sl)
-            # Use current SL as the locked values
-            long_sl = current_long_sl
-            short_sl = current_short_sl
-            crossover_time = 'Just now'
+        if sl_candles:
+            long_sl = min(float(k[3]) for k in sl_candles)  # k[3] = low
+            short_sl = max(float(k[2]) for k in sl_candles)  # k[2] = high
         else:
-            # Use the stored crossover SL values
-            long_sl = strategy.get('crossover_sl_long') or current_long_sl
-            short_sl = strategy.get('crossover_sl_short') or current_short_sl
-            crossover_time = strategy.get('crossover_time') or ''
+            # Fallback to current price with buffer
+            long_sl = current_price * 0.98
+            short_sl = current_price * 1.02
+
+        # Check if trend has changed from stored (new crossover just happened)
+        stored_direction = strategy.get('crossover_direction')
+        crossover_just_happened = stored_direction is not None and stored_direction != trend
+
+        if stored_direction is None or stored_direction != trend:
+            # Update stored crossover data
+            db.update_strategy_crossover(strategy_id, trend, long_sl, short_sl)
 
         # Calculate SL percentages based on locked crossover SL
         long_sl_percent = abs(current_price - long_sl) / current_price * 100
@@ -1629,7 +1661,7 @@ def api_get_strategy_data(strategy_id):
             'slow_ema': round(slow_ema, 4),
             'trend': trend,
             'crossover_time': crossover_time,
-            'crossover_just_happened': crossover_detected,
+            'crossover_just_happened': crossover_just_happened,
             'long': {
                 'sl_price': round(long_sl, 4),
                 'sl_percent': round(long_sl_percent, 4),
