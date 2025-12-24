@@ -3607,7 +3607,7 @@ def api_execute_trade(account_id):
     time_in_force = data.get('time_in_force', 'GTC')
     tp_price = data.get('tp_price')
     sl_price = data.get('sl_price')
-    price_match = data.get('price_match')  # For BBO orders: OPPONENT, QUEUE, etc.
+    price_match = data.get('price_match')  # For BBO orders: QUEUE (maker), OPPONENT (taker)
 
     print(f"  Symbol: {symbol}, Side: {side}, Type: {order_type}")
     print(f"  Price: {price}, Quantity (USDC): {quantity}, Leverage: {leverage}x")
@@ -3700,6 +3700,7 @@ def api_execute_trade(account_id):
         }
 
         debug_log.append(f"Order type received: '{order_type}'")
+        debug_log.append(f"Price match received: '{price_match}'")
 
         if order_type == 'MARKET':
             order_params['type'] = 'MARKET'

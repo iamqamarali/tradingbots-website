@@ -3892,7 +3892,7 @@ let riskCalcState = {
     orderType: 'MARKET', // MARKET or BBO
     currentPrice: 0,
     slPrice: 0,
-    riskPercent: 1.0,
+    riskPercent: 5.0,
     availableBalance: 0
 };
 
@@ -3998,12 +3998,14 @@ function setupRiskCalculatorTab() {
         riskOrderMarket.classList.add('active');
         riskOrderBBO?.classList.remove('active');
         riskCalcState.orderType = 'MARKET';
+        console.log('[Risk Calc] Order type set to MARKET');
     });
 
     riskOrderBBO?.addEventListener('click', () => {
         riskOrderBBO.classList.add('active');
         riskOrderMarket?.classList.remove('active');
         riskCalcState.orderType = 'BBO';
+        console.log('[Risk Calc] Order type set to BBO');
     });
 
     // Refresh price button
@@ -4249,6 +4251,7 @@ async function executeRiskTrade(side) {
 
     try {
         console.log(`%c[Risk Trade] Executing ${side} ${orderType} order`, 'color: #3b82f6; font-weight: bold');
+        console.log(`%c[Risk Trade] riskCalcState.orderType = ${riskCalcState.orderType}`, 'color: #3b82f6');
         console.table({
             symbol,
             side,
@@ -4274,9 +4277,10 @@ async function executeRiskTrade(side) {
             time_in_force: 'GTC'
         };
 
-        // For BBO orders, use priceMatch to get best bid/offer
+        // For BBO orders, use priceMatch QUEUE to place as maker (sits in order book)
+        // OPPONENT = taker (executes immediately), QUEUE = maker (sits in book)
         if (orderType === 'BBO') {
-            requestBody.price_match = 'OPPONENT'; // Places at best bid for BUY, best ask for SELL
+            requestBody.price_match = 'QUEUE'; // Places at best bid for BUY, best ask for SELL (maker)
         }
 
         console.log('%c[Risk Trade] Request body:', 'color: #f59e0b; font-weight: bold', requestBody);

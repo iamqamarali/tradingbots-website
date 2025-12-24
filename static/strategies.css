@@ -127,6 +127,17 @@
     font-weight: 500;
 }
 
+.strategy-info .account-link {
+    color: var(--accent-primary);
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.strategy-info .account-link:hover {
+    color: var(--accent-secondary);
+    text-decoration: underline;
+}
+
 /* Strategy Data Section */
 .strategy-data {
     background: rgba(0, 0, 0, 0.2);

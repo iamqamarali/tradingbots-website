@@ -102,7 +102,7 @@ function createStrategyCard(strategy) {
             <div class="strategy-info">
                 <div class="info-row">
                     <span class="label">Account:</span>
-                    <span class="value">${escapeHtml(strategy.account_name)}${strategy.is_testnet ? ' (T)' : ''}</span>
+                    <a href="/accounts/${strategy.account_id}" class="value account-link">${escapeHtml(strategy.account_name)}${strategy.is_testnet ? ' (T)' : ''}</a>
                 </div>
                 <div class="info-row">
                     <span class="label">Symbol:</span>
