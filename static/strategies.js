@@ -7,7 +7,7 @@ let accounts = [];
 let refreshIntervals = {};
 let editingStrategyId = null;
 let pendingTrade = null;
-let orderTypes = {};  // Track order type per strategy (MARKET or LIMIT)
+let orderTypes = {};  // Track order type per strategy (MARKET, LIMIT, or BBO)
 let pendingLimitOrder = null;  // Store pending limit order data
 
 // DOM Elements
@@ -91,59 +91,71 @@ function renderStrategies() {
 function createStrategyCard(strategy) {
     return `
         <div class="strategy-card" data-strategy-id="${strategy.id}">
-            <div class="strategy-header">
+            <div class="strategy-collapsed-header" onclick="toggleStrategyCollapse(${strategy.id})">
                 <div class="strategy-name">${escapeHtml(strategy.name)}</div>
-                <div class="strategy-actions">
+                <div class="strategy-collapsed-info">
+                    <span class="strategy-trend-badge" id="strategyTrendBadge-${strategy.id}">--</span>
+                    <span class="strategy-sl-preview" id="strategySlPreview-${strategy.id}">SL: --</span>
+                </div>
+                <div class="strategy-actions" onclick="event.stopPropagation()">
                     <button class="edit-btn" onclick="editStrategy(${strategy.id})">Edit</button>
                     <button class="delete-btn" onclick="deleteStrategy(${strategy.id})">Delete</button>
                 </div>
-            </div>
-
-            <div class="strategy-info">
-                <div class="info-row">
-                    <span class="label">Account:</span>
-                    <a href="/accounts/${strategy.account_id}" class="value account-link">${escapeHtml(strategy.account_name)}${strategy.is_testnet ? ' (T)' : ''}</a>
-                </div>
-                <div class="info-row">
-                    <span class="label">Symbol:</span>
-                    <span class="value">${strategy.symbol}</span>
-                </div>
-                <div class="info-row">
-                    <span class="label">EMA:</span>
-                    <span class="value">${strategy.fast_ema}/${strategy.slow_ema}</span>
-                </div>
-                <div class="info-row">
-                    <span class="label">Timeframe:</span>
-                    <span class="value">${strategy.timeframe}</span>
-                </div>
-                <div class="info-row">
-                    <span class="label">Risk:</span>
-                    <span class="value">${strategy.risk_percent}%</span>
-                </div>
-                <div class="info-row">
-                    <span class="label">Leverage:</span>
-                    <span class="value">${strategy.leverage}x</span>
-                </div>
-            </div>
-
-            <div class="strategy-data" id="strategyData-${strategy.id}">
-                <div class="data-loading">Loading market data...</div>
-            </div>
-
-            <div class="order-type-toggle" id="orderTypeToggle-${strategy.id}">
-                <button class="toggle-btn active" data-type="MARKET" onclick="setOrderType(${strategy.id}, 'MARKET')">Market</button>
-                <button class="toggle-btn" data-type="LIMIT" onclick="setOrderType(${strategy.id}, 'LIMIT')">Limit</button>
-            </div>
-
-            <div class="strategy-buttons">
-                <button class="take-long-btn" id="longBtn-${strategy.id}"
-                        onclick="handleTradeClick(${strategy.id}, 'LONG')" disabled>
-                    Take Long
+                <button class="strategy-collapse-btn" onclick="event.stopPropagation(); toggleStrategyCollapse(${strategy.id})">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
                 </button>
-                <button class="take-short-btn" id="shortBtn-${strategy.id}"
-                        onclick="handleTradeClick(${strategy.id}, 'SHORT')" disabled>
-                    Take Short
-                </button>
+            </div>
+
+            <div class="strategy-card-body" id="strategyCardBody-${strategy.id}">
+                <div class="strategy-info">
+                    <div class="info-row">
+                        <span class="label">Account:</span>
+                        <a href="/accounts/${strategy.account_id}" class="value account-link">${escapeHtml(strategy.account_name)}${strategy.is_testnet ? ' (T)' : ''}</a>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Symbol:</span>
+                        <span class="value">${strategy.symbol}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">EMA:</span>
+                        <span class="value">${strategy.fast_ema}/${strategy.slow_ema}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Timeframe:</span>
+                        <span class="value">${strategy.timeframe}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Risk:</span>
+                        <span class="value">${strategy.risk_percent}%</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Leverage:</span>
+                        <span class="value">${strategy.leverage}x</span>
+                    </div>
+                </div>
+
+                <div class="strategy-data" id="strategyData-${strategy.id}">
+                    <div class="data-loading">Loading market data...</div>
+                </div>
+
+                <div class="order-type-toggle" id="orderTypeToggle-${strategy.id}">
+                    <button class="toggle-btn active" data-type="MARKET" onclick="setOrderType(${strategy.id}, 'MARKET')">Market</button>
+                    <button class="toggle-btn" data-type="LIMIT" onclick="setOrderType(${strategy.id}, 'LIMIT')">Limit</button>
+                    <button class="toggle-btn" data-type="BBO" onclick="setOrderType(${strategy.id}, 'BBO')">BBO</button>
+                </div>
+
+                <div class="strategy-buttons">
+                    <button class="take-long-btn" id="longBtn-${strategy.id}"
+                            onclick="handleTradeClick(${strategy.id}, 'LONG')" disabled>
+                        Market Long
+                    </button>
+                    <button class="take-short-btn" id="shortBtn-${strategy.id}"
+                            onclick="handleTradeClick(${strategy.id}, 'SHORT')" disabled>
+                        Market Short
+                    </button>
+                </div>
             </div>
         </div>
     `;
@@ -251,6 +263,21 @@ async function fetchStrategyData(strategyId) {
         if (longBtn) longBtn.disabled = !data.long.is_valid;
         if (shortBtn) shortBtn.disabled = !data.short.is_valid;
 
+        // Update collapsed header with trend and SL
+        const trendBadge = document.getElementById(`strategyTrendBadge-${strategyId}`);
+        const slPreview = document.getElementById(`strategySlPreview-${strategyId}`);
+
+        if (trendBadge) {
+            trendBadge.textContent = data.trend;
+            trendBadge.className = `strategy-trend-badge ${data.trend === 'BULLISH' ? 'trend-bullish' : 'trend-bearish'}`;
+        }
+
+        if (slPreview) {
+            // Show SL based on trend: SHORT SL when BEARISH, LONG SL when BULLISH
+            const slData = data.trend === 'BEARISH' ? data.short : data.long;
+            slPreview.textContent = `SL: $${formatPrice(slData.sl_price)}`;
+        }
+
     } catch (error) {
         console.error(`Error fetching data for strategy ${strategyId}:`, error);
         dataContainer.innerHTML = `<div class="data-error">Failed to load market data</div>`;
@@ -276,6 +303,9 @@ function setOrderType(strategyId, type) {
             btn.classList.toggle('active', btn.dataset.type === type);
         });
     }
+
+    // Update button text
+    updateButtonText(strategyId);
 }
 
 // Get order type for a strategy
@@ -283,11 +313,45 @@ function getOrderType(strategyId) {
     return orderTypes[strategyId] || 'MARKET';
 }
 
-// Handle trade button click - check if Market or Limit
+// Toggle collapse state for a strategy card
+function toggleStrategyCollapse(strategyId) {
+    const card = document.querySelector(`.strategy-card[data-strategy-id="${strategyId}"]`);
+    if (card) {
+        card.classList.toggle('expanded');
+    }
+}
+
+// Update trade button text based on order type
+function updateButtonText(strategyId) {
+    const longBtn = document.getElementById(`longBtn-${strategyId}`);
+    const shortBtn = document.getElementById(`shortBtn-${strategyId}`);
+    const orderType = getOrderType(strategyId);
+
+    let longText, shortText;
+
+    if (orderType === 'BBO') {
+        longText = 'BBO Long';
+        shortText = 'BBO Short';
+    } else if (orderType === 'LIMIT') {
+        longText = 'Limit Long';
+        shortText = 'Limit Short';
+    } else {
+        longText = 'Market Long';
+        shortText = 'Market Short';
+    }
+
+    if (longBtn) longBtn.textContent = longText;
+    if (shortBtn) shortBtn.textContent = shortText;
+}
+
+// Handle trade button click - check if Market, Limit, or BBO
 function handleTradeClick(strategyId, direction) {
     const orderType = getOrderType(strategyId);
 
-    if (orderType === 'LIMIT') {
+    if (orderType === 'BBO') {
+        // BBO queue order - skip limit price modal, use current best bid/ask
+        openTradeConfirm(strategyId, direction, 'BBO', null);
+    } else if (orderType === 'LIMIT') {
         openLimitPriceModal(strategyId, direction);
     } else {
         openTradeConfirm(strategyId, direction, 'MARKET', null);

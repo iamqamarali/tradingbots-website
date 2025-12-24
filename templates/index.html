@@ -132,6 +132,13 @@
                         <span id="closePositionPnl">$0.00</span>
                     </div>
                 </div>
+                <div class="close-order-type-section">
+                    <label>Order Type</label>
+                    <div class="order-type-toggle" id="closeOrderTypeToggle">
+                        <button class="toggle-btn active" data-type="MARKET">Market</button>
+                        <button class="toggle-btn" data-type="BBO">BBO</button>
+                    </div>
+                </div>
                 <div class="close-amount-section">
                     <label>Amount to Close</label>
                     <div class="percentage-buttons">
@@ -152,7 +159,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn-secondary" id="cancelClosePosition">Cancel</button>
-                <button class="btn-danger" id="confirmClosePosition">Close Position</button>
+                <button class="btn-danger" id="confirmClosePosition">Market Close</button>
             </div>
         </div>
     </div>

@@ -63,6 +63,97 @@
     border-color: var(--accent-primary);
 }
 
+/* Collapsed Header - always visible */
+.strategy-collapsed-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-primary);
+}
+
+.strategy-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--accent-primary);
+    white-space: nowrap;
+}
+
+.strategy-collapsed-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex: 1;
+    min-width: 0;
+}
+
+.strategy-trend-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    text-transform: uppercase;
+}
+
+.strategy-trend-badge.trend-bullish {
+    background: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+}
+
+.strategy-trend-badge.trend-bearish {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+.strategy-sl-preview {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-family: 'SF Mono', Monaco, monospace;
+}
+
+.strategy-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-left: auto;
+}
+
+.strategy-collapse-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.3s ease, color 0.2s;
+    flex-shrink: 0;
+}
+
+.strategy-collapse-btn:hover {
+    color: var(--text-primary);
+}
+
+.strategy-card.expanded .strategy-collapse-btn {
+    transform: rotate(180deg);
+}
+
+/* Collapsible Card Body */
+.strategy-card-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, margin-top 0.3s ease, opacity 0.3s ease;
+    opacity: 0;
+}
+
+.strategy-card.expanded .strategy-card-body {
+    max-height: 800px;
+    margin-top: 1rem;
+    opacity: 1;
+}
+
+/* Legacy header (kept for backwards compatibility) */
 .strategy-header {
     display: flex;
     justify-content: space-between;
@@ -70,17 +161,6 @@
     margin-bottom: 1rem;
     padding-bottom: 0.75rem;
     border-bottom: 1px solid var(--border-primary);
-}
-
-.strategy-name {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: var(--accent-primary);
-}
-
-.strategy-actions {
-    display: flex;
-    gap: 0.5rem;
 }
 
 .strategy-actions button {
@@ -261,6 +341,46 @@
     color: #ef4444;
     font-size: 0.8rem;
     text-align: center;
+}
+
+/* BBO Toggle */
+.bbo-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+}
+
+.bbo-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.bbo-toggle-btn {
+    padding: 0.35rem 0.75rem;
+    background: transparent;
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-width: 50px;
+}
+
+.bbo-toggle-btn:hover {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}
+
+.bbo-toggle-btn.active {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: #000;
 }
 
 /* Order Type Toggle */

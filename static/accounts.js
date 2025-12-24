@@ -1346,6 +1346,7 @@ async function closeAllPositions() {
 // ==================== CLOSE POSITION ====================
 
 let currentPosition = null;
+let closeOrderType = 'MARKET';  // Track close order type (MARKET or BBO)
 
 function openClosePositionModal(posData) {
     currentPosition = {
@@ -1378,8 +1379,28 @@ function openClosePositionModal(posData) {
     document.querySelectorAll('.pct-btn').forEach(btn => btn.classList.remove('active'));
     document.querySelector('.pct-btn[data-pct="100"]').classList.add('active');
 
+    // Reset order type to MARKET
+    closeOrderType = 'MARKET';
+    const toggleBtns = document.querySelectorAll('#closeOrderTypeToggle .toggle-btn');
+    toggleBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.type === 'MARKET'));
+    updateCloseButtonText();
+
     // Show modal
     document.getElementById('closePositionModal').classList.add('active');
+}
+
+function setCloseOrderType(type) {
+    closeOrderType = type;
+    const toggleBtns = document.querySelectorAll('#closeOrderTypeToggle .toggle-btn');
+    toggleBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.type === type));
+    updateCloseButtonText();
+}
+
+function updateCloseButtonText() {
+    const btnText = document.querySelector('#confirmClosePositionBtn .btn-text');
+    if (btnText) {
+        btnText.textContent = closeOrderType === 'BBO' ? 'BBO Close' : 'Market Close';
+    }
 }
 
 function updateCloseQuantity(percent) {
@@ -1420,6 +1441,14 @@ function setupClosePositionModal() {
             }
         });
     }
+
+    // Order type toggle buttons
+    const orderTypeBtns = document.querySelectorAll('#closeOrderTypeToggle .toggle-btn');
+    orderTypeBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            setCloseOrderType(btn.dataset.type);
+        });
+    });
 
     // Slider change
     if (slider) {
@@ -1480,14 +1509,15 @@ async function closePosition() {
     const usdcValue = parseFloat(document.getElementById('closeUsdc').value);
     let quantityToClose;
     let closeMessage;
+    const orderTypeLabel = closeOrderType === 'BBO' ? 'BBO' : 'Market';
 
     if (usdcValue && usdcValue > 0) {
         quantityToClose = usdcValue / currentPosition.markPrice;
-        closeMessage = `Closed $${usdcValue.toFixed(2)} of ${currentPosition.symbol} position`;
+        closeMessage = `${orderTypeLabel} closed $${usdcValue.toFixed(2)} of ${currentPosition.symbol}`;
     } else {
         const percent = parseInt(document.getElementById('closePercentSlider').value);
         quantityToClose = (currentPosition.quantity * percent / 100);
-        closeMessage = `Closed ${percent}% of ${currentPosition.symbol} position`;
+        closeMessage = `${orderTypeLabel} closed ${percent}% of ${currentPosition.symbol}`;
     }
 
     btnText.style.display = 'none';
@@ -1501,7 +1531,8 @@ async function closePosition() {
             body: JSON.stringify({
                 symbol: currentPosition.symbol,
                 side: currentPosition.side,
-                quantity: quantityToClose
+                quantity: quantityToClose,
+                order_type: closeOrderType
             })
         });
 
@@ -2430,40 +2461,35 @@ function setupTradeModal() {
         }
     });
 
-    // Symbol selector with search filter
-    const symbolSelect = document.getElementById('tradeSymbol');
-    const symbolSearch = document.getElementById('symbolSearch');
-    const allSymbolOptions = symbolSelect ? Array.from(symbolSelect.options) : [];
+    // Symbol text input
+    const symbolInput = document.getElementById('tradeSymbol');
+    let symbolDebounceTimer = null;
 
-    // Filter symbols as user types
-    symbolSearch?.addEventListener('input', (e) => {
-        const searchTerm = e.target.value.toLowerCase();
-        symbolSelect.innerHTML = '';
+    symbolInput?.addEventListener('input', (e) => {
+        // Convert to uppercase
+        e.target.value = e.target.value.toUpperCase();
 
-        const filteredOptions = allSymbolOptions.filter(option =>
-            option.value.toLowerCase().includes(searchTerm) ||
-            option.text.toLowerCase().includes(searchTerm)
-        );
+        // Debounce the API calls
+        clearTimeout(symbolDebounceTimer);
+        symbolDebounceTimer = setTimeout(() => {
+            const symbol = e.target.value.trim();
+            if (symbol.length >= 3) {
+                tradeState.symbol = symbol;
+                updateCurrencySuffix();
+                fetchCurrentPrice();
+                updateTradeInfo();
+            }
+        }, 500);
+    });
 
-        filteredOptions.forEach(option => {
-            symbolSelect.appendChild(option.cloneNode(true));
-        });
-
-        // Auto-select first match if available
-        if (filteredOptions.length > 0) {
-            symbolSelect.value = filteredOptions[0].value;
-            tradeState.symbol = filteredOptions[0].value;
+    symbolInput?.addEventListener('blur', (e) => {
+        const symbol = e.target.value.trim().toUpperCase();
+        if (symbol) {
+            tradeState.symbol = symbol;
             updateCurrencySuffix();
             fetchCurrentPrice();
             updateTradeInfo();
         }
-    });
-
-    symbolSelect?.addEventListener('change', (e) => {
-        tradeState.symbol = e.target.value;
-        updateCurrencySuffix();
-        fetchCurrentPrice();
-        updateTradeInfo();
     });
 
     // Margin type toggles
@@ -3214,7 +3240,7 @@ window.openJournalModal = openJournalModal;
 
 let quickTrades = [];
 let qtRefreshIntervals = {};
-let qtOrderTypes = {};
+let qtOrderTypes = {};  // Track order type per quick trade (MARKET, LIMIT, or BBO)
 let editingQuickTradeId = null;
 let pendingQtTrade = null;
 let pendingQtLimitOrder = null;
@@ -3270,55 +3296,67 @@ function renderQuickTrades() {
 function createQuickTradeCard(qt) {
     return `
         <div class="quick-trade-card" data-qt-id="${qt.id}">
-            <div class="card-header">
+            <div class="qt-collapsed-header" onclick="toggleQtCollapse(${qt.id})">
                 <div class="card-name">${escapeHtml(qt.name)}</div>
-                <div class="card-actions">
+                <div class="qt-collapsed-info">
+                    <span class="qt-trend-badge" id="qtTrendBadge-${qt.id}">--</span>
+                    <span class="qt-sl-preview" id="qtSlPreview-${qt.id}">SL: --</span>
+                </div>
+                <div class="card-actions" onclick="event.stopPropagation()">
                     <button class="edit-btn" onclick="editQuickTrade(${qt.id})">Edit</button>
                     <button class="delete-btn" onclick="deleteQuickTrade(${qt.id})">Delete</button>
                 </div>
-            </div>
-
-            <div class="card-info">
-                <div class="info-row">
-                    <span class="label">Symbol:</span>
-                    <span class="value">${qt.symbol}</span>
-                </div>
-                <div class="info-row">
-                    <span class="label">EMA:</span>
-                    <span class="value">${qt.fast_ema}/${qt.slow_ema}</span>
-                </div>
-                <div class="info-row">
-                    <span class="label">Timeframe:</span>
-                    <span class="value">${qt.timeframe}</span>
-                </div>
-                <div class="info-row">
-                    <span class="label">Risk:</span>
-                    <span class="value">${qt.risk_percent}%</span>
-                </div>
-                <div class="info-row">
-                    <span class="label">Leverage:</span>
-                    <span class="value">${qt.leverage}x</span>
-                </div>
-            </div>
-
-            <div class="card-data" id="qtData-${qt.id}">
-                <div class="data-loading">Loading market data...</div>
-            </div>
-
-            <div class="order-type-toggle" id="qtOrderTypeToggle-${qt.id}">
-                <button class="toggle-btn active" data-type="MARKET" onclick="setQtOrderType(${qt.id}, 'MARKET')">Market</button>
-                <button class="toggle-btn" data-type="LIMIT" onclick="setQtOrderType(${qt.id}, 'LIMIT')">Limit</button>
-            </div>
-
-            <div class="trade-buttons">
-                <button class="take-long-btn" id="qtLongBtn-${qt.id}"
-                        onclick="handleQtTradeClick(${qt.id}, 'LONG')" disabled>
-                    Take Long
+                <button class="qt-collapse-btn" onclick="event.stopPropagation(); toggleQtCollapse(${qt.id})">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
                 </button>
-                <button class="take-short-btn" id="qtShortBtn-${qt.id}"
-                        onclick="handleQtTradeClick(${qt.id}, 'SHORT')" disabled>
-                    Take Short
-                </button>
+            </div>
+
+            <div class="qt-card-body" id="qtCardBody-${qt.id}">
+                <div class="card-info">
+                    <div class="info-row">
+                        <span class="label">Symbol:</span>
+                        <span class="value">${qt.symbol}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">EMA:</span>
+                        <span class="value">${qt.fast_ema}/${qt.slow_ema}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Timeframe:</span>
+                        <span class="value">${qt.timeframe}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Risk:</span>
+                        <span class="value">${qt.risk_percent}%</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Leverage:</span>
+                        <span class="value">${qt.leverage}x</span>
+                    </div>
+                </div>
+
+                <div class="card-data" id="qtData-${qt.id}">
+                    <div class="data-loading">Loading market data...</div>
+                </div>
+
+                <div class="order-type-toggle" id="qtOrderTypeToggle-${qt.id}">
+                    <button class="toggle-btn active" data-type="MARKET" onclick="setQtOrderType(${qt.id}, 'MARKET')">Market</button>
+                    <button class="toggle-btn" data-type="LIMIT" onclick="setQtOrderType(${qt.id}, 'LIMIT')">Limit</button>
+                    <button class="toggle-btn" data-type="BBO" onclick="setQtOrderType(${qt.id}, 'BBO')">BBO</button>
+                </div>
+
+                <div class="trade-buttons">
+                    <button class="take-long-btn" id="qtLongBtn-${qt.id}"
+                            onclick="handleQtTradeClick(${qt.id}, 'LONG')" disabled>
+                        Market Long
+                    </button>
+                    <button class="take-short-btn" id="qtShortBtn-${qt.id}"
+                            onclick="handleQtTradeClick(${qt.id}, 'SHORT')" disabled>
+                        Market Short
+                    </button>
+                </div>
             </div>
         </div>
     `;
@@ -3425,6 +3463,21 @@ async function fetchQuickTradeData(qtId) {
         if (longBtn) longBtn.disabled = !data.long.is_valid;
         if (shortBtn) shortBtn.disabled = !data.short.is_valid;
 
+        // Update collapsed header with trend and SL
+        const trendBadge = document.getElementById(`qtTrendBadge-${qtId}`);
+        const slPreview = document.getElementById(`qtSlPreview-${qtId}`);
+
+        if (trendBadge) {
+            trendBadge.textContent = data.trend;
+            trendBadge.className = `qt-trend-badge ${data.trend === 'BULLISH' ? 'trend-bullish' : 'trend-bearish'}`;
+        }
+
+        if (slPreview) {
+            // Show SL based on trend: SHORT SL when BEARISH, LONG SL when BULLISH
+            const slData = data.trend === 'BEARISH' ? data.short : data.long;
+            slPreview.textContent = `SL: $${formatQtPrice(slData.sl_price)}`;
+        }
+
     } catch (error) {
         console.error(`Error fetching data for quick trade ${qtId}:`, error);
         dataContainer.innerHTML = `<div class="data-error">Failed to load market data</div>`;
@@ -3450,6 +3503,9 @@ function setQtOrderType(qtId, type) {
             btn.classList.toggle('active', btn.dataset.type === type);
         });
     }
+
+    // Update button text
+    updateQtButtonText(qtId);
 }
 
 // Get order type for a quick trade
@@ -3457,11 +3513,45 @@ function getQtOrderType(qtId) {
     return qtOrderTypes[qtId] || 'MARKET';
 }
 
+// Toggle collapse state for a quick trade card
+function toggleQtCollapse(qtId) {
+    const card = document.querySelector(`.quick-trade-card[data-qt-id="${qtId}"]`);
+    if (card) {
+        card.classList.toggle('expanded');
+    }
+}
+
+// Update trade button text based on order type
+function updateQtButtonText(qtId) {
+    const longBtn = document.getElementById(`qtLongBtn-${qtId}`);
+    const shortBtn = document.getElementById(`qtShortBtn-${qtId}`);
+    const orderType = getQtOrderType(qtId);
+
+    let longText, shortText;
+
+    if (orderType === 'BBO') {
+        longText = 'BBO Long';
+        shortText = 'BBO Short';
+    } else if (orderType === 'LIMIT') {
+        longText = 'Limit Long';
+        shortText = 'Limit Short';
+    } else {
+        longText = 'Market Long';
+        shortText = 'Market Short';
+    }
+
+    if (longBtn) longBtn.textContent = longText;
+    if (shortBtn) shortBtn.textContent = shortText;
+}
+
 // Handle trade button click
 function handleQtTradeClick(qtId, direction) {
     const orderType = getQtOrderType(qtId);
 
-    if (orderType === 'LIMIT') {
+    if (orderType === 'BBO') {
+        // BBO queue order - skip limit price modal, use current best bid/ask
+        openQtTradeConfirm(qtId, direction, 'BBO', null);
+    } else if (orderType === 'LIMIT') {
         openQtLimitPriceModal(qtId, direction);
     } else {
         openQtTradeConfirm(qtId, direction, 'MARKET', null);

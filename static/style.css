@@ -2214,6 +2214,48 @@ body {
     color: var(--text-muted);
 }
 
+/* Close Order Type Section */
+.close-order-type-section {
+    margin-bottom: 1rem;
+}
+
+.close-order-type-section label {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+}
+
+.close-order-type-section .order-type-toggle {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.25rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+}
+
+.close-order-type-section .toggle-btn {
+    flex: 1;
+    padding: 0.5rem 1rem;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.close-order-type-section .toggle-btn:hover {
+    color: var(--text-primary);
+}
+
+.close-order-type-section .toggle-btn.active {
+    background: var(--accent-primary);
+    color: var(--bg-primary);
+}
+
 .close-amount-section {
     background: var(--bg-tertiary);
     border-radius: var(--radius-sm);

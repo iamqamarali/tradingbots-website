@@ -7,6 +7,7 @@
 
 let allPositions = [];
 let currentPositionData = null;
+let closeOrderType = 'MARKET';  // Track close order type (MARKET or BBO)
 
 // DOM elements for positions
 const positionElements = {
@@ -117,6 +118,13 @@ function setupPositionEventListeners() {
             updateCloseQuantity();
         });
     }
+
+    // Order type toggle buttons
+    document.querySelectorAll('#closeOrderTypeToggle .toggle-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            setCloseOrderType(btn.dataset.type);
+        });
+    });
 
     // Stop loss modal
     if (positionElements.editStopLossModalClose) {
@@ -307,7 +315,29 @@ function openClosePositionModal(accountId, symbol, side, quantity, pnl, accountN
     document.querySelector('#closePositionModal .pct-btn[data-pct="100"]').classList.add('active');
     updateCloseQuantity();
 
+    // Reset order type to MARKET
+    closeOrderType = 'MARKET';
+    const toggleBtns = document.querySelectorAll('#closeOrderTypeToggle .toggle-btn');
+    toggleBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.type === 'MARKET'));
+    updateCloseButtonText();
+
     positionElements.closePositionModal.classList.add('active');
+}
+
+// Set close order type
+function setCloseOrderType(type) {
+    closeOrderType = type;
+    const toggleBtns = document.querySelectorAll('#closeOrderTypeToggle .toggle-btn');
+    toggleBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.type === type));
+    updateCloseButtonText();
+}
+
+// Update close button text based on order type
+function updateCloseButtonText() {
+    const btn = document.getElementById('confirmClosePosition');
+    if (btn) {
+        btn.textContent = closeOrderType === 'BBO' ? 'BBO Close' : 'Market Close';
+    }
 }
 
 // Close the close position modal
@@ -331,6 +361,7 @@ async function executeClosePosition() {
 
     const percentage = parseInt(positionElements.closePercentageSlider.value);
     const closeQty = currentPositionData.quantity * percentage / 100;
+    const orderTypeLabel = closeOrderType === 'BBO' ? 'BBO' : 'Market';
 
     positionElements.confirmClosePosition.disabled = true;
     positionElements.confirmClosePosition.innerHTML = '<span class="btn-loading"><span class="btn-spinner"></span>Closing...</span>';
@@ -342,14 +373,15 @@ async function executeClosePosition() {
             body: JSON.stringify({
                 symbol: currentPositionData.symbol,
                 side: currentPositionData.side,
-                quantity: closeQty
+                quantity: closeQty,
+                order_type: closeOrderType
             })
         });
 
         const data = await response.json();
 
         if (response.ok) {
-            showToast(`Position closed: ${currentPositionData.symbol}`, 'success');
+            showToast(`${orderTypeLabel} closed: ${currentPositionData.symbol}`, 'success');
             closeClosePositionModal();
             loadAllPositions();
         } else {
@@ -360,7 +392,7 @@ async function executeClosePosition() {
         showToast('Failed to close position', 'error');
     } finally {
         positionElements.confirmClosePosition.disabled = false;
-        positionElements.confirmClosePosition.innerHTML = 'Close Position';
+        positionElements.confirmClosePosition.textContent = closeOrderType === 'BBO' ? 'BBO Close' : 'Market Close';
     }
 }
 
