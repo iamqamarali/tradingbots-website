@@ -2377,6 +2377,7 @@ let tradeState = {
     marginType: 'ISOLATED',
     leverage: 5,
     orderType: 'LIMIT',
+    useBBO: false,
     availableBalance: 0,
     currentPrice: 0
 };
@@ -2532,6 +2533,9 @@ function setupTradeModal() {
 
     // Order type tabs
     const orderTabs = document.querySelectorAll('.order-tab');
+    const bboToggleGroup = document.getElementById('bboToggleGroup');
+    const bboToggle = document.getElementById('bboToggle');
+
     orderTabs.forEach(tab => {
         tab.addEventListener('click', () => {
             orderTabs.forEach(t => t.classList.remove('active'));
@@ -2545,17 +2549,45 @@ function setupTradeModal() {
             if (tradeState.orderType === 'MARKET') {
                 priceGroup.style.display = 'none';
                 stopPriceGroup.style.display = 'none';
+                bboToggleGroup.style.display = 'none';
             } else if (tradeState.orderType === 'STOP') {
                 priceGroup.style.display = 'block';
                 stopPriceGroup.style.display = 'block';
+                bboToggleGroup.style.display = 'none';
             } else {
+                // LIMIT order
                 priceGroup.style.display = 'block';
                 stopPriceGroup.style.display = 'none';
+                bboToggleGroup.style.display = 'block';
             }
+
+            // Reset BBO when switching order types
+            tradeState.useBBO = false;
+            if (bboToggle) bboToggle.checked = false;
+            document.getElementById('tradePrice').disabled = false;
 
             // Update button text based on order type
             updateTradeButtonText();
         });
+    });
+
+    // BBO toggle handler
+    bboToggle?.addEventListener('change', (e) => {
+        tradeState.useBBO = e.target.checked;
+        const priceInput = document.getElementById('tradePrice');
+        if (tradeState.useBBO) {
+            priceInput.disabled = true;
+            priceInput.value = '';
+            priceInput.placeholder = 'BBO (auto)';
+        } else {
+            priceInput.disabled = false;
+            priceInput.placeholder = '0.00';
+            // Restore current price
+            if (tradeState.currentPrice > 0) {
+                priceInput.value = tradeState.currentPrice.toFixed(2);
+            }
+        }
+        updateTradeButtonText();
     });
 
     // Size slider
@@ -2661,6 +2693,7 @@ function updateTradeButtonText() {
     const buyBtn = document.getElementById('tradeBuyBtn');
     const sellBtn = document.getElementById('tradeSellBtn');
     const orderType = tradeState.orderType;
+    const useBBO = tradeState.useBBO;
 
     let buyText = 'Buy/Long';
     let sellText = 'Sell/Short';
@@ -2669,8 +2702,13 @@ function updateTradeButtonText() {
         buyText = 'Market Buy/Long';
         sellText = 'Market Sell/Short';
     } else if (orderType === 'LIMIT') {
-        buyText = 'Limit Buy/Long';
-        sellText = 'Limit Sell/Short';
+        if (useBBO) {
+            buyText = 'BBO Buy/Long';
+            sellText = 'BBO Sell/Short';
+        } else {
+            buyText = 'Limit Buy/Long';
+            sellText = 'Limit Sell/Short';
+        }
     } else if (orderType === 'STOP') {
         buyText = 'Stop Buy/Long';
         sellText = 'Stop Sell/Short';
@@ -2708,6 +2746,7 @@ async function executeTrade(side) {
         symbol,
         side,
         orderType,
+        useBBO: tradeState.useBBO,
         price,
         stopPrice,
         size,
@@ -2726,7 +2765,7 @@ async function executeTrade(side) {
         return;
     }
 
-    if (orderType === 'LIMIT' && price <= 0) {
+    if (orderType === 'LIMIT' && !tradeState.useBBO && price <= 0) {
         showToast('Please enter a valid limit price', 'error');
         return;
     }
@@ -2772,8 +2811,11 @@ async function executeTrade(side) {
             time_in_force: tif
         };
 
-        // Only include price for LIMIT and STOP orders
-        if (orderType === 'LIMIT' || orderType === 'STOP') {
+        // Only include price for LIMIT and STOP orders (not for BBO)
+        if (orderType === 'LIMIT' && tradeState.useBBO) {
+            // BBO order - use price_match instead of price
+            requestBody.price_match = 'QUEUE';
+        } else if (orderType === 'LIMIT' || orderType === 'STOP') {
             requestBody.price = price;
         }
 

@@ -488,6 +488,12 @@ function openTradeConfirm(strategyId, direction, orderType = 'MARKET', limitPric
 async function executeTrade() {
     if (!pendingTrade) return;
 
+    // Save values before they get cleared
+    const strategyId = pendingTrade.strategyId;
+    const direction = pendingTrade.direction;
+    const orderType = pendingTrade.orderType || 'MARKET';
+    const limitPrice = pendingTrade.limitPrice;
+
     const btn = document.getElementById('executeTradeBtnConfirm');
     const originalText = btn.textContent;
     btn.disabled = true;
@@ -495,16 +501,16 @@ async function executeTrade() {
 
     try {
         const requestBody = {
-            direction: pendingTrade.direction,
-            order_type: pendingTrade.orderType || 'MARKET'
+            direction: direction,
+            order_type: orderType
         };
 
         // Add limit price if it's a limit order
-        if (pendingTrade.orderType === 'LIMIT' && pendingTrade.limitPrice) {
-            requestBody.limit_price = pendingTrade.limitPrice;
+        if (orderType === 'LIMIT' && limitPrice) {
+            requestBody.limit_price = limitPrice;
         }
 
-        const response = await fetch(`/api/strategies/${pendingTrade.strategyId}/trade`, {
+        const response = await fetch(`/api/strategies/${strategyId}/trade`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestBody)
@@ -514,22 +520,22 @@ async function executeTrade() {
         console.log('[Quick Trade] Response:', { ok: response.ok, status: response.status, data });
 
         if (response.ok && data.success) {
-            const orderTypeLabel = pendingTrade.orderType === 'LIMIT' ? 'Limit' : 'Market';
+            const orderTypeLabel = orderType === 'LIMIT' ? 'Limit' : 'Market';
             if (data.warning) {
                 // Position opened but SL failed
-                showToast(`${orderTypeLabel} ${pendingTrade.direction} position opened, but SL failed! Set SL manually.`, 'warning');
+                showToast(`${orderTypeLabel} ${direction} position opened, but SL failed! Set SL manually.`, 'warning');
             } else {
-                showToast(`${orderTypeLabel} ${pendingTrade.direction} trade executed successfully!`, 'success');
+                showToast(`${orderTypeLabel} ${direction} trade executed successfully!`, 'success');
             }
             closeTradeConfirmModal();
             // Refresh the strategy data
-            fetchStrategyData(pendingTrade.strategyId);
+            fetchStrategyData(strategyId);
         } else if (response.ok && !data.success) {
             // Response OK but success flag missing or false
             console.error('[Quick Trade] Response OK but success=false:', data);
             showToast(data.error || data.warning || 'Trade may have executed but response unclear', 'warning');
             closeTradeConfirmModal();
-            fetchStrategyData(pendingTrade.strategyId);
+            fetchStrategyData(strategyId);
         } else {
             // HTTP error
             console.error('[Quick Trade] HTTP error:', response.status, data);
