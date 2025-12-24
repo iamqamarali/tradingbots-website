@@ -511,6 +511,7 @@ async function executeTrade() {
         });
 
         const data = await response.json();
+        console.log('[Quick Trade] Response:', { ok: response.ok, status: response.status, data });
 
         if (response.ok && data.success) {
             const orderTypeLabel = pendingTrade.orderType === 'LIMIT' ? 'Limit' : 'Market';
@@ -523,12 +524,20 @@ async function executeTrade() {
             closeTradeConfirmModal();
             // Refresh the strategy data
             fetchStrategyData(pendingTrade.strategyId);
+        } else if (response.ok && !data.success) {
+            // Response OK but success flag missing or false
+            console.error('[Quick Trade] Response OK but success=false:', data);
+            showToast(data.error || data.warning || 'Trade may have executed but response unclear', 'warning');
+            closeTradeConfirmModal();
+            fetchStrategyData(pendingTrade.strategyId);
         } else {
-            showToast(data.error || 'Trade execution failed', 'error');
+            // HTTP error
+            console.error('[Quick Trade] HTTP error:', response.status, data);
+            showToast(data.error || `Trade failed (HTTP ${response.status})`, 'error');
         }
     } catch (error) {
-        console.error('Error executing trade:', error);
-        showToast('Failed to execute trade', 'error');
+        console.error('[Quick Trade] Exception:', error);
+        showToast(`Failed to execute trade: ${error.message}`, 'error');
     } finally {
         btn.disabled = false;
         btn.textContent = originalText;
