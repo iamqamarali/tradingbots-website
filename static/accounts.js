@@ -1509,8 +1509,8 @@ async function closePosition() {
     const usdcValue = parseFloat(document.getElementById('closeUsdc').value);
     let quantityToClose;
     let closeMessage;
-    const useBbo = closeOrderType === 'BBO';
-    const orderTypeLabel = useBbo ? 'BBO' : 'Market';
+    const isBbo = closeOrderType === 'BBO';
+    const orderTypeLabel = isBbo ? 'BBO' : 'Market';
 
     if (usdcValue && usdcValue > 0) {
         quantityToClose = usdcValue / currentPosition.markPrice;
@@ -1532,10 +1532,10 @@ async function closePosition() {
             quantity: quantityToClose
         };
 
-        // BBO uses LIMIT order type with use_bbo flag
-        if (useBbo) {
+        // BBO uses LIMIT order type with price_match
+        if (isBbo) {
             requestBody.order_type = 'LIMIT';
-            requestBody.use_bbo = true;
+            requestBody.price_match = 'QUEUE';  // Queue at best bid/ask
         } else {
             requestBody.order_type = 'MARKET';
         }
@@ -3559,12 +3559,12 @@ function handleQtTradeClick(qtId, direction) {
     const orderType = getQtOrderType(qtId);
 
     if (orderType === 'BBO') {
-        // BBO queue order - LIMIT order using best bid/ask price
-        openQtTradeConfirm(qtId, direction, 'LIMIT', null, true);  // true = use BBO
+        // BBO queue order - backend will fetch best bid/ask and place LIMIT order
+        openQtTradeConfirm(qtId, direction, 'BBO', null);
     } else if (orderType === 'LIMIT') {
         openQtLimitPriceModal(qtId, direction);
     } else {
-        openQtTradeConfirm(qtId, direction, 'MARKET', null, false);
+        openQtTradeConfirm(qtId, direction, 'MARKET', null);
     }
 }
 
@@ -3676,7 +3676,7 @@ function closeQtLimitPriceModal() {
 }
 
 // Open trade confirmation modal
-function openQtTradeConfirm(qtId, direction, orderType = 'MARKET', limitPrice = null, useBbo = false) {
+function openQtTradeConfirm(qtId, direction, orderType = 'MARKET', limitPrice = null) {
     const dataContainer = document.getElementById(`qtData-${qtId}`);
     if (!dataContainer || !dataContainer.dataset.qtData) {
         showToast('Market data not loaded', 'error');
@@ -3687,7 +3687,8 @@ function openQtTradeConfirm(qtId, direction, orderType = 'MARKET', limitPrice = 
     const qt = quickTrades.find(q => q.id === qtId);
     const directionData = direction === 'LONG' ? qtData.long : qtData.short;
 
-    if (orderType === 'MARKET' && !directionData.is_valid) {
+    // For MARKET and BBO orders, check validity
+    if ((orderType === 'MARKET' || orderType === 'BBO') && !directionData.is_valid) {
         showToast('Trade conditions not met', 'error');
         return;
     }
@@ -3711,7 +3712,6 @@ function openQtTradeConfirm(qtId, direction, orderType = 'MARKET', limitPrice = 
         qt,
         orderType,
         limitPrice,
-        useBbo,
         entryPrice,
         slPercent,
         positionSize
@@ -3720,9 +3720,8 @@ function openQtTradeConfirm(qtId, direction, orderType = 'MARKET', limitPrice = 
     document.getElementById('qtTradeConfirmTitle').textContent = `Confirm ${direction} Trade`;
 
     const orderTypeBadge = document.getElementById('qtConfirmOrderType');
-    const displayOrderType = useBbo ? 'BBO' : orderType;
-    orderTypeBadge.textContent = displayOrderType;
-    orderTypeBadge.className = `order-type-badge ${displayOrderType.toLowerCase()}`;
+    orderTypeBadge.textContent = orderType;
+    orderTypeBadge.className = `order-type-badge ${orderType.toLowerCase()}`;
 
     const directionBadge = document.getElementById('qtConfirmDirection');
     directionBadge.textContent = direction;
@@ -3754,17 +3753,18 @@ async function executeQtTrade() {
 
     try {
         const requestBody = {
-            direction: pendingQtTrade.direction,
-            order_type: pendingQtTrade.orderType || 'MARKET'
+            direction: pendingQtTrade.direction
         };
 
-        if (pendingQtTrade.orderType === 'LIMIT' && pendingQtTrade.limitPrice) {
+        if (pendingQtTrade.orderType === 'BBO') {
+            // BBO order - send as LIMIT with priceMatch
+            requestBody.order_type = 'LIMIT';
+            requestBody.price_match = 'QUEUE';  // Queue at best bid/ask
+        } else if (pendingQtTrade.orderType === 'LIMIT' && pendingQtTrade.limitPrice) {
+            requestBody.order_type = 'LIMIT';
             requestBody.limit_price = pendingQtTrade.limitPrice;
-        }
-
-        // Add use_bbo flag for BBO queue orders
-        if (pendingQtTrade.useBbo) {
-            requestBody.use_bbo = true;
+        } else {
+            requestBody.order_type = 'MARKET';
         }
 
         const response = await fetch(`/api/strategies/${pendingQtTrade.qtId}/trade`, {
@@ -3776,7 +3776,7 @@ async function executeQtTrade() {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            const orderTypeLabel = pendingQtTrade.useBbo ? 'BBO' : (pendingQtTrade.orderType === 'LIMIT' ? 'Limit' : 'Market');
+            const orderTypeLabel = pendingQtTrade.orderType === 'BBO' ? 'BBO' : (pendingQtTrade.orderType === 'LIMIT' ? 'Limit' : 'Market');
             if (data.warning) {
                 showToast(`${orderTypeLabel} ${pendingQtTrade.direction} position opened, but SL failed! Set SL manually.`, 'warning');
             } else {

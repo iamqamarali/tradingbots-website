@@ -350,11 +350,11 @@ function handleTradeClick(strategyId, direction) {
 
     if (orderType === 'BBO') {
         // BBO queue order - LIMIT order using best bid/ask price
-        openTradeConfirm(strategyId, direction, 'LIMIT', null, true);  // true = use BBO
+        openTradeConfirm(strategyId, direction, 'BBO', null);
     } else if (orderType === 'LIMIT') {
         openLimitPriceModal(strategyId, direction);
     } else {
-        openTradeConfirm(strategyId, direction, 'MARKET', null, false);
+        openTradeConfirm(strategyId, direction, 'MARKET', null);
     }
 }
 
@@ -477,7 +477,7 @@ function closeLimitPriceModal() {
 }
 
 // Open trade confirmation modal
-function openTradeConfirm(strategyId, direction, orderType = 'MARKET', limitPrice = null, useBbo = false) {
+function openTradeConfirm(strategyId, direction, orderType = 'MARKET', limitPrice = null) {
     const dataContainer = document.getElementById(`strategyData-${strategyId}`);
     if (!dataContainer || !dataContainer.dataset.strategyData) {
         showToast('Market data not loaded', 'error');
@@ -488,9 +488,8 @@ function openTradeConfirm(strategyId, direction, orderType = 'MARKET', limitPric
     const strategy = strategies.find(s => s.id === strategyId);
     const directionData = direction === 'LONG' ? strategyData.long : strategyData.short;
 
-    // For MARKET orders, check original validity
-    // For LIMIT orders, we already validated in confirmLimitPrice()
-    if (orderType === 'MARKET' && !directionData.is_valid) {
+    // For MARKET and BBO orders, check validity
+    if ((orderType === 'MARKET' || orderType === 'BBO') && !directionData.is_valid) {
         showToast('Trade conditions not met', 'error');
         return;
     }
@@ -515,7 +514,6 @@ function openTradeConfirm(strategyId, direction, orderType = 'MARKET', limitPric
         strategy,
         orderType,
         limitPrice,
-        useBbo,
         entryPrice,
         slPercent,
         positionSize
@@ -526,9 +524,8 @@ function openTradeConfirm(strategyId, direction, orderType = 'MARKET', limitPric
 
     // Order type badge
     const orderTypeBadge = document.getElementById('confirmOrderType');
-    const displayOrderType = useBbo ? 'BBO' : orderType;
-    orderTypeBadge.textContent = displayOrderType;
-    orderTypeBadge.className = `order-type-badge ${displayOrderType.toLowerCase()}`;
+    orderTypeBadge.textContent = orderType;
+    orderTypeBadge.className = `order-type-badge ${orderType.toLowerCase()}`;
 
     const directionBadge = document.getElementById('confirmDirection');
     directionBadge.textContent = direction;
@@ -559,7 +556,6 @@ async function executeTrade() {
     const direction = pendingTrade.direction;
     const orderType = pendingTrade.orderType || 'MARKET';
     const limitPrice = pendingTrade.limitPrice;
-    const useBbo = pendingTrade.useBbo || false;
 
     const btn = document.getElementById('executeTradeBtnConfirm');
     const originalText = btn.textContent;
@@ -568,18 +564,18 @@ async function executeTrade() {
 
     try {
         const requestBody = {
-            direction: direction,
-            order_type: orderType
+            direction: direction
         };
 
-        // Add limit price if it's a limit order
-        if (orderType === 'LIMIT' && limitPrice) {
+        if (orderType === 'BBO') {
+            // BBO order - send as LIMIT with priceMatch
+            requestBody.order_type = 'LIMIT';
+            requestBody.price_match = 'QUEUE';  // Queue at best bid/ask
+        } else if (orderType === 'LIMIT' && limitPrice) {
+            requestBody.order_type = 'LIMIT';
             requestBody.limit_price = limitPrice;
-        }
-
-        // Add use_bbo flag for BBO queue orders
-        if (useBbo) {
-            requestBody.use_bbo = true;
+        } else {
+            requestBody.order_type = 'MARKET';
         }
 
         const response = await fetch(`/api/strategies/${strategyId}/trade`, {
@@ -592,7 +588,7 @@ async function executeTrade() {
         console.log('[Quick Trade] Response:', { ok: response.ok, status: response.status, data });
 
         if (response.ok && data.success) {
-            const orderTypeLabel = useBbo ? 'BBO' : (orderType === 'LIMIT' ? 'Limit' : 'Market');
+            const orderTypeLabel = orderType === 'BBO' ? 'BBO' : (orderType === 'LIMIT' ? 'Limit' : 'Market');
             if (data.warning) {
                 // Position opened but SL failed
                 showToast(`${orderTypeLabel} ${direction} position opened, but SL failed! Set SL manually.`, 'warning');

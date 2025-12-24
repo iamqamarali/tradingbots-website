@@ -1768,6 +1768,7 @@ def api_execute_strategy_trade(strategy_id):
     direction = data.get('direction')
     order_type = data.get('order_type', 'MARKET').upper()
     limit_price = data.get('limit_price')
+    price_match = data.get('price_match')  # For BBO orders: QUEUE, OPPONENT, etc.
 
     if direction not in ['LONG', 'SHORT']:
         return jsonify({'error': 'Invalid direction. Must be LONG or SHORT'}), 400
@@ -1775,8 +1776,9 @@ def api_execute_strategy_trade(strategy_id):
     if order_type not in ['MARKET', 'LIMIT']:
         return jsonify({'error': 'Invalid order_type. Must be MARKET or LIMIT'}), 400
 
-    if order_type == 'LIMIT' and not limit_price:
-        return jsonify({'error': 'limit_price is required for LIMIT orders'}), 400
+    # For LIMIT orders, either limit_price or price_match (BBO) is required
+    if order_type == 'LIMIT' and not limit_price and not price_match:
+        return jsonify({'error': 'limit_price or price_match is required for LIMIT orders'}), 400
 
     account = db.get_account(strategy['account_id'])
     if not account:
@@ -1864,21 +1866,32 @@ def api_execute_strategy_trade(strategy_id):
         except:
             pass  # Leverage may already be set
 
-        # Execute order (MARKET or LIMIT)
+        # Execute order (MARKET or LIMIT with optional BBO)
         side = 'BUY' if direction == 'LONG' else 'SELL'
         limit_price_formatted = None
 
         if order_type == 'LIMIT':
-            # Format limit price with proper precision
-            limit_price_formatted = round(float(limit_price), price_precision)
-            order = client.futures_create_order(
-                symbol=strategy['symbol'],
-                side=side,
-                type='LIMIT',
-                quantity=qty_in_contracts,
-                price=str(limit_price_formatted),
-                timeInForce='GTC'
-            )
+            if price_match:
+                # BBO order - use priceMatch instead of fixed price
+                order = client.futures_create_order(
+                    symbol=strategy['symbol'],
+                    side=side,
+                    type='LIMIT',
+                    quantity=qty_in_contracts,
+                    timeInForce='GTC',
+                    priceMatch=price_match
+                )
+            else:
+                # Regular LIMIT order with fixed price
+                limit_price_formatted = round(float(limit_price), price_precision)
+                order = client.futures_create_order(
+                    symbol=strategy['symbol'],
+                    side=side,
+                    type='LIMIT',
+                    quantity=qty_in_contracts,
+                    price=str(limit_price_formatted),
+                    timeInForce='GTC'
+                )
         else:
             order = client.futures_create_order(
                 symbol=strategy['symbol'],
@@ -2874,6 +2887,8 @@ def api_close_position(account_id):
     symbol = data.get('symbol')
     side = data.get('side')  # Current position side (LONG/SHORT)
     quantity = float(data.get('quantity', 0))
+    order_type = data.get('order_type', 'MARKET').upper()  # MARKET or LIMIT
+    price_match = data.get('price_match')  # For BBO orders: QUEUE, OPPONENT, etc.
 
     if not symbol or not side or quantity <= 0:
         return jsonify({'error': 'Invalid parameters'}), 400
@@ -2922,15 +2937,28 @@ def api_close_position(account_id):
         # If SHORT (sold), we BUY to close
         close_side = 'SELL' if side == 'LONG' else 'BUY'
 
-        print(f"Closing position: {symbol} {side} qty={quantity} (step_size={step_size}, precision={precision}) -> {close_side}")
+        print(f"Closing position: {symbol} {side} qty={quantity} (step_size={step_size}, precision={precision}) -> {close_side}, type={order_type}, priceMatch={price_match}")
 
-        order = client.futures_create_order(
-            symbol=symbol,
-            side=close_side,
-            type='MARKET',
-            quantity=quantity,
-            reduceOnly='true'
-        )
+        if order_type == 'LIMIT' and price_match:
+            # BBO order - use priceMatch instead of fixed price
+            order = client.futures_create_order(
+                symbol=symbol,
+                side=close_side,
+                type='LIMIT',
+                quantity=quantity,
+                timeInForce='GTC',
+                priceMatch=price_match,
+                reduceOnly='true'
+            )
+        else:
+            # MARKET order (default)
+            order = client.futures_create_order(
+                symbol=symbol,
+                side=close_side,
+                type='MARKET',
+                quantity=quantity,
+                reduceOnly='true'
+            )
 
         # Log the full response for debugging
         print(f"  Binance order response: {order}")

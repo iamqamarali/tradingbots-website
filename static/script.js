@@ -361,8 +361,8 @@ async function executeClosePosition() {
 
     const percentage = parseInt(positionElements.closePercentageSlider.value);
     const closeQty = currentPositionData.quantity * percentage / 100;
-    const useBbo = closeOrderType === 'BBO';
-    const orderTypeLabel = useBbo ? 'BBO' : 'Market';
+    const isBbo = closeOrderType === 'BBO';
+    const orderTypeLabel = isBbo ? 'BBO' : 'Market';
 
     positionElements.confirmClosePosition.disabled = true;
     positionElements.confirmClosePosition.innerHTML = '<span class="btn-loading"><span class="btn-spinner"></span>Closing...</span>';
@@ -374,10 +374,10 @@ async function executeClosePosition() {
             quantity: closeQty
         };
 
-        // BBO uses LIMIT order type with use_bbo flag
-        if (useBbo) {
+        // BBO uses LIMIT order type with price_match
+        if (isBbo) {
             requestBody.order_type = 'LIMIT';
-            requestBody.use_bbo = true;
+            requestBody.price_match = 'QUEUE';  // Queue at best bid/ask
         } else {
             requestBody.order_type = 'MARKET';
         }
