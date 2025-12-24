@@ -92,20 +92,43 @@ function createStrategyCard(strategy) {
     return `
         <div class="strategy-card" data-strategy-id="${strategy.id}">
             <div class="strategy-collapsed-header" onclick="toggleStrategyCollapse(${strategy.id})">
-                <div class="strategy-name">${escapeHtml(strategy.name)}</div>
-                <div class="strategy-collapsed-info">
-                    <span class="strategy-trend-badge" id="strategyTrendBadge-${strategy.id}">--</span>
-                    <span class="strategy-sl-preview" id="strategySlPreview-${strategy.id}">SL: --</span>
+                <div class="strategy-header-content">
+                    <div class="strategy-header-line1">
+                        <div class="strategy-name">${escapeHtml(strategy.name)}</div>
+                        <div class="strategy-actions" onclick="event.stopPropagation()">
+                            <button class="edit-btn" onclick="editStrategy(${strategy.id})">Edit</button>
+                            <button class="delete-btn" onclick="deleteStrategy(${strategy.id})">Delete</button>
+                        </div>
+                        <button class="strategy-collapse-btn" onclick="event.stopPropagation(); toggleStrategyCollapse(${strategy.id})">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="strategy-header-line2">
+                        <span class="strategy-sl-preview" id="strategySlPreview-${strategy.id}">SL: --</span>
+                        <span class="strategy-trend-badge" id="strategyTrendBadge-${strategy.id}">--</span>
+                    </div>
                 </div>
-                <div class="strategy-actions" onclick="event.stopPropagation()">
-                    <button class="edit-btn" onclick="editStrategy(${strategy.id})">Edit</button>
-                    <button class="delete-btn" onclick="deleteStrategy(${strategy.id})">Delete</button>
+            </div>
+
+            <div class="strategy-always-visible">
+                <div class="order-type-toggle" id="orderTypeToggle-${strategy.id}">
+                    <button class="toggle-btn active" data-type="MARKET" onclick="setOrderType(${strategy.id}, 'MARKET')">Market</button>
+                    <button class="toggle-btn" data-type="LIMIT" onclick="setOrderType(${strategy.id}, 'LIMIT')">Limit</button>
+                    <button class="toggle-btn" data-type="BBO" onclick="setOrderType(${strategy.id}, 'BBO')">BBO</button>
                 </div>
-                <button class="strategy-collapse-btn" onclick="event.stopPropagation(); toggleStrategyCollapse(${strategy.id})">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="6 9 12 15 18 9"></polyline>
-                    </svg>
-                </button>
+
+                <div class="strategy-buttons">
+                    <button class="take-long-btn" id="longBtn-${strategy.id}"
+                            onclick="handleTradeClick(${strategy.id}, 'LONG')" disabled>
+                        Market Long
+                    </button>
+                    <button class="take-short-btn" id="shortBtn-${strategy.id}"
+                            onclick="handleTradeClick(${strategy.id}, 'SHORT')" disabled>
+                        Market Short
+                    </button>
+                </div>
             </div>
 
             <div class="strategy-card-body" id="strategyCardBody-${strategy.id}">
@@ -138,23 +161,6 @@ function createStrategyCard(strategy) {
 
                 <div class="strategy-data" id="strategyData-${strategy.id}">
                     <div class="data-loading">Loading market data...</div>
-                </div>
-
-                <div class="order-type-toggle" id="orderTypeToggle-${strategy.id}">
-                    <button class="toggle-btn active" data-type="MARKET" onclick="setOrderType(${strategy.id}, 'MARKET')">Market</button>
-                    <button class="toggle-btn" data-type="LIMIT" onclick="setOrderType(${strategy.id}, 'LIMIT')">Limit</button>
-                    <button class="toggle-btn" data-type="BBO" onclick="setOrderType(${strategy.id}, 'BBO')">BBO</button>
-                </div>
-
-                <div class="strategy-buttons">
-                    <button class="take-long-btn" id="longBtn-${strategy.id}"
-                            onclick="handleTradeClick(${strategy.id}, 'LONG')" disabled>
-                        Market Long
-                    </button>
-                    <button class="take-short-btn" id="shortBtn-${strategy.id}"
-                            onclick="handleTradeClick(${strategy.id}, 'SHORT')" disabled>
-                        Market Short
-                    </button>
                 </div>
             </div>
         </div>

@@ -65,12 +65,26 @@
 
 /* Collapsed Header - always visible */
 .strategy-collapsed-header {
+    cursor: pointer;
+    padding-bottom: 0.75rem;
+}
+
+.strategy-header-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.strategy-header-line1 {
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    cursor: pointer;
-    padding-bottom: 0.75rem;
-    border-bottom: 1px solid var(--border-primary);
+}
+
+.strategy-header-line2 {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
 }
 
 .strategy-name {
@@ -78,14 +92,7 @@
     font-weight: 600;
     color: var(--accent-primary);
     white-space: nowrap;
-}
-
-.strategy-collapsed-info {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
     flex: 1;
-    min-width: 0;
 }
 
 .strategy-trend-badge {
@@ -115,7 +122,6 @@
 .strategy-actions {
     display: flex;
     gap: 0.5rem;
-    margin-left: auto;
 }
 
 .strategy-collapse-btn {
@@ -137,6 +143,12 @@
 
 .strategy-card.expanded .strategy-collapse-btn {
     transform: rotate(180deg);
+}
+
+/* Always visible section (trade buttons) */
+.strategy-always-visible {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border-primary);
 }
 
 /* Collapsible Card Body */
