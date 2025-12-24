@@ -3309,7 +3309,7 @@ async function fetchQuickTradeData(qtId) {
         const qt = quickTrades.find(q => q.id === qtId);
         const trendClass = data.trend === 'BULLISH' ? 'trend-bullish' : 'trend-bearish';
         const crossoverIndicator = data.crossover_just_happened ? '<span class="crossover-new">NEW</span>' : '';
-        const crossoverTimeDisplay = data.crossover_time ? formatQtCrossoverTime(data.crossover_time) : '';
+        // Crossover time is now shown per direction (long/short)
 
         dataContainer.innerHTML = `
             <div class="data-row">
@@ -3328,7 +3328,6 @@ async function fetchQuickTradeData(qtId) {
                 <span class="label">Trend:</span>
                 <span class="value ${trendClass}">${data.trend} ${crossoverIndicator}</span>
             </div>
-            ${crossoverTimeDisplay ? `<div class="crossover-time">Crossover: ${crossoverTimeDisplay}</div>` : ''}
             <div class="data-row">
                 <span class="label">Balance:</span>
                 <span class="value">$${data.balance.toFixed(2)}</span>
@@ -3339,7 +3338,8 @@ async function fetchQuickTradeData(qtId) {
             </div>
 
             <div class="direction-section">
-                <div class="direction-header long">LONG (Crossover SL)</div>
+                <div class="direction-header long">LONG</div>
+                ${data.long.crossover_time ? `<div class="crossover-time-small">Crossover: ${formatQtCrossoverTime(data.long.crossover_time)}</div>` : ''}
                 <div class="data-row">
                     <span class="label">SL:</span>
                     <span class="value">$${formatQtPrice(data.long.sl_price)} (${data.long.sl_percent.toFixed(2)}%)</span>
@@ -3352,7 +3352,8 @@ async function fetchQuickTradeData(qtId) {
             </div>
 
             <div class="direction-section">
-                <div class="direction-header short">SHORT (Crossover SL)</div>
+                <div class="direction-header short">SHORT</div>
+                ${data.short.crossover_time ? `<div class="crossover-time-small">Crossover: ${formatQtCrossoverTime(data.short.crossover_time)}</div>` : ''}
                 <div class="data-row">
                     <span class="label">SL:</span>
                     <span class="value">$${formatQtPrice(data.short.sl_price)} (${data.short.sl_percent.toFixed(2)}%)</span>

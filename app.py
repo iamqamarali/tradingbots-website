@@ -1559,8 +1559,8 @@ def api_get_strategy_data(strategy_id):
         if account['is_testnet']:
             client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
 
-        # Get more klines to scan back for crossover (100 candles = ~50 hours on 30m)
-        lookback_candles = 100
+        # Get more klines to scan back for crossover (150 candles = ~75 hours on 30m)
+        lookback_candles = 150
         limit = max(strategy['slow_ema'] + lookback_candles, strategy['sl_lookback'] + 5)
         klines = client.futures_klines(
             symbol=strategy['symbol'],
@@ -1579,15 +1579,17 @@ def api_get_strategy_data(strategy_id):
         current_price = closes[-1]
         trend = 'BULLISH' if fast_ema > slow_ema else 'BEARISH'
 
-        # Find actual crossover candle by scanning back through history
-        # We need to calculate rolling EMAs to find where the crossover happened
-        crossover_candle_idx = None
-        crossover_time = ''
+        # Find crossovers by scanning back through history
+        # We need to find BOTH the current crossover AND the previous one
+        # So that bullish SL uses bullish crossover candles, bearish SL uses bearish crossover candles
 
         # Need at least slow_ema periods to calculate EMA
         min_periods = strategy['slow_ema']
 
-        # Scan backwards from the most recent candle to find crossover
+        # Store crossover info: {trend: (candle_idx, timestamp)}
+        crossovers_found = []
+
+        # Scan backwards from the most recent candle to find crossovers
         for i in range(len(closes) - 1, min_periods, -1):
             # Calculate EMAs up to candle i
             fast_ema_at_i = calculate_ema(closes[:i+1], strategy['fast_ema'])
@@ -1601,32 +1603,76 @@ def api_get_strategy_data(strategy_id):
 
             # Found crossover if trend changed
             if trend_at_i != trend_prev:
-                crossover_candle_idx = i
-                # Get timestamp from kline (k[0] is open time in ms)
-                crossover_timestamp = int(klines[i][0]) / 1000
-                crossover_time = datetime.fromtimestamp(crossover_timestamp).isoformat()
-                break
+                # Use candle CLOSE time (k[6]) since crossover is confirmed at close
+                crossover_timestamp = int(klines[i][6]) / 1000
+                # Use UTC timezone for consistency with frontend
+                crossover_time_str = datetime.utcfromtimestamp(crossover_timestamp).isoformat() + 'Z'
+                crossovers_found.append({
+                    'trend': trend_at_i,  # The trend AFTER the crossover
+                    'candle_idx': i,
+                    'time': crossover_time_str
+                })
+                # Stop after finding 2 crossovers (current + previous)
+                if len(crossovers_found) >= 2:
+                    break
 
-        # Calculate SL based on candles at crossover time (or current if no crossover found)
-        if crossover_candle_idx is not None:
-            # Get sl_lookback candles from the crossover point
-            sl_start = max(0, crossover_candle_idx - strategy['sl_lookback'])
-            sl_end = crossover_candle_idx
-            sl_candles = klines[sl_start:sl_end] if sl_end > sl_start else klines[crossover_candle_idx:crossover_candle_idx+1]
-        else:
-            # No crossover found in range, use current candles
-            sl_candles = klines[-(strategy['sl_lookback'] + 1):-1]
-            if len(sl_candles) < strategy['sl_lookback']:
-                sl_candles = klines[-strategy['sl_lookback']:]
+        # Current crossover info
+        current_crossover = crossovers_found[0] if crossovers_found else None
+        previous_crossover = crossovers_found[1] if len(crossovers_found) > 1 else None
 
-        # For LONG: SL = lowest low, For SHORT: SL = highest high
-        if sl_candles:
-            long_sl = min(float(k[3]) for k in sl_candles)  # k[3] = low
-            short_sl = max(float(k[2]) for k in sl_candles)  # k[2] = high
+        crossover_time = current_crossover['time'] if current_crossover else ''
+
+        # Calculate SL for each direction from their respective crossovers
+        # BULLISH crossover -> use for LONG SL (lowest low)
+        # BEARISH crossover -> use for SHORT SL (highest high)
+
+        def get_sl_candles(crossover_idx):
+            """Get sl_lookback candles before a crossover point"""
+            if crossover_idx is not None:
+                sl_start = max(0, crossover_idx - strategy['sl_lookback'])
+                sl_end = crossover_idx
+                candles = klines[sl_start:sl_end] if sl_end > sl_start else klines[crossover_idx:crossover_idx+1]
+                return candles
+            return None
+
+        # Determine which crossover to use for each direction
+        long_crossover_time = ''
+        short_crossover_time = ''
+
+        if current_crossover:
+            if current_crossover['trend'] == 'BULLISH':
+                # Current is bullish -> use for LONG, previous (bearish) for SHORT
+                long_crossover_idx = current_crossover['candle_idx']
+                long_crossover_time = current_crossover['time']
+                short_crossover_idx = previous_crossover['candle_idx'] if previous_crossover else None
+                short_crossover_time = previous_crossover['time'] if previous_crossover else ''
+            else:
+                # Current is bearish -> use for SHORT, previous (bullish) for LONG
+                short_crossover_idx = current_crossover['candle_idx']
+                short_crossover_time = current_crossover['time']
+                long_crossover_idx = previous_crossover['candle_idx'] if previous_crossover else None
+                long_crossover_time = previous_crossover['time'] if previous_crossover else ''
         else:
-            # Fallback to current price with buffer
-            long_sl = current_price * 0.98
-            short_sl = current_price * 1.02
+            long_crossover_idx = None
+            short_crossover_idx = None
+
+        # Get candles for LONG SL (from bullish crossover)
+        long_sl_candles = get_sl_candles(long_crossover_idx)
+        if long_sl_candles:
+            long_sl = min(float(k[3]) for k in long_sl_candles)  # lowest low
+        else:
+            # Fallback: use recent candles
+            fallback_candles = klines[-(strategy['sl_lookback'] + 1):-1]
+            long_sl = min(float(k[3]) for k in fallback_candles) if fallback_candles else current_price * 0.98
+
+        # Get candles for SHORT SL (from bearish crossover)
+        short_sl_candles = get_sl_candles(short_crossover_idx)
+        if short_sl_candles:
+            short_sl = max(float(k[2]) for k in short_sl_candles)  # highest high
+        else:
+            # Fallback: use recent candles
+            fallback_candles = klines[-(strategy['sl_lookback'] + 1):-1]
+            short_sl = max(float(k[2]) for k in fallback_candles) if fallback_candles else current_price * 1.02
 
         # Check if trend has changed from stored (new crossover just happened)
         stored_direction = strategy.get('crossover_direction')
@@ -1679,14 +1725,16 @@ def api_get_strategy_data(strategy_id):
                 'sl_percent': round(long_sl_percent, 4),
                 'position_size': round(long_position_size, 2),
                 'is_valid': long_valid,
-                'invalid_reason': None if long_valid else f'SL {long_sl_percent:.2f}% outside range ({strategy["sl_min_percent"]}-{strategy["sl_max_percent"]}%)'
+                'invalid_reason': None if long_valid else f'SL {long_sl_percent:.2f}% outside range ({strategy["sl_min_percent"]}-{strategy["sl_max_percent"]}%)',
+                'crossover_time': long_crossover_time
             },
             'short': {
                 'sl_price': round(short_sl, 4),
                 'sl_percent': round(short_sl_percent, 4),
                 'position_size': round(short_position_size, 2),
                 'is_valid': short_valid,
-                'invalid_reason': None if short_valid else f'SL {short_sl_percent:.2f}% outside range ({strategy["sl_min_percent"]}-{strategy["sl_max_percent"]}%)'
+                'invalid_reason': None if short_valid else f'SL {short_sl_percent:.2f}% outside range ({strategy["sl_min_percent"]}-{strategy["sl_max_percent"]}%)',
+                'crossover_time': short_crossover_time
             },
             'balance': round(total_balance, 2),
             'risk_amount': round(risk_amount, 2)

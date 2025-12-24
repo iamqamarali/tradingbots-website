@@ -4192,6 +4192,12 @@
     color: #ef4444;
 }
 
+.quick-trade-card .crossover-time-small {
+    font-size: 0.65rem;
+    color: var(--text-tertiary);
+    margin-bottom: 0.4rem;
+}
+
 .quick-trade-card .value.valid {
     color: #22c55e !important;
 }
