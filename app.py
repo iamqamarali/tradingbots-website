@@ -1793,8 +1793,13 @@ def api_execute_strategy_trade(strategy_id):
         ticker = client.futures_symbol_ticker(symbol=strategy['symbol'])
         current_price = float(ticker['price'])
 
-        # For LIMIT orders, use limit_price as entry; for MARKET, use current_price
-        entry_price = float(limit_price) if order_type == 'LIMIT' else current_price
+        # For LIMIT orders with fixed price, use limit_price as entry
+        # For BBO orders (price_match), use current_price as approximate entry
+        # For MARKET orders, use current_price
+        if order_type == 'LIMIT' and limit_price:
+            entry_price = float(limit_price)
+        else:
+            entry_price = current_price
 
         # Use locked crossover SL from strategy (not recalculated)
         if direction == 'LONG':
