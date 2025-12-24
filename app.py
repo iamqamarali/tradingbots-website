@@ -3554,7 +3554,7 @@ def api_execute_trade(account_id):
     stop_price = data.get('stop_price')
     quantity = data.get('quantity')  # In USDC (notional value)
     leverage = data.get('leverage', 5)
-    margin_type = data.get('margin_type', 'CROSSED')
+    margin_type = data.get('margin_type', 'ISOLATED')
     reduce_only = data.get('reduce_only', False)
     time_in_force = data.get('time_in_force', 'GTC')
     tp_price = data.get('tp_price')

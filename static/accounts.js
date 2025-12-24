@@ -2364,7 +2364,7 @@ async function addToPosition() {
 
 let tradeState = {
     symbol: 'BTCUSDT',
-    marginType: 'CROSSED',
+    marginType: 'ISOLATED',
     leverage: 5,
     orderType: 'LIMIT',
     availableBalance: 0,
@@ -2471,9 +2471,10 @@ function setupTradeModal() {
         tradeState.marginType = 'ISOLATED';
     });
 
-    // Leverage button
+    // Leverage button - set source to 'manual'
     const leverageBtn = document.getElementById('leverageBtn');
     leverageBtn?.addEventListener('click', () => {
+        leverageModal.dataset.source = 'manual';
         leverageModal.classList.add('active');
         document.getElementById('leverageSlider').value = tradeState.leverage;
         document.getElementById('leverageDisplayValue').textContent = tradeState.leverage;
@@ -2482,11 +2483,13 @@ function setupTradeModal() {
     // Close leverage modal
     closeLeverageModal?.addEventListener('click', () => {
         leverageModal.classList.remove('active');
+        delete leverageModal.dataset.source;
     });
 
     leverageModal?.addEventListener('click', (e) => {
         if (e.target === leverageModal) {
             leverageModal.classList.remove('active');
+            delete leverageModal.dataset.source;
         }
     });
 
@@ -2496,13 +2499,25 @@ function setupTradeModal() {
         document.getElementById('leverageDisplayValue').textContent = e.target.value;
     });
 
-    // Confirm leverage
+    // Confirm leverage - handles BOTH manual and risk-calc tabs
     const confirmLeverageBtn = document.getElementById('confirmLeverageBtn');
     confirmLeverageBtn?.addEventListener('click', () => {
-        tradeState.leverage = parseInt(document.getElementById('leverageSlider').value);
-        document.getElementById('leverageValue').textContent = tradeState.leverage;
+        const newLeverage = parseInt(document.getElementById('leverageSlider').value);
+        const source = leverageModal.dataset.source;
+
+        if (source === 'risk-calc') {
+            riskCalcState.leverage = newLeverage;
+            document.getElementById('riskLeverageValue').textContent = newLeverage;
+            updateRiskCalculations();
+        } else {
+            // Manual trade tab
+            tradeState.leverage = newLeverage;
+            document.getElementById('leverageValue').textContent = newLeverage;
+            updateTradeInfo();
+        }
+
         leverageModal.classList.remove('active');
-        updateTradeInfo();
+        delete leverageModal.dataset.source;
     });
 
     // Order type tabs
@@ -3860,9 +3875,9 @@ window.handleQtTradeClick = handleQtTradeClick;
 // ==================== RISK CALCULATOR TAB ====================
 
 let riskCalcState = {
-    symbol: 'BTCUSDT',
-    marginType: 'CROSSED',
-    leverage: 5,
+    symbol: 'BTCUSDC',
+    marginType: 'ISOLATED',
+    leverage: 20,
     orderType: 'MARKET', // MARKET or BBO
     currentPrice: 0,
     slPrice: 0,
@@ -3905,38 +3920,35 @@ function setupRiskCalculatorTab() {
         });
     });
 
-    // Symbol selector with search
-    const riskSymbolSelect = document.getElementById('riskTradeSymbol');
-    const riskSymbolSearch = document.getElementById('riskSymbolSearch');
-    const allRiskSymbolOptions = riskSymbolSelect ? Array.from(riskSymbolSelect.options) : [];
+    // Symbol text input
+    const riskSymbolInput = document.getElementById('riskSymbolInput');
+    let symbolInputTimeout = null;
 
-    riskSymbolSearch?.addEventListener('input', (e) => {
-        const searchTerm = e.target.value.toLowerCase();
-        riskSymbolSelect.innerHTML = '';
+    riskSymbolInput?.addEventListener('input', (e) => {
+        // Uppercase and remove spaces
+        const value = e.target.value.toUpperCase().replace(/\s+/g, '');
+        e.target.value = value;
 
-        const filtered = allRiskSymbolOptions.filter(opt =>
-            opt.value.toLowerCase().includes(searchTerm) ||
-            opt.text.toLowerCase().includes(searchTerm)
-        );
+        // Debounce the API call
+        if (symbolInputTimeout) clearTimeout(symbolInputTimeout);
+        symbolInputTimeout = setTimeout(() => {
+            if (value.length >= 3) {
+                riskCalcState.symbol = value;
+                updateRiskCurrencySuffix();
+                fetchRiskCurrentPrice();
+                updateRiskCalculations();
+            }
+        }, 500);
+    });
 
-        filtered.forEach(opt => {
-            riskSymbolSelect.appendChild(opt.cloneNode(true));
-        });
-
-        if (filtered.length > 0) {
-            riskSymbolSelect.value = filtered[0].value;
-            riskCalcState.symbol = filtered[0].value;
+    riskSymbolInput?.addEventListener('blur', (e) => {
+        const value = e.target.value.toUpperCase().replace(/\s+/g, '');
+        if (value.length >= 3) {
+            riskCalcState.symbol = value;
             updateRiskCurrencySuffix();
             fetchRiskCurrentPrice();
             updateRiskCalculations();
         }
-    });
-
-    riskSymbolSelect?.addEventListener('change', (e) => {
-        riskCalcState.symbol = e.target.value;
-        updateRiskCurrencySuffix();
-        fetchRiskCurrentPrice();
-        updateRiskCalculations();
     });
 
     // Margin type toggles
@@ -3955,7 +3967,7 @@ function setupRiskCalculatorTab() {
         riskCalcState.marginType = 'ISOLATED';
     });
 
-    // Leverage button - opens the same leverage modal
+    // Leverage button - opens the shared leverage modal with risk-calc source
     const riskLeverageBtn = document.getElementById('riskLeverageBtn');
     const leverageModal = document.getElementById('leverageModal');
 
@@ -3965,29 +3977,6 @@ function setupRiskCalculatorTab() {
         leverageModal.classList.add('active');
         document.getElementById('leverageSlider').value = riskCalcState.leverage;
         document.getElementById('leverageDisplayValue').textContent = riskCalcState.leverage;
-    });
-
-    // Modify leverage confirm to check source
-    const confirmLeverageBtn = document.getElementById('confirmLeverageBtn');
-    const originalLeverageHandler = confirmLeverageBtn.onclick;
-
-    confirmLeverageBtn.onclick = null;
-    confirmLeverageBtn.addEventListener('click', () => {
-        const newLeverage = parseInt(document.getElementById('leverageSlider').value);
-
-        if (leverageModal.dataset.source === 'risk-calc') {
-            riskCalcState.leverage = newLeverage;
-            document.getElementById('riskLeverageValue').textContent = newLeverage;
-            updateRiskCalculations();
-        } else {
-            // Original trade state logic
-            tradeState.leverage = newLeverage;
-            document.getElementById('leverageValue').textContent = newLeverage;
-            updateTradeInfo();
-        }
-
-        leverageModal.classList.remove('active');
-        delete leverageModal.dataset.source;
     });
 
     // Order type toggle
