@@ -3559,9 +3559,12 @@ def api_execute_trade(account_id):
     time_in_force = data.get('time_in_force', 'GTC')
     tp_price = data.get('tp_price')
     sl_price = data.get('sl_price')
+    price_match = data.get('price_match')  # For BBO orders: OPPONENT, QUEUE, etc.
 
     print(f"  Symbol: {symbol}, Side: {side}, Type: {order_type}")
     print(f"  Price: {price}, Quantity (USDC): {quantity}, Leverage: {leverage}x")
+    if price_match:
+        print(f"  PriceMatch (BBO): {price_match}")
 
     debug_log = []
 
@@ -3654,12 +3657,20 @@ def api_execute_trade(account_id):
             order_params['type'] = 'MARKET'
             debug_log.append("Creating MARKET order (executes immediately at market price)")
         elif order_type == 'LIMIT':
-            if not price or float(price) <= 0:
+            # Check if using priceMatch for BBO orders
+            if price_match:
+                # BBO order - use priceMatch instead of fixed price
+                order_params['type'] = 'LIMIT'
+                order_params['timeInForce'] = time_in_force
+                order_params['priceMatch'] = price_match
+                debug_log.append(f"Creating BBO LIMIT order with priceMatch={price_match}")
+            elif not price or float(price) <= 0:
                 return jsonify({'error': 'Limit order requires a valid price', '_debug': debug_log}), 400
-            order_params['type'] = 'LIMIT'
-            order_params['price'] = str(round(float(price), price_precision))
-            order_params['timeInForce'] = time_in_force
-            debug_log.append(f"Creating LIMIT order at price {order_params['price']} with TIF={time_in_force}")
+            else:
+                order_params['type'] = 'LIMIT'
+                order_params['price'] = str(round(float(price), price_precision))
+                order_params['timeInForce'] = time_in_force
+                debug_log.append(f"Creating LIMIT order at price {order_params['price']} with TIF={time_in_force}")
         elif order_type == 'STOP':
             if not price or float(price) <= 0:
                 return jsonify({'error': 'Stop order requires a valid limit price', '_debug': debug_log}), 400

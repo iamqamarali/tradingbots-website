@@ -3856,3 +3856,478 @@ window.deleteQuickTrade = deleteQuickTrade;
 window.setQtOrderType = setQtOrderType;
 window.handleQtTradeClick = handleQtTradeClick;
 
+
+// ==================== RISK CALCULATOR TAB ====================
+
+let riskCalcState = {
+    symbol: 'BTCUSDT',
+    marginType: 'CROSSED',
+    leverage: 5,
+    orderType: 'MARKET', // MARKET or BBO
+    currentPrice: 0,
+    slPrice: 0,
+    riskPercent: 1.0,
+    availableBalance: 0
+};
+
+let riskPriceInterval = null;
+
+function setupRiskCalculatorTab() {
+    // Trade modal tab switching
+    const modalTabs = document.querySelectorAll('.trade-modal-tab');
+    const manualTab = document.getElementById('manualTradeTab');
+    const riskCalcTab = document.getElementById('riskCalcTab');
+
+    modalTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            modalTabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+
+            const tabName = tab.dataset.tab;
+            if (tabName === 'manual') {
+                manualTab?.classList.add('active');
+                riskCalcTab?.classList.remove('active');
+                if (riskPriceInterval) {
+                    clearInterval(riskPriceInterval);
+                    riskPriceInterval = null;
+                }
+            } else if (tabName === 'risk-calc') {
+                manualTab?.classList.remove('active');
+                riskCalcTab?.classList.add('active');
+                // Fetch price immediately when switching to risk calc tab
+                fetchRiskCurrentPrice();
+                updateRiskCalculations();
+                // Start price refresh interval
+                if (!riskPriceInterval) {
+                    riskPriceInterval = setInterval(fetchRiskCurrentPrice, 3000);
+                }
+            }
+        });
+    });
+
+    // Symbol selector with search
+    const riskSymbolSelect = document.getElementById('riskTradeSymbol');
+    const riskSymbolSearch = document.getElementById('riskSymbolSearch');
+    const allRiskSymbolOptions = riskSymbolSelect ? Array.from(riskSymbolSelect.options) : [];
+
+    riskSymbolSearch?.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        riskSymbolSelect.innerHTML = '';
+
+        const filtered = allRiskSymbolOptions.filter(opt =>
+            opt.value.toLowerCase().includes(searchTerm) ||
+            opt.text.toLowerCase().includes(searchTerm)
+        );
+
+        filtered.forEach(opt => {
+            riskSymbolSelect.appendChild(opt.cloneNode(true));
+        });
+
+        if (filtered.length > 0) {
+            riskSymbolSelect.value = filtered[0].value;
+            riskCalcState.symbol = filtered[0].value;
+            updateRiskCurrencySuffix();
+            fetchRiskCurrentPrice();
+            updateRiskCalculations();
+        }
+    });
+
+    riskSymbolSelect?.addEventListener('change', (e) => {
+        riskCalcState.symbol = e.target.value;
+        updateRiskCurrencySuffix();
+        fetchRiskCurrentPrice();
+        updateRiskCalculations();
+    });
+
+    // Margin type toggles
+    const riskMarginCross = document.getElementById('riskMarginCross');
+    const riskMarginIsolated = document.getElementById('riskMarginIsolated');
+
+    riskMarginCross?.addEventListener('click', () => {
+        riskMarginCross.classList.add('active');
+        riskMarginIsolated?.classList.remove('active');
+        riskCalcState.marginType = 'CROSSED';
+    });
+
+    riskMarginIsolated?.addEventListener('click', () => {
+        riskMarginIsolated.classList.add('active');
+        riskMarginCross?.classList.remove('active');
+        riskCalcState.marginType = 'ISOLATED';
+    });
+
+    // Leverage button - opens the same leverage modal
+    const riskLeverageBtn = document.getElementById('riskLeverageBtn');
+    const leverageModal = document.getElementById('leverageModal');
+
+    riskLeverageBtn?.addEventListener('click', () => {
+        // Store that we're coming from risk calc
+        leverageModal.dataset.source = 'risk-calc';
+        leverageModal.classList.add('active');
+        document.getElementById('leverageSlider').value = riskCalcState.leverage;
+        document.getElementById('leverageDisplayValue').textContent = riskCalcState.leverage;
+    });
+
+    // Modify leverage confirm to check source
+    const confirmLeverageBtn = document.getElementById('confirmLeverageBtn');
+    const originalLeverageHandler = confirmLeverageBtn.onclick;
+
+    confirmLeverageBtn.onclick = null;
+    confirmLeverageBtn.addEventListener('click', () => {
+        const newLeverage = parseInt(document.getElementById('leverageSlider').value);
+
+        if (leverageModal.dataset.source === 'risk-calc') {
+            riskCalcState.leverage = newLeverage;
+            document.getElementById('riskLeverageValue').textContent = newLeverage;
+            updateRiskCalculations();
+        } else {
+            // Original trade state logic
+            tradeState.leverage = newLeverage;
+            document.getElementById('leverageValue').textContent = newLeverage;
+            updateTradeInfo();
+        }
+
+        leverageModal.classList.remove('active');
+        delete leverageModal.dataset.source;
+    });
+
+    // Order type toggle
+    const riskOrderMarket = document.getElementById('riskOrderMarket');
+    const riskOrderBBO = document.getElementById('riskOrderBBO');
+
+    riskOrderMarket?.addEventListener('click', () => {
+        riskOrderMarket.classList.add('active');
+        riskOrderBBO?.classList.remove('active');
+        riskCalcState.orderType = 'MARKET';
+    });
+
+    riskOrderBBO?.addEventListener('click', () => {
+        riskOrderBBO.classList.add('active');
+        riskOrderMarket?.classList.remove('active');
+        riskCalcState.orderType = 'BBO';
+    });
+
+    // Refresh price button
+    const refreshPriceBtn = document.getElementById('refreshPriceBtn');
+    refreshPriceBtn?.addEventListener('click', () => {
+        fetchRiskCurrentPrice();
+    });
+
+    // Real-time calculation inputs
+    const riskSlPriceInput = document.getElementById('riskSlPrice');
+    const riskPercentInput = document.getElementById('riskPercent');
+
+    riskSlPriceInput?.addEventListener('input', () => {
+        riskCalcState.slPrice = parseFloat(riskSlPriceInput.value) || 0;
+        updateRiskCalculations();
+    });
+
+    riskPercentInput?.addEventListener('input', () => {
+        riskCalcState.riskPercent = parseFloat(riskPercentInput.value) || 0;
+        updateRiskCalculations();
+    });
+
+    // Trade buttons
+    const riskBuyBtn = document.getElementById('riskBuyBtn');
+    const riskSellBtn = document.getElementById('riskSellBtn');
+
+    riskBuyBtn?.addEventListener('click', () => executeRiskTrade('BUY'));
+    riskSellBtn?.addEventListener('click', () => executeRiskTrade('SELL'));
+
+    // Update when trade modal opens
+    const newTradeBtn = document.getElementById('newTradeBtn');
+    const originalHandler = newTradeBtn?.onclick;
+
+    if (newTradeBtn) {
+        newTradeBtn.addEventListener('click', () => {
+            // Update risk calc available balance
+            const symbol = riskCalcState.symbol || '';
+            const isUsdt = symbol.endsWith('USDT');
+            riskCalcState.availableBalance = isUsdt ? (usdtBalance || 0) : (usdcBalance || 0);
+            updateRiskCalculations();
+        });
+    }
+
+    // Cleanup interval when modal closes
+    const tradeModal = document.getElementById('newTradeModal');
+    const closeTradeModal = document.getElementById('closeTradeModal');
+
+    closeTradeModal?.addEventListener('click', () => {
+        if (riskPriceInterval) {
+            clearInterval(riskPriceInterval);
+            riskPriceInterval = null;
+        }
+    });
+
+    tradeModal?.addEventListener('click', (e) => {
+        if (e.target === tradeModal && riskPriceInterval) {
+            clearInterval(riskPriceInterval);
+            riskPriceInterval = null;
+        }
+    });
+}
+
+function updateRiskCurrencySuffix() {
+    const symbol = riskCalcState.symbol || '';
+    const currency = symbol.endsWith('USDT') ? 'USDT' : 'USDC';
+    const isUsdt = symbol.endsWith('USDT');
+
+    document.getElementById('riskSlSuffix').textContent = currency;
+
+    // Update available balance for the new currency
+    riskCalcState.availableBalance = isUsdt ? (usdtBalance || 0) : (usdcBalance || 0);
+}
+
+async function fetchRiskCurrentPrice() {
+    const refreshBtn = document.getElementById('refreshPriceBtn');
+    const priceDisplay = document.getElementById('riskCurrentPrice');
+
+    if (refreshBtn) refreshBtn.classList.add('loading');
+
+    try {
+        const response = await fetch(`/api/ticker/${riskCalcState.symbol}`);
+        if (response.ok) {
+            const data = await response.json();
+            riskCalcState.currentPrice = parseFloat(data.price);
+
+            if (priceDisplay) {
+                priceDisplay.textContent = `$${riskCalcState.currentPrice.toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: riskCalcState.currentPrice < 1 ? 6 : 2
+                })}`;
+            }
+
+            // Update calculations with new price
+            updateRiskCalculations();
+        }
+    } catch (error) {
+        console.error('Error fetching price:', error);
+        if (priceDisplay) priceDisplay.textContent = 'Error';
+    } finally {
+        if (refreshBtn) refreshBtn.classList.remove('loading');
+    }
+}
+
+function updateRiskCalculations() {
+    const currentPrice = riskCalcState.currentPrice;
+    const slPrice = riskCalcState.slPrice;
+    const riskPercent = riskCalcState.riskPercent;
+    const leverage = riskCalcState.leverage;
+    const symbol = riskCalcState.symbol || '';
+    const isUsdt = symbol.endsWith('USDT');
+    const currency = isUsdt ? 'USDT' : 'USDC';
+
+    // Get correct balance
+    const balance = isUsdt ? (usdtBalance || 0) : (usdcBalance || 0);
+    riskCalcState.availableBalance = balance;
+
+    // Update display elements
+    const accountBalanceEl = document.getElementById('riskAccountBalance');
+    const riskAmountEl = document.getElementById('riskAmount');
+    const slDistanceEl = document.getElementById('riskSlDistance');
+    const positionSizeEl = document.getElementById('riskPositionSize');
+    const quantityEl = document.getElementById('riskQuantity');
+    const marginRequiredEl = document.getElementById('riskMarginRequired');
+    const tradeAvailableEl = document.getElementById('riskTradeAvailable');
+    const tradeMaxEl = document.getElementById('riskTradeMax');
+
+    // Account balance
+    if (accountBalanceEl) {
+        accountBalanceEl.textContent = `$${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+
+    // Risk amount = balance * riskPercent / 100
+    const riskAmount = balance * (riskPercent / 100);
+    if (riskAmountEl) {
+        riskAmountEl.textContent = `$${riskAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+
+    // SL Distance % = |currentPrice - slPrice| / currentPrice * 100
+    let slDistance = 0;
+    if (currentPrice > 0 && slPrice > 0) {
+        slDistance = Math.abs(currentPrice - slPrice) / currentPrice * 100;
+    }
+    if (slDistanceEl) {
+        slDistanceEl.textContent = `${slDistance.toFixed(2)}%`;
+        // Color based on valid SL direction (we'll determine this at trade time)
+        slDistanceEl.classList.remove('positive', 'negative');
+        if (slDistance > 0) {
+            slDistanceEl.classList.add(slDistance > 5 ? 'negative' : 'positive');
+        }
+    }
+
+    // Position size = riskAmount / (slDistance / 100)
+    // If SL distance is 0, position size would be infinite, so cap it
+    let positionSize = 0;
+    if (slDistance > 0) {
+        positionSize = riskAmount / (slDistance / 100);
+    }
+    if (positionSizeEl) {
+        positionSizeEl.textContent = `$${positionSize.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+
+    // Quantity = positionSize / currentPrice
+    let quantity = 0;
+    if (currentPrice > 0) {
+        quantity = positionSize / currentPrice;
+    }
+    if (quantityEl) {
+        quantityEl.textContent = quantity.toFixed(6);
+    }
+
+    // Margin required = positionSize / leverage
+    const marginRequired = positionSize / leverage;
+    if (marginRequiredEl) {
+        marginRequiredEl.textContent = `$${marginRequired.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+
+    // Trade info row
+    if (tradeAvailableEl) {
+        tradeAvailableEl.textContent = `${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+    }
+    if (tradeMaxEl) {
+        const maxPosition = balance * leverage;
+        tradeMaxEl.textContent = `${maxPosition.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+    }
+}
+
+async function executeRiskTrade(side) {
+    const currentPrice = riskCalcState.currentPrice;
+    const slPrice = riskCalcState.slPrice;
+    const riskPercent = riskCalcState.riskPercent;
+    const leverage = riskCalcState.leverage;
+    const symbol = riskCalcState.symbol;
+    const orderType = riskCalcState.orderType;
+    const marginType = riskCalcState.marginType;
+
+    // Validation
+    if (!currentPrice || currentPrice <= 0) {
+        showToast('Unable to get current price', 'error');
+        return;
+    }
+
+    if (!slPrice || slPrice <= 0) {
+        showToast('Please enter a stop loss price', 'error');
+        return;
+    }
+
+    if (!riskPercent || riskPercent <= 0) {
+        showToast('Please enter a valid risk percentage', 'error');
+        return;
+    }
+
+    // Validate SL direction
+    if (side === 'BUY' && slPrice >= currentPrice) {
+        showToast('For LONG, stop loss must be below current price', 'error');
+        return;
+    }
+    if (side === 'SELL' && slPrice <= currentPrice) {
+        showToast('For SHORT, stop loss must be above current price', 'error');
+        return;
+    }
+
+    // Calculate position size
+    const slDistance = Math.abs(currentPrice - slPrice) / currentPrice * 100;
+    const balance = riskCalcState.availableBalance;
+    const riskAmount = balance * (riskPercent / 100);
+    const positionSize = riskAmount / (slDistance / 100);
+    const marginRequired = positionSize / leverage;
+
+    // Check if we have enough margin
+    if (marginRequired > balance) {
+        showToast(`Insufficient margin. Need $${marginRequired.toFixed(2)}, have $${balance.toFixed(2)}`, 'error');
+        return;
+    }
+
+    // Button loading state
+    const btn = side === 'BUY' ? document.getElementById('riskBuyBtn') : document.getElementById('riskSellBtn');
+    const btnText = btn.querySelector('.btn-text');
+    const btnLoading = btn.querySelector('.btn-loading');
+
+    btnText.style.display = 'none';
+    btnLoading.style.display = 'flex';
+    btn.disabled = true;
+
+    try {
+        console.log(`%c[Risk Trade] Executing ${side} ${orderType} order`, 'color: #3b82f6; font-weight: bold');
+        console.table({
+            symbol,
+            side,
+            orderType,
+            currentPrice,
+            slPrice,
+            slDistance: slDistance.toFixed(2) + '%',
+            positionSize: positionSize.toFixed(2),
+            riskAmount: riskAmount.toFixed(2),
+            leverage,
+            marginType
+        });
+
+        const requestBody = {
+            symbol,
+            side,
+            order_type: orderType === 'BBO' ? 'LIMIT' : 'MARKET',
+            quantity: positionSize, // USDC notional value
+            leverage,
+            margin_type: marginType,
+            sl_price: slPrice,
+            reduce_only: false,
+            time_in_force: 'GTC'
+        };
+
+        // For BBO orders, use priceMatch to get best bid/offer
+        if (orderType === 'BBO') {
+            requestBody.price_match = 'OPPONENT'; // Places at best bid for BUY, best ask for SELL
+        }
+
+        console.log('%c[Risk Trade] Request body:', 'color: #f59e0b; font-weight: bold', requestBody);
+
+        const response = await fetch(`/api/accounts/${ACCOUNT_ID}/trade`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
+        });
+
+        const data = await response.json();
+
+        if (data._debug) {
+            console.log('%c[Risk Trade] Server Debug Log:', 'color: #f59e0b; font-weight: bold');
+            console.table(data._debug.map((msg, i) => ({ step: i + 1, message: msg })));
+        }
+
+        if (response.ok) {
+            console.log('%c[Risk Trade] SUCCESS', 'color: #22c55e; font-weight: bold');
+            const orderLabel = orderType === 'BBO' ? 'BBO Limit' : 'Market';
+            showToast(`${orderLabel} ${side} order placed with SL at $${slPrice}`, 'success');
+            document.getElementById('newTradeModal').classList.remove('active');
+
+            // Stop price refresh
+            if (riskPriceInterval) {
+                clearInterval(riskPriceInterval);
+                riskPriceInterval = null;
+            }
+
+            // Refresh data
+            loadPositions();
+            loadOrders();
+            loadBalance();
+        } else {
+            console.error('%c[Risk Trade] FAILED:', 'color: #ef4444; font-weight: bold', data.error);
+            showToast(`Trade failed: ${data.error || 'Unknown error'}`, 'error');
+        }
+    } catch (error) {
+        console.error('%c[Risk Trade] EXCEPTION:', 'color: #ef4444; font-weight: bold', error);
+        showToast(`Trade failed: ${error.message}`, 'error');
+    } finally {
+        btnText.style.display = 'inline';
+        btnLoading.style.display = 'none';
+        btn.disabled = false;
+    }
+}
+
+// Initialize Risk Calculator on page load
+document.addEventListener('DOMContentLoaded', () => {
+    if (document.getElementById('riskCalcTab')) {
+        setupRiskCalculatorTab();
+    }
+});
+
