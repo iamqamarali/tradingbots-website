@@ -1509,7 +1509,8 @@ async function closePosition() {
     const usdcValue = parseFloat(document.getElementById('closeUsdc').value);
     let quantityToClose;
     let closeMessage;
-    const orderTypeLabel = closeOrderType === 'BBO' ? 'BBO' : 'Market';
+    const useBbo = closeOrderType === 'BBO';
+    const orderTypeLabel = useBbo ? 'BBO' : 'Market';
 
     if (usdcValue && usdcValue > 0) {
         quantityToClose = usdcValue / currentPosition.markPrice;
@@ -1525,15 +1526,24 @@ async function closePosition() {
     confirmBtn.disabled = true;
 
     try {
+        const requestBody = {
+            symbol: currentPosition.symbol,
+            side: currentPosition.side,
+            quantity: quantityToClose
+        };
+
+        // BBO uses LIMIT order type with use_bbo flag
+        if (useBbo) {
+            requestBody.order_type = 'LIMIT';
+            requestBody.use_bbo = true;
+        } else {
+            requestBody.order_type = 'MARKET';
+        }
+
         const response = await fetch(`/api/accounts/${ACCOUNT_ID}/close-position`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                symbol: currentPosition.symbol,
-                side: currentPosition.side,
-                quantity: quantityToClose,
-                order_type: closeOrderType
-            })
+            body: JSON.stringify(requestBody)
         });
 
         const data = await response.json();
@@ -3549,12 +3559,12 @@ function handleQtTradeClick(qtId, direction) {
     const orderType = getQtOrderType(qtId);
 
     if (orderType === 'BBO') {
-        // BBO queue order - skip limit price modal, use current best bid/ask
-        openQtTradeConfirm(qtId, direction, 'BBO', null);
+        // BBO queue order - LIMIT order using best bid/ask price
+        openQtTradeConfirm(qtId, direction, 'LIMIT', null, true);  // true = use BBO
     } else if (orderType === 'LIMIT') {
         openQtLimitPriceModal(qtId, direction);
     } else {
-        openQtTradeConfirm(qtId, direction, 'MARKET', null);
+        openQtTradeConfirm(qtId, direction, 'MARKET', null, false);
     }
 }
 
@@ -3666,7 +3676,7 @@ function closeQtLimitPriceModal() {
 }
 
 // Open trade confirmation modal
-function openQtTradeConfirm(qtId, direction, orderType = 'MARKET', limitPrice = null) {
+function openQtTradeConfirm(qtId, direction, orderType = 'MARKET', limitPrice = null, useBbo = false) {
     const dataContainer = document.getElementById(`qtData-${qtId}`);
     if (!dataContainer || !dataContainer.dataset.qtData) {
         showToast('Market data not loaded', 'error');
@@ -3701,6 +3711,7 @@ function openQtTradeConfirm(qtId, direction, orderType = 'MARKET', limitPrice = 
         qt,
         orderType,
         limitPrice,
+        useBbo,
         entryPrice,
         slPercent,
         positionSize
@@ -3709,8 +3720,9 @@ function openQtTradeConfirm(qtId, direction, orderType = 'MARKET', limitPrice = 
     document.getElementById('qtTradeConfirmTitle').textContent = `Confirm ${direction} Trade`;
 
     const orderTypeBadge = document.getElementById('qtConfirmOrderType');
-    orderTypeBadge.textContent = orderType;
-    orderTypeBadge.className = `order-type-badge ${orderType.toLowerCase()}`;
+    const displayOrderType = useBbo ? 'BBO' : orderType;
+    orderTypeBadge.textContent = displayOrderType;
+    orderTypeBadge.className = `order-type-badge ${displayOrderType.toLowerCase()}`;
 
     const directionBadge = document.getElementById('qtConfirmDirection');
     directionBadge.textContent = direction;
@@ -3750,6 +3762,11 @@ async function executeQtTrade() {
             requestBody.limit_price = pendingQtTrade.limitPrice;
         }
 
+        // Add use_bbo flag for BBO queue orders
+        if (pendingQtTrade.useBbo) {
+            requestBody.use_bbo = true;
+        }
+
         const response = await fetch(`/api/strategies/${pendingQtTrade.qtId}/trade`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -3759,7 +3776,7 @@ async function executeQtTrade() {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            const orderTypeLabel = pendingQtTrade.orderType === 'LIMIT' ? 'Limit' : 'Market';
+            const orderTypeLabel = pendingQtTrade.useBbo ? 'BBO' : (pendingQtTrade.orderType === 'LIMIT' ? 'Limit' : 'Market');
             if (data.warning) {
                 showToast(`${orderTypeLabel} ${pendingQtTrade.direction} position opened, but SL failed! Set SL manually.`, 'warning');
             } else {

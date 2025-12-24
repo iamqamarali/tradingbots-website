@@ -349,12 +349,12 @@ function handleTradeClick(strategyId, direction) {
     const orderType = getOrderType(strategyId);
 
     if (orderType === 'BBO') {
-        // BBO queue order - skip limit price modal, use current best bid/ask
-        openTradeConfirm(strategyId, direction, 'BBO', null);
+        // BBO queue order - LIMIT order using best bid/ask price
+        openTradeConfirm(strategyId, direction, 'LIMIT', null, true);  // true = use BBO
     } else if (orderType === 'LIMIT') {
         openLimitPriceModal(strategyId, direction);
     } else {
-        openTradeConfirm(strategyId, direction, 'MARKET', null);
+        openTradeConfirm(strategyId, direction, 'MARKET', null, false);
     }
 }
 
@@ -477,7 +477,7 @@ function closeLimitPriceModal() {
 }
 
 // Open trade confirmation modal
-function openTradeConfirm(strategyId, direction, orderType = 'MARKET', limitPrice = null) {
+function openTradeConfirm(strategyId, direction, orderType = 'MARKET', limitPrice = null, useBbo = false) {
     const dataContainer = document.getElementById(`strategyData-${strategyId}`);
     if (!dataContainer || !dataContainer.dataset.strategyData) {
         showToast('Market data not loaded', 'error');
@@ -515,6 +515,7 @@ function openTradeConfirm(strategyId, direction, orderType = 'MARKET', limitPric
         strategy,
         orderType,
         limitPrice,
+        useBbo,
         entryPrice,
         slPercent,
         positionSize
@@ -525,8 +526,9 @@ function openTradeConfirm(strategyId, direction, orderType = 'MARKET', limitPric
 
     // Order type badge
     const orderTypeBadge = document.getElementById('confirmOrderType');
-    orderTypeBadge.textContent = orderType;
-    orderTypeBadge.className = `order-type-badge ${orderType.toLowerCase()}`;
+    const displayOrderType = useBbo ? 'BBO' : orderType;
+    orderTypeBadge.textContent = displayOrderType;
+    orderTypeBadge.className = `order-type-badge ${displayOrderType.toLowerCase()}`;
 
     const directionBadge = document.getElementById('confirmDirection');
     directionBadge.textContent = direction;
@@ -557,6 +559,7 @@ async function executeTrade() {
     const direction = pendingTrade.direction;
     const orderType = pendingTrade.orderType || 'MARKET';
     const limitPrice = pendingTrade.limitPrice;
+    const useBbo = pendingTrade.useBbo || false;
 
     const btn = document.getElementById('executeTradeBtnConfirm');
     const originalText = btn.textContent;
@@ -574,6 +577,11 @@ async function executeTrade() {
             requestBody.limit_price = limitPrice;
         }
 
+        // Add use_bbo flag for BBO queue orders
+        if (useBbo) {
+            requestBody.use_bbo = true;
+        }
+
         const response = await fetch(`/api/strategies/${strategyId}/trade`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -584,7 +592,7 @@ async function executeTrade() {
         console.log('[Quick Trade] Response:', { ok: response.ok, status: response.status, data });
 
         if (response.ok && data.success) {
-            const orderTypeLabel = orderType === 'LIMIT' ? 'Limit' : 'Market';
+            const orderTypeLabel = useBbo ? 'BBO' : (orderType === 'LIMIT' ? 'Limit' : 'Market');
             if (data.warning) {
                 // Position opened but SL failed
                 showToast(`${orderTypeLabel} ${direction} position opened, but SL failed! Set SL manually.`, 'warning');

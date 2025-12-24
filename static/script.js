@@ -361,21 +361,31 @@ async function executeClosePosition() {
 
     const percentage = parseInt(positionElements.closePercentageSlider.value);
     const closeQty = currentPositionData.quantity * percentage / 100;
-    const orderTypeLabel = closeOrderType === 'BBO' ? 'BBO' : 'Market';
+    const useBbo = closeOrderType === 'BBO';
+    const orderTypeLabel = useBbo ? 'BBO' : 'Market';
 
     positionElements.confirmClosePosition.disabled = true;
     positionElements.confirmClosePosition.innerHTML = '<span class="btn-loading"><span class="btn-spinner"></span>Closing...</span>';
 
     try {
+        const requestBody = {
+            symbol: currentPositionData.symbol,
+            side: currentPositionData.side,
+            quantity: closeQty
+        };
+
+        // BBO uses LIMIT order type with use_bbo flag
+        if (useBbo) {
+            requestBody.order_type = 'LIMIT';
+            requestBody.use_bbo = true;
+        } else {
+            requestBody.order_type = 'MARKET';
+        }
+
         const response = await fetch(`/api/accounts/${currentPositionData.accountId}/close-position`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                symbol: currentPositionData.symbol,
-                side: currentPositionData.side,
-                quantity: closeQty,
-                order_type: closeOrderType
-            })
+            body: JSON.stringify(requestBody)
         });
 
         const data = await response.json();
