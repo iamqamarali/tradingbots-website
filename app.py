@@ -1906,55 +1906,89 @@ def api_execute_strategy_trade(strategy_id):
             )
 
         # For MARKET orders, wait and place SL immediately
-        # For LIMIT orders, place SL order (it will be ready when limit fills)
-        if order_type == 'MARKET':
-            time.sleep(0.3)  # Wait for position to settle
-
-        # Place stop loss with retry logic
+        # For LIMIT/BBO orders, position doesn't exist yet - place SL with quantity instead of closePosition
         sl_side = 'SELL' if direction == 'LONG' else 'BUY'
         sl_price_formatted = round(sl_price, price_precision)
-
         sl_order = None
-        max_retries = 3
-        last_error = None
 
-        for attempt in range(max_retries):
+        if order_type == 'MARKET':
+            # MARKET order fills immediately, position exists - use closePosition
+            time.sleep(0.3)  # Wait for position to settle
+
+            max_retries = 3
+            last_error = None
+
+            for attempt in range(max_retries):
+                try:
+                    sl_order = client.futures_create_order(
+                        symbol=strategy['symbol'],
+                        side=sl_side,
+                        type='STOP_MARKET',
+                        stopPrice=str(sl_price_formatted),
+                        closePosition='true',
+                        workingType='MARK_PRICE'
+                    )
+                    break  # Success, exit retry loop
+                except BinanceAPIException as e:
+                    last_error = e
+                    if attempt < max_retries - 1:
+                        time.sleep(1)  # Wait before retry
+                    else:
+                        # All retries failed - return partial success with warning
+                        return jsonify({
+                            'success': True,
+                            'warning': f'Order placed but SL failed after {max_retries} attempts: {e.message}',
+                            'order': {
+                                'orderId': order.get('orderId'),
+                                'symbol': strategy['symbol'],
+                                'side': side,
+                                'type': order_type,
+                                'quantity': qty_in_contracts,
+                                'price': limit_price_formatted if order_type == 'LIMIT' else None,
+                                'status': order.get('status')
+                            },
+                            'sl_order': None,
+                            'details': {
+                                'entry_price': entry_price,
+                                'sl_percent': round(sl_percent, 2),
+                                'position_size_usd': round(position_size_usd, 2),
+                                'risk_amount': round(risk_amount, 2)
+                            }
+                        })
+        else:
+            # LIMIT/BBO order - position doesn't exist yet
+            # Place SL with specific quantity (will activate when position opens)
             try:
                 sl_order = client.futures_create_order(
                     symbol=strategy['symbol'],
                     side=sl_side,
                     type='STOP_MARKET',
                     stopPrice=str(sl_price_formatted),
-                    closePosition='true',
-                    workingType='MARK_PRICE'
+                    quantity=qty_in_contracts,
+                    workingType='MARK_PRICE',
+                    reduceOnly='true'
                 )
-                break  # Success, exit retry loop
             except BinanceAPIException as e:
-                last_error = e
-                if attempt < max_retries - 1:
-                    time.sleep(1)  # Wait before retry
-                else:
-                    # All retries failed - return partial success with warning
-                    return jsonify({
-                        'success': True,
-                        'warning': f'Order placed but SL failed after {max_retries} attempts: {e.message}',
-                        'order': {
-                            'orderId': order.get('orderId'),
-                            'symbol': strategy['symbol'],
-                            'side': side,
-                            'type': order_type,
-                            'quantity': qty_in_contracts,
-                            'price': limit_price_formatted if order_type == 'LIMIT' else None,
-                            'status': order.get('status')
-                        },
-                        'sl_order': None,
-                        'details': {
-                            'entry_price': entry_price,
-                            'sl_percent': round(sl_percent, 2),
-                            'position_size_usd': round(position_size_usd, 2),
-                            'risk_amount': round(risk_amount, 2)
-                        }
-                    })
+                # SL failed for limit order - return success with warning
+                return jsonify({
+                    'success': True,
+                    'warning': f'BBO order placed but SL failed: {e.message}. Set SL manually after order fills.',
+                    'order': {
+                        'orderId': order.get('orderId'),
+                        'symbol': strategy['symbol'],
+                        'side': side,
+                        'type': 'BBO' if price_match else order_type,
+                        'quantity': qty_in_contracts,
+                        'status': order.get('status')
+                    },
+                    'sl_order': None,
+                    'details': {
+                        'entry_price': entry_price,
+                        'sl_percent': round(sl_percent, 2),
+                        'position_size_usd': round(position_size_usd, 2),
+                        'risk_amount': round(risk_amount, 2)
+                    }
+                })
 
         return jsonify({
             'success': True,
@@ -1962,13 +1996,13 @@ def api_execute_strategy_trade(strategy_id):
                 'orderId': order.get('orderId'),
                 'symbol': strategy['symbol'],
                 'side': side,
-                'type': order_type,
+                'type': 'BBO' if price_match else order_type,
                 'quantity': qty_in_contracts,
-                'price': limit_price_formatted if order_type == 'LIMIT' else None,
+                'price': limit_price_formatted if (order_type == 'LIMIT' and limit_price) else None,
                 'status': order.get('status')
             },
             'sl_order': {
-                'orderId': sl_order.get('orderId') or sl_order.get('algoId'),
+                'orderId': sl_order.get('orderId') or sl_order.get('algoId') if sl_order else None,
                 'stop_price': sl_price_formatted
             },
             'details': {
