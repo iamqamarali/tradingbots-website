@@ -1270,23 +1270,33 @@ async function syncTrades(weeks = 1) {
                 updateStatsDisplay(data.stats);
             }
 
-            // Reload other data
-            setTimeout(() => {
-                syncModal.classList.remove('active');
-                loadTrades();
-                loadPositions();
-            }, 1500);
+            // Close modal and refresh data immediately
+            if (syncModal) syncModal.classList.remove('active');
+
+            try {
+                await loadTrades();
+            } catch (e) {
+                console.error('Error refreshing trades after sync:', e);
+                showToast('Sync done but failed to refresh trades: ' + e.message, 'error');
+            }
+
+            try {
+                await loadPositions();
+            } catch (e) {
+                console.error('Error refreshing positions after sync:', e);
+                showToast('Sync done but failed to refresh positions: ' + e.message, 'error');
+            }
         } else {
             console.error('Sync failed with error:', data.error);
-            syncModal.classList.remove('active');
+            if (syncModal) syncModal.classList.remove('active');
             showToast(data.error || 'Sync failed', 'error');
         }
     } catch (error) {
         console.error('Error syncing trades:', error);
-        syncModal.classList.remove('active');
-        showToast('Failed to sync trades', 'error');
+        if (syncModal) syncModal.classList.remove('active');
+        showToast('Failed to sync trades: ' + error.message, 'error');
     } finally {
-        syncBtn.classList.remove('syncing');
+        if (syncBtn) syncBtn.classList.remove('syncing');
     }
 }
 
