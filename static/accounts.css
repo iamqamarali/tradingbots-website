@@ -4152,12 +4152,34 @@
 
 /* Collapsed Header - always visible */
 .qt-collapsed-header {
+    cursor: pointer;
+    padding-bottom: 0.75rem;
+}
+
+.qt-header-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.qt-header-line1 {
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    cursor: pointer;
-    padding-bottom: 0.75rem;
-    border-bottom: 1px solid var(--border-primary);
+}
+
+.qt-header-line2 {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.qt-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--accent-primary);
+    white-space: nowrap;
+    flex: 1;
 }
 
 .quick-trade-card .card-name {
@@ -4224,6 +4246,12 @@
 
 .quick-trade-card.expanded .qt-collapse-btn {
     transform: rotate(180deg);
+}
+
+/* Always visible section (trade buttons) */
+.qt-always-visible {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border-primary);
 }
 
 /* Collapsible Card Body */
@@ -4433,30 +4461,31 @@
     display: flex;
     gap: 0.5rem;
     margin-bottom: 0.75rem;
+    padding: 0.25rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
 }
 
 .quick-trade-card .toggle-btn {
     flex: 1;
-    padding: 0.5rem;
+    padding: 0.5rem 1rem;
     background: transparent;
-    border: 1px solid var(--border-primary);
-    border-radius: 6px;
+    border: none;
+    border-radius: 4px;
     color: var(--text-secondary);
     font-size: 0.85rem;
+    font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
 }
 
-.quick-trade-card .toggle-btn.active {
-    background: var(--accent-primary);
-    border-color: var(--accent-primary);
-    color: #000;
-    font-weight: 600;
+.quick-trade-card .toggle-btn:hover {
+    color: var(--text-primary);
 }
 
-.quick-trade-card .toggle-btn:hover:not(.active) {
-    border-color: var(--text-primary);
-    color: var(--text-primary);
+.quick-trade-card .toggle-btn.active {
+    background: var(--accent-primary);
+    color: var(--bg-primary);
 }
 
 /* Trade Buttons */
@@ -4468,13 +4497,17 @@
 
 .quick-trade-card .take-long-btn,
 .quick-trade-card .take-short-btn {
-    padding: 0.75rem 1rem;
+    padding: 0.875rem 1rem;
     border: none;
     border-radius: 8px;
     font-weight: 600;
     font-size: 0.9rem;
     cursor: pointer;
     transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
 }
 
 .quick-trade-card .take-long-btn {

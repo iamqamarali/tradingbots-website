@@ -3307,20 +3307,43 @@ function createQuickTradeCard(qt) {
     return `
         <div class="quick-trade-card" data-qt-id="${qt.id}">
             <div class="qt-collapsed-header" onclick="toggleQtCollapse(${qt.id})">
-                <div class="card-name">${escapeHtml(qt.name)}</div>
-                <div class="qt-collapsed-info">
-                    <span class="qt-trend-badge" id="qtTrendBadge-${qt.id}">--</span>
-                    <span class="qt-sl-preview" id="qtSlPreview-${qt.id}">SL: --</span>
+                <div class="qt-header-content">
+                    <div class="qt-header-line1">
+                        <div class="qt-name">${escapeHtml(qt.name)}</div>
+                        <div class="card-actions" onclick="event.stopPropagation()">
+                            <button class="edit-btn" onclick="editQuickTrade(${qt.id})">Edit</button>
+                            <button class="delete-btn" onclick="deleteQuickTrade(${qt.id})">Delete</button>
+                        </div>
+                        <button class="qt-collapse-btn" onclick="event.stopPropagation(); toggleQtCollapse(${qt.id})">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="qt-header-line2">
+                        <span class="qt-sl-preview" id="qtSlPreview-${qt.id}">SL: --</span>
+                        <span class="qt-trend-badge" id="qtTrendBadge-${qt.id}">--</span>
+                    </div>
                 </div>
-                <div class="card-actions" onclick="event.stopPropagation()">
-                    <button class="edit-btn" onclick="editQuickTrade(${qt.id})">Edit</button>
-                    <button class="delete-btn" onclick="deleteQuickTrade(${qt.id})">Delete</button>
+            </div>
+
+            <div class="qt-always-visible">
+                <div class="order-type-toggle" id="qtOrderTypeToggle-${qt.id}">
+                    <button class="toggle-btn active" data-type="MARKET" onclick="setQtOrderType(${qt.id}, 'MARKET')">Market</button>
+                    <button class="toggle-btn" data-type="LIMIT" onclick="setQtOrderType(${qt.id}, 'LIMIT')">Limit</button>
+                    <button class="toggle-btn" data-type="BBO" onclick="setQtOrderType(${qt.id}, 'BBO')">BBO</button>
                 </div>
-                <button class="qt-collapse-btn" onclick="event.stopPropagation(); toggleQtCollapse(${qt.id})">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="6 9 12 15 18 9"></polyline>
-                    </svg>
-                </button>
+
+                <div class="trade-buttons">
+                    <button class="take-long-btn" id="qtLongBtn-${qt.id}"
+                            onclick="handleQtTradeClick(${qt.id}, 'LONG')" disabled>
+                        Market Long
+                    </button>
+                    <button class="take-short-btn" id="qtShortBtn-${qt.id}"
+                            onclick="handleQtTradeClick(${qt.id}, 'SHORT')" disabled>
+                        Market Short
+                    </button>
+                </div>
             </div>
 
             <div class="qt-card-body" id="qtCardBody-${qt.id}">
@@ -3349,23 +3372,6 @@ function createQuickTradeCard(qt) {
 
                 <div class="card-data" id="qtData-${qt.id}">
                     <div class="data-loading">Loading market data...</div>
-                </div>
-
-                <div class="order-type-toggle" id="qtOrderTypeToggle-${qt.id}">
-                    <button class="toggle-btn active" data-type="MARKET" onclick="setQtOrderType(${qt.id}, 'MARKET')">Market</button>
-                    <button class="toggle-btn" data-type="LIMIT" onclick="setQtOrderType(${qt.id}, 'LIMIT')">Limit</button>
-                    <button class="toggle-btn" data-type="BBO" onclick="setQtOrderType(${qt.id}, 'BBO')">BBO</button>
-                </div>
-
-                <div class="trade-buttons">
-                    <button class="take-long-btn" id="qtLongBtn-${qt.id}"
-                            onclick="handleQtTradeClick(${qt.id}, 'LONG')" disabled>
-                        Market Long
-                    </button>
-                    <button class="take-short-btn" id="qtShortBtn-${qt.id}"
-                            onclick="handleQtTradeClick(${qt.id}, 'SHORT')" disabled>
-                        Market Short
-                    </button>
                 </div>
             </div>
         </div>
