@@ -31,6 +31,26 @@
 
             <!-- Dashboard Content -->
             <div class="dashboard-content">
+                <!-- Trading Rules Sections Header -->
+                <div class="rules-header">
+                    <h2>Trading Rules</h2>
+                    <button class="add-section-btn" id="addSectionBtn" title="Add Section">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"/>
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        Add Section
+                    </button>
+                </div>
+
+                <!-- Dynamic Trading Rules Sections Container -->
+                <div class="trading-rules-container" id="ruleSectionsContainer">
+                    <div class="rules-loading" id="sectionsLoading">
+                        <div class="spinner"></div>
+                        <p>Loading sections...</p>
+                    </div>
+                </div>
+
                 <!-- Open Positions Section -->
                 <div class="positions-section" id="dashboardPositions">
                     <div class="section-header">
@@ -367,8 +387,467 @@
         </div>
     </div>
 
+    <!-- Add/Edit Rule Modal -->
+    <div class="modal-overlay" id="ruleModal">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3 id="ruleModalTitle">Add Trading Rule</h3>
+                <button class="modal-close" id="ruleModalClose">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="ruleText">Rule</label>
+                    <div class="formatting-toolbar">
+                        <button type="button" class="format-btn" id="boldBtn" title="Bold (Ctrl+B)">
+                            <strong>B</strong>
+                        </button>
+                        <button type="button" class="format-btn highlight-btn" id="highlightBtn" title="Highlight">
+                            <span class="highlight-icon">H</span>
+                        </button>
+                    </div>
+                    <textarea id="ruleText" rows="3" placeholder="Enter your trading rule..."></textarea>
+                    <div class="format-hint">Select text and click Bold or Highlight to format</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelRuleBtn">Cancel</button>
+                <button class="btn-primary" id="saveRuleBtn">Save Rule</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Section Modal -->
+    <div class="modal-overlay" id="sectionModal">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3 id="sectionModalTitle">Add Section</h3>
+                <button class="modal-close" id="sectionModalClose">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="sectionName">Section Name</label>
+                    <input type="text" id="sectionName" placeholder="Enter section name...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelSectionBtn">Cancel</button>
+                <button class="btn-primary" id="saveSectionBtn">Save Section</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Section Confirmation Modal -->
+    <div class="modal-overlay" id="deleteSectionModal">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3>Delete Section</h3>
+                <button class="modal-close" id="deleteSectionModalClose">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete "<span id="deleteSectionName"></span>"?</p>
+                <p class="delete-warning">This will also delete all rules in this section.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelDeleteSectionBtn">Cancel</button>
+                <button class="btn-danger" id="confirmDeleteSectionBtn">Delete Section</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/script.js"></script>
     <script>
+        // Trading Rules Management - Dynamic Sections
+        let ruleSections = [];
+        let editingRuleId = null;
+        let editingSectionId = null;
+        let editingSectionForEdit = null;
+        let deletingSectionId = null;
+
+        async function loadRuleSections() {
+            const container = document.getElementById('ruleSectionsContainer');
+            const loading = document.getElementById('sectionsLoading');
+
+            if (loading) loading.style.display = 'flex';
+
+            try {
+                const response = await fetch('/api/rule-sections');
+                ruleSections = await response.json();
+
+                if (loading) loading.style.display = 'none';
+                renderSections();
+            } catch (error) {
+                console.error('Error loading sections:', error);
+                if (loading) loading.style.display = 'none';
+                container.innerHTML = '<div class="empty-rules"><p>Error loading sections</p></div>';
+            }
+        }
+
+        function renderSections() {
+            const container = document.getElementById('ruleSectionsContainer');
+
+            if (ruleSections.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-sections">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+                            <rect x="9" y="3" width="6" height="4" rx="1"/>
+                        </svg>
+                        <p>No trading rules sections yet</p>
+                        <button class="btn-primary" onclick="openSectionModal()">Create First Section</button>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = ruleSections.map(section => `
+                <div class="trading-rules-section" data-section-id="${section.id}">
+                    <div class="section-header">
+                        <h2>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+                                <rect x="9" y="3" width="6" height="4" rx="1"/>
+                            </svg>
+                            <span class="section-name">${escapeHtml(section.name)}</span>
+                        </h2>
+                        <div class="section-actions">
+                            <button class="action-btn" onclick="openRuleModal(${section.id})" title="Add Rule">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="12" y1="5" x2="12" y2="19"/>
+                                    <line x1="5" y1="12" x2="19" y2="12"/>
+                                </svg>
+                            </button>
+                            <button class="action-btn edit-section-btn" onclick="openSectionModal(${section.id})" title="Edit Section">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                </svg>
+                            </button>
+                            <button class="action-btn delete-section-btn" onclick="confirmDeleteSection(${section.id}, '${escapeHtml(section.name)}')" title="Delete Section">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="3 6 5 6 21 6"/>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="rules-container">
+                        ${section.rules.length === 0 ? `
+                            <div class="empty-rules">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+                                    <rect x="9" y="3" width="6" height="4" rx="1"/>
+                                </svg>
+                                <p>No rules yet</p>
+                            </div>
+                        ` : `
+                            <ul class="rules-list">
+                                ${section.rules.map((rule, index) => `
+                                    <li class="rule-item" data-id="${rule.id}">
+                                        <span class="rule-number">${index + 1}.</span>
+                                        <span class="rule-text">${formatRuleText(rule.rule_text)}</span>
+                                        <div class="rule-actions">
+                                            <button class="rule-btn edit-btn" onclick="editRule(${rule.id}, ${section.id})" title="Edit">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                                </svg>
+                                            </button>
+                                            <button class="rule-btn delete-btn" onclick="deleteRule(${rule.id})" title="Delete">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <polyline points="3 6 5 6 21 6"/>
+                                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </li>
+                                `).join('')}
+                            </ul>
+                        `}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatRuleText(text) {
+            let formatted = escapeHtml(text);
+            formatted = formatted.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            formatted = formatted.replace(/==(.+?)==/g, '<mark>$1</mark>');
+            return formatted;
+        }
+
+        function wrapSelectedText(textarea, prefix, suffix) {
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const text = textarea.value;
+            const selectedText = text.substring(start, end);
+
+            if (selectedText.length === 0) {
+                textarea.value = text.substring(0, start) + prefix + suffix + text.substring(end);
+                textarea.selectionStart = textarea.selectionEnd = start + prefix.length;
+            } else {
+                textarea.value = text.substring(0, start) + prefix + selectedText + suffix + text.substring(end);
+                textarea.selectionStart = start + prefix.length;
+                textarea.selectionEnd = end + prefix.length;
+            }
+            textarea.focus();
+        }
+
+        // Section Modal Functions
+        function openSectionModal(sectionId = null) {
+            const modal = document.getElementById('sectionModal');
+            const title = document.getElementById('sectionModalTitle');
+            const nameInput = document.getElementById('sectionName');
+            const saveBtn = document.getElementById('saveSectionBtn');
+
+            editingSectionForEdit = sectionId;
+
+            if (sectionId) {
+                const section = ruleSections.find(s => s.id === sectionId);
+                title.textContent = 'Edit Section';
+                nameInput.value = section ? section.name : '';
+                saveBtn.textContent = 'Update Section';
+            } else {
+                title.textContent = 'Add Section';
+                nameInput.value = '';
+                saveBtn.textContent = 'Save Section';
+            }
+
+            modal.classList.add('active');
+            nameInput.focus();
+        }
+
+        function closeSectionModal() {
+            document.getElementById('sectionModal').classList.remove('active');
+            editingSectionForEdit = null;
+        }
+
+        async function saveSection() {
+            const nameInput = document.getElementById('sectionName');
+            const name = nameInput.value.trim();
+
+            if (!name) {
+                showToast('Please enter a section name', 'error');
+                return;
+            }
+
+            try {
+                if (editingSectionForEdit) {
+                    await fetch(`/api/rule-sections/${editingSectionForEdit}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name })
+                    });
+                    showToast('Section updated', 'success');
+                } else {
+                    await fetch('/api/rule-sections', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name })
+                    });
+                    showToast('Section added', 'success');
+                }
+
+                closeSectionModal();
+                loadRuleSections();
+            } catch (error) {
+                console.error('Error saving section:', error);
+                showToast('Error saving section', 'error');
+            }
+        }
+
+        function confirmDeleteSection(sectionId, sectionName) {
+            deletingSectionId = sectionId;
+            document.getElementById('deleteSectionName').textContent = sectionName;
+            document.getElementById('deleteSectionModal').classList.add('active');
+        }
+
+        function closeDeleteSectionModal() {
+            document.getElementById('deleteSectionModal').classList.remove('active');
+            deletingSectionId = null;
+        }
+
+        async function deleteSection() {
+            if (!deletingSectionId) return;
+
+            try {
+                await fetch(`/api/rule-sections/${deletingSectionId}`, { method: 'DELETE' });
+                showToast('Section deleted', 'success');
+                closeDeleteSectionModal();
+                loadRuleSections();
+            } catch (error) {
+                console.error('Error deleting section:', error);
+                showToast('Error deleting section', 'error');
+            }
+        }
+
+        // Rule Modal Functions
+        function openRuleModal(sectionId, ruleId = null) {
+            const modal = document.getElementById('ruleModal');
+            const title = document.getElementById('ruleModalTitle');
+            const textInput = document.getElementById('ruleText');
+            const saveBtn = document.getElementById('saveRuleBtn');
+
+            editingRuleId = ruleId;
+            editingSectionId = sectionId;
+
+            const section = ruleSections.find(s => s.id === sectionId);
+            const sectionName = section ? section.name : 'Trading';
+
+            if (ruleId) {
+                const rule = section?.rules.find(r => r.id === ruleId);
+                title.textContent = 'Edit Rule';
+                textInput.value = rule ? rule.rule_text : '';
+                saveBtn.textContent = 'Update Rule';
+            } else {
+                title.textContent = `Add Rule to ${sectionName}`;
+                textInput.value = '';
+                saveBtn.textContent = 'Save Rule';
+            }
+
+            modal.classList.add('active');
+            textInput.focus();
+        }
+
+        function closeRuleModal() {
+            document.getElementById('ruleModal').classList.remove('active');
+            editingRuleId = null;
+            editingSectionId = null;
+        }
+
+        function editRule(ruleId, sectionId) {
+            openRuleModal(sectionId, ruleId);
+        }
+
+        async function saveRule() {
+            const textInput = document.getElementById('ruleText');
+            const ruleText = textInput.value.trim();
+
+            if (!ruleText) {
+                showToast('Please enter a rule', 'error');
+                return;
+            }
+
+            try {
+                if (editingRuleId) {
+                    await fetch(`/api/trading-rules/${editingRuleId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ rule_text: ruleText })
+                    });
+                    showToast('Rule updated', 'success');
+                } else {
+                    await fetch('/api/trading-rules', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ rule_text: ruleText, section_id: editingSectionId })
+                    });
+                    showToast('Rule added', 'success');
+                }
+
+                closeRuleModal();
+                loadRuleSections();
+            } catch (error) {
+                console.error('Error saving rule:', error);
+                showToast('Error saving rule', 'error');
+            }
+        }
+
+        async function deleteRule(ruleId) {
+            if (!confirm('Are you sure you want to delete this rule?')) return;
+
+            try {
+                await fetch(`/api/trading-rules/${ruleId}`, { method: 'DELETE' });
+                showToast('Rule deleted', 'success');
+                loadRuleSections();
+            } catch (error) {
+                console.error('Error deleting rule:', error);
+                showToast('Error deleting rule', 'error');
+            }
+        }
+
+        // Initialize
+        function initTradingRules() {
+            loadRuleSections();
+
+            // Add section button
+            document.getElementById('addSectionBtn').addEventListener('click', () => openSectionModal());
+
+            // Section modal controls
+            document.getElementById('sectionModalClose').addEventListener('click', closeSectionModal);
+            document.getElementById('cancelSectionBtn').addEventListener('click', closeSectionModal);
+            document.getElementById('saveSectionBtn').addEventListener('click', saveSection);
+            document.getElementById('sectionModal').addEventListener('click', (e) => {
+                if (e.target.id === 'sectionModal') closeSectionModal();
+            });
+            document.getElementById('sectionName').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveSection();
+                }
+            });
+
+            // Delete section modal controls
+            document.getElementById('deleteSectionModalClose').addEventListener('click', closeDeleteSectionModal);
+            document.getElementById('cancelDeleteSectionBtn').addEventListener('click', closeDeleteSectionModal);
+            document.getElementById('confirmDeleteSectionBtn').addEventListener('click', deleteSection);
+            document.getElementById('deleteSectionModal').addEventListener('click', (e) => {
+                if (e.target.id === 'deleteSectionModal') closeDeleteSectionModal();
+            });
+
+            // Rule modal controls
+            document.getElementById('ruleModalClose').addEventListener('click', closeRuleModal);
+            document.getElementById('cancelRuleBtn').addEventListener('click', closeRuleModal);
+            document.getElementById('saveRuleBtn').addEventListener('click', saveRule);
+            document.getElementById('ruleModal').addEventListener('click', (e) => {
+                if (e.target.id === 'ruleModal') closeRuleModal();
+            });
+            document.getElementById('ruleText').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    saveRule();
+                }
+                if (e.ctrlKey && e.key === 'b') {
+                    e.preventDefault();
+                    wrapSelectedText(e.target, '**', '**');
+                }
+            });
+
+            // Formatting buttons
+            document.getElementById('boldBtn').addEventListener('click', () => {
+                wrapSelectedText(document.getElementById('ruleText'), '**', '**');
+            });
+            document.getElementById('highlightBtn').addEventListener('click', () => {
+                wrapSelectedText(document.getElementById('ruleText'), '==', '==');
+            });
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initTradingRules);
+        } else {
+            initTradingRules();
+        }
+
         // User dropdown toggle
         const userAvatarBtn = document.getElementById('userAvatarBtn');
         const userDropdown = document.getElementById('userDropdown');

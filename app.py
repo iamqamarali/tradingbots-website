@@ -2019,6 +2019,127 @@ def api_execute_strategy_trade(strategy_id):
         return jsonify({'error': str(e)}), 500
 
 
+# ==================== RULE SECTIONS API ====================
+
+@app.route('/api/rule-sections', methods=['GET'])
+def api_get_rule_sections():
+    """Get all rule sections with their rules."""
+    sections = db.get_all_rule_sections()
+    return jsonify(sections)
+
+
+@app.route('/api/rule-sections', methods=['POST'])
+def api_create_rule_section():
+    """Create a new rule section."""
+    data = request.json
+    if not data or not data.get('name'):
+        return jsonify({'error': 'Section name is required'}), 400
+
+    name = data.get('name').strip()
+    if not name:
+        return jsonify({'error': 'Section name cannot be empty'}), 400
+
+    section_id = db.create_rule_section(name)
+    return jsonify({'id': section_id, 'name': name, 'rules': []})
+
+
+@app.route('/api/rule-sections/<int:section_id>', methods=['PUT'])
+def api_update_rule_section(section_id):
+    """Update a rule section."""
+    data = request.json
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    name = data.get('name')
+    display_order = data.get('display_order')
+
+    db.update_rule_section(section_id, name=name, display_order=display_order)
+    return jsonify({'success': True})
+
+
+@app.route('/api/rule-sections/<int:section_id>', methods=['DELETE'])
+def api_delete_rule_section(section_id):
+    """Delete a rule section and all its rules."""
+    deleted = db.delete_rule_section(section_id)
+    if deleted:
+        return jsonify({'success': True})
+    return jsonify({'error': 'Section not found'}), 404
+
+
+@app.route('/api/rule-sections/reorder', methods=['POST'])
+def api_reorder_rule_sections():
+    """Reorder rule sections."""
+    data = request.json
+    if not data or not data.get('section_ids'):
+        return jsonify({'error': 'Section IDs are required'}), 400
+
+    db.reorder_rule_sections(data['section_ids'])
+    return jsonify({'success': True})
+
+
+# ==================== TRADING RULES API ====================
+
+@app.route('/api/trading-rules', methods=['GET'])
+def api_get_trading_rules():
+    """Get all trading rules, optionally filtered by section."""
+    section_id = request.args.get('section_id', type=int)
+    rules = db.get_all_trading_rules(section_id=section_id)
+    return jsonify(rules)
+
+
+@app.route('/api/trading-rules', methods=['POST'])
+def api_create_trading_rule():
+    """Create a new trading rule."""
+    data = request.json
+    if not data or not data.get('rule_text'):
+        return jsonify({'error': 'Rule text is required'}), 400
+
+    rule_text = data.get('rule_text').strip()
+    if not rule_text:
+        return jsonify({'error': 'Rule text cannot be empty'}), 400
+
+    section_id = data.get('section_id')
+    if not section_id:
+        return jsonify({'error': 'Section ID is required'}), 400
+
+    rule_id = db.create_trading_rule(rule_text, section_id)
+    return jsonify({'id': rule_id, 'rule_text': rule_text, 'section_id': section_id})
+
+
+@app.route('/api/trading-rules/<int:rule_id>', methods=['PUT'])
+def api_update_trading_rule(rule_id):
+    """Update a trading rule."""
+    data = request.json
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    rule_text = data.get('rule_text')
+    display_order = data.get('display_order')
+
+    db.update_trading_rule(rule_id, rule_text=rule_text, display_order=display_order)
+    return jsonify({'success': True})
+
+
+@app.route('/api/trading-rules/<int:rule_id>', methods=['DELETE'])
+def api_delete_trading_rule(rule_id):
+    """Delete a trading rule."""
+    deleted = db.delete_trading_rule(rule_id)
+    if deleted:
+        return jsonify({'success': True})
+    return jsonify({'error': 'Rule not found'}), 404
+
+
+@app.route('/api/trading-rules/reorder', methods=['POST'])
+def api_reorder_trading_rules():
+    """Reorder trading rules."""
+    data = request.json
+    if not data or not data.get('rule_ids'):
+        return jsonify({'error': 'Rule IDs are required'}), 400
+
+    db.reorder_trading_rules(data['rule_ids'])
+    return jsonify({'success': True})
+
+
 # ==================== ACCOUNTS API ====================
 
 @app.route('/api/accounts', methods=['GET'])

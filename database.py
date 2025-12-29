@@ -327,6 +327,67 @@ def init_db():
             )
         ''')
 
+        # Rule sections table for organizing trading rules into custom sections
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS rule_sections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                display_order INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # Trading rules table for dashboard reminders
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS trading_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rule_text TEXT NOT NULL,
+                section_id INTEGER,
+                rule_type TEXT DEFAULT 'spot',
+                display_order INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (section_id) REFERENCES rule_sections(id) ON DELETE CASCADE
+            )
+        ''')
+
+        # Migration: Add section_id column if it doesn't exist
+        try:
+            cursor.execute("ALTER TABLE trading_rules ADD COLUMN section_id INTEGER REFERENCES rule_sections(id) ON DELETE CASCADE")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+        # Migrate existing rules from rule_type to sections
+        cursor.execute("SELECT COUNT(*) as cnt FROM rule_sections")
+        if cursor.fetchone()['cnt'] == 0:
+            # Create default sections from existing rule_types
+            cursor.execute("SELECT DISTINCT rule_type FROM trading_rules WHERE rule_type IS NOT NULL")
+            existing_types = [row['rule_type'] for row in cursor.fetchall()]
+
+            # Always create at least the default sections if there are existing rules
+            if not existing_types:
+                existing_types = ['Spot Trading Rules', 'Futures Trading Rules']
+
+            for i, rule_type in enumerate(existing_types):
+                # Convert 'spot' to 'Spot Trading Rules', etc.
+                if rule_type == 'spot':
+                    section_name = 'Spot Trading Rules'
+                elif rule_type == 'futures':
+                    section_name = 'Futures Trading Rules'
+                else:
+                    section_name = rule_type
+
+                cursor.execute(
+                    "INSERT INTO rule_sections (name, display_order) VALUES (?, ?)",
+                    (section_name, i)
+                )
+                section_id = cursor.lastrowid
+
+                # Update existing rules to use the new section_id
+                cursor.execute(
+                    "UPDATE trading_rules SET section_id = ? WHERE rule_type = ?",
+                    (section_id, rule_type)
+                )
+
         # Strategies table for manual EMA crossover trading
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS strategies (
@@ -2544,6 +2605,249 @@ def update_strategy_crossover(strategy_id, direction, sl_long, sl_short):
                 crossover_time = CURRENT_TIMESTAMP
             WHERE id = ?
         ''', (direction, sl_long, sl_short, strategy_id))
+
+        conn.commit()
+        conn.close()
+        return True
+
+
+# ==================== RULE SECTIONS OPERATIONS ====================
+
+def get_all_rule_sections():
+    """Get all rule sections with their rules."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT id, name, display_order, created_at
+            FROM rule_sections
+            ORDER BY display_order, created_at
+        ''')
+
+        sections = []
+        for row in cursor.fetchall():
+            section = {
+                'id': row['id'],
+                'name': row['name'],
+                'display_order': row['display_order'],
+                'created_at': row['created_at'],
+                'rules': []
+            }
+
+            # Get rules for this section
+            cursor.execute('''
+                SELECT id, rule_text, section_id, display_order, created_at
+                FROM trading_rules
+                WHERE section_id = ?
+                ORDER BY display_order, created_at
+            ''', (row['id'],))
+
+            for rule_row in cursor.fetchall():
+                section['rules'].append({
+                    'id': rule_row['id'],
+                    'rule_text': rule_row['rule_text'],
+                    'section_id': rule_row['section_id'],
+                    'display_order': rule_row['display_order'],
+                    'created_at': rule_row['created_at']
+                })
+
+            sections.append(section)
+
+        conn.close()
+        return sections
+
+
+def create_rule_section(name, display_order=None):
+    """Create a new rule section. Returns section id."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        if display_order is None:
+            cursor.execute('SELECT COALESCE(MAX(display_order), 0) + 1 as next_order FROM rule_sections')
+            row = cursor.fetchone()
+            display_order = row['next_order']
+
+        cursor.execute(
+            'INSERT INTO rule_sections (name, display_order) VALUES (?, ?)',
+            (name, display_order)
+        )
+        section_id = cursor.lastrowid
+
+        conn.commit()
+        conn.close()
+        return section_id
+
+
+def update_rule_section(section_id, name=None, display_order=None):
+    """Update a rule section."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        updates = []
+        params = []
+
+        if name is not None:
+            updates.append('name = ?')
+            params.append(name)
+        if display_order is not None:
+            updates.append('display_order = ?')
+            params.append(display_order)
+
+        if updates:
+            params.append(section_id)
+            cursor.execute(f'UPDATE rule_sections SET {", ".join(updates)} WHERE id = ?', params)
+
+        conn.commit()
+        conn.close()
+        return True
+
+
+def delete_rule_section(section_id):
+    """Delete a rule section and all its rules."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Delete all rules in the section first
+        cursor.execute('DELETE FROM trading_rules WHERE section_id = ?', (section_id,))
+        # Delete the section
+        cursor.execute('DELETE FROM rule_sections WHERE id = ?', (section_id,))
+        deleted = cursor.rowcount > 0
+
+        conn.commit()
+        conn.close()
+        return deleted
+
+
+def reorder_rule_sections(section_ids):
+    """Reorder rule sections based on the provided list of IDs."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        for index, section_id in enumerate(section_ids):
+            cursor.execute(
+                'UPDATE rule_sections SET display_order = ? WHERE id = ?',
+                (index, section_id)
+            )
+
+        conn.commit()
+        conn.close()
+        return True
+
+
+# ==================== TRADING RULES OPERATIONS ====================
+
+def get_all_trading_rules(section_id=None):
+    """Get all trading rules ordered by display_order, optionally filtered by section."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        if section_id:
+            cursor.execute('''
+                SELECT id, rule_text, section_id, display_order, created_at
+                FROM trading_rules
+                WHERE section_id = ?
+                ORDER BY display_order, created_at
+            ''', (section_id,))
+        else:
+            cursor.execute('''
+                SELECT id, rule_text, section_id, display_order, created_at
+                FROM trading_rules
+                ORDER BY section_id, display_order, created_at
+            ''')
+
+        rules = []
+        for row in cursor.fetchall():
+            rules.append({
+                'id': row['id'],
+                'rule_text': row['rule_text'],
+                'section_id': row['section_id'],
+                'display_order': row['display_order'],
+                'created_at': row['created_at']
+            })
+
+        conn.close()
+        return rules
+
+
+def create_trading_rule(rule_text, section_id, display_order=None):
+    """Create a new trading rule. Returns rule id."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # If no display_order specified, put it at the end for this section
+        if display_order is None:
+            cursor.execute('SELECT COALESCE(MAX(display_order), 0) + 1 as next_order FROM trading_rules WHERE section_id = ?', (section_id,))
+            row = cursor.fetchone()
+            display_order = row['next_order']
+
+        cursor.execute(
+            'INSERT INTO trading_rules (rule_text, section_id, display_order) VALUES (?, ?, ?)',
+            (rule_text, section_id, display_order)
+        )
+        rule_id = cursor.lastrowid
+
+        conn.commit()
+        conn.close()
+        return rule_id
+
+
+def update_trading_rule(rule_id, rule_text=None, display_order=None):
+    """Update a trading rule."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        updates = []
+        params = []
+
+        if rule_text is not None:
+            updates.append('rule_text = ?')
+            params.append(rule_text)
+        if display_order is not None:
+            updates.append('display_order = ?')
+            params.append(display_order)
+
+        if updates:
+            params.append(rule_id)
+            cursor.execute(f'UPDATE trading_rules SET {", ".join(updates)} WHERE id = ?', params)
+
+        conn.commit()
+        conn.close()
+        return True
+
+
+def delete_trading_rule(rule_id):
+    """Delete a trading rule."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM trading_rules WHERE id = ?', (rule_id,))
+        deleted = cursor.rowcount > 0
+
+        conn.commit()
+        conn.close()
+        return deleted
+
+
+def reorder_trading_rules(rule_ids):
+    """Reorder trading rules based on the provided list of IDs."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        for index, rule_id in enumerate(rule_ids):
+            cursor.execute(
+                'UPDATE trading_rules SET display_order = ? WHERE id = ?',
+                (index, rule_id)
+            )
 
         conn.commit()
         conn.close()
