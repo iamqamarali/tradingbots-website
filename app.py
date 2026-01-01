@@ -1068,12 +1068,6 @@ def setups_page():
     return render_template('setups.html', active_page='setups')
 
 
-@app.route('/charts')
-def charts_page():
-    """Render the TradingView charts page."""
-    return render_template('charts.html', active_page='charts')
-
-
 @app.route('/quick-trade')
 @login_required
 def quick_trade_page():
@@ -1789,9 +1783,21 @@ def api_execute_strategy_trade(strategy_id):
         if account['is_testnet']:
             client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
 
-        # Get current price
-        ticker = client.futures_symbol_ticker(symbol=strategy['symbol'])
-        current_price = float(ticker['price'])
+        # Fetch fresh candles and calculate SL using same logic as display
+        lookback_candles = 150
+        candle_limit = max(strategy['slow_ema'] + lookback_candles, strategy['sl_lookback'] + 5)
+        klines = client.futures_klines(
+            symbol=strategy['symbol'],
+            interval=strategy['timeframe'],
+            limit=candle_limit
+        )
+
+        if not klines or len(klines) < strategy['slow_ema']:
+            return jsonify({'error': 'Not enough candle data'}), 400
+
+        # Calculate EMAs from close prices
+        closes = [float(k[4]) for k in klines]
+        current_price = closes[-1]
 
         # For LIMIT orders with fixed price, use limit_price as entry
         # For BBO orders (price_match), use current_price as approximate entry
@@ -1801,16 +1807,67 @@ def api_execute_strategy_trade(strategy_id):
         else:
             entry_price = current_price
 
-        # Use locked crossover SL from strategy (not recalculated)
-        if direction == 'LONG':
-            sl_price = strategy.get('crossover_sl_long')
+        # Find crossovers by scanning back through history
+        min_periods = strategy['slow_ema']
+        crossovers_found = []
+
+        for i in range(len(closes) - 1, min_periods, -1):
+            fast_ema_at_i = calculate_ema(closes[:i+1], strategy['fast_ema'])
+            slow_ema_at_i = calculate_ema(closes[:i+1], strategy['slow_ema'])
+            trend_at_i = 'BULLISH' if fast_ema_at_i > slow_ema_at_i else 'BEARISH'
+
+            fast_ema_prev = calculate_ema(closes[:i], strategy['fast_ema'])
+            slow_ema_prev = calculate_ema(closes[:i], strategy['slow_ema'])
+            trend_prev = 'BULLISH' if fast_ema_prev > slow_ema_prev else 'BEARISH'
+
+            if trend_at_i != trend_prev:
+                crossovers_found.append({
+                    'trend': trend_at_i,
+                    'candle_idx': i
+                })
+                if len(crossovers_found) >= 2:
+                    break
+
+        current_crossover = crossovers_found[0] if crossovers_found else None
+        previous_crossover = crossovers_found[1] if len(crossovers_found) > 1 else None
+
+        def get_sl_candles(crossover_idx):
+            if crossover_idx is not None:
+                sl_start = max(0, crossover_idx - strategy['sl_lookback'])
+                sl_end = crossover_idx
+                candles = klines[sl_start:sl_end] if sl_end > sl_start else klines[crossover_idx:crossover_idx+1]
+                return candles
+            return None
+
+        # Determine which crossover to use for each direction
+        if current_crossover:
+            if current_crossover['trend'] == 'BULLISH':
+                long_crossover_idx = current_crossover['candle_idx']
+                short_crossover_idx = previous_crossover['candle_idx'] if previous_crossover else None
+            else:
+                short_crossover_idx = current_crossover['candle_idx']
+                long_crossover_idx = previous_crossover['candle_idx'] if previous_crossover else None
         else:
-            sl_price = strategy.get('crossover_sl_short')
+            long_crossover_idx = None
+            short_crossover_idx = None
 
-        if not sl_price:
-            return jsonify({'error': 'No crossover detected yet. Wait for EMA crossover.'}), 400
+        # Calculate SL based on direction
+        if direction == 'LONG':
+            sl_candles = get_sl_candles(long_crossover_idx)
+            if sl_candles:
+                sl_price = min(float(k[3]) for k in sl_candles)  # lowest low
+            else:
+                fallback_candles = klines[-(strategy['sl_lookback'] + 1):-1]
+                sl_price = min(float(k[3]) for k in fallback_candles) if fallback_candles else current_price * 0.98
+        else:  # SHORT
+            sl_candles = get_sl_candles(short_crossover_idx)
+            if sl_candles:
+                sl_price = max(float(k[2]) for k in sl_candles)  # highest high
+            else:
+                fallback_candles = klines[-(strategy['sl_lookback'] + 1):-1]
+                sl_price = max(float(k[2]) for k in fallback_candles) if fallback_candles else current_price * 1.02
 
-        # Calculate SL percent based on entry price (limit or current)
+        # Calculate SL percent based on entry price
         sl_percent = abs(entry_price - sl_price) / entry_price * 100
 
         # Validate SL range
