@@ -75,6 +75,11 @@ const positionElements = {
 document.addEventListener('DOMContentLoaded', () => {
     loadAllPositions();  // Uses cached data if < 15 min old
     setupPositionEventListeners();
+
+    // Auto-refresh positions every 3 seconds
+    setInterval(() => {
+        loadAllPositions();
+    }, 3000);
 });
 
 // Setup event listeners for positions
@@ -166,6 +171,10 @@ function setupPositionEventListeners() {
         positionElements.editTakeProfitModal.addEventListener('click', (e) => {
             if (e.target === positionElements.editTakeProfitModal) closeEditTakeProfitModal();
         });
+    }
+    // Calculate potential profit on input change
+    if (positionElements.newTakeProfitPrice) {
+        positionElements.newTakeProfitPrice.addEventListener('input', calculateTakeProfitPotentialProfit);
     }
 
     // Add to position modal
@@ -271,7 +280,7 @@ function renderPositions() {
                     <div class="sl-tp-row">
                         <span class="tp-label">TP:</span>
                         <span class="${pos.tp_price ? 'has-tp' : 'no-tp'}">${pos.tp_price ? formatPrice(pos.tp_price) : '—'}</span>
-                        <button class="edit-tp-btn" onclick="openEditTakeProfitModal(${pos.account_id}, '${pos.symbol}', '${pos.side}', ${pos.quantity}, ${pos.tp_price || 'null'}, ${pos.tp_order_id || 'null'}, '${escapeHtml(pos.account_name)}')" title="Edit Take Profit">
+                        <button class="edit-tp-btn" onclick="openEditTakeProfitModal(${pos.account_id}, '${pos.symbol}', '${pos.side}', ${pos.quantity}, ${pos.tp_price || 'null'}, ${pos.tp_order_id || 'null'}, '${escapeHtml(pos.account_name)}', ${pos.entry_price})" title="Edit Take Profit">
                             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
@@ -606,8 +615,8 @@ function escapeHtml(text) {
 // ==================== TAKE PROFIT FUNCTIONS ====================
 
 // Open edit take profit modal
-function openEditTakeProfitModal(accountId, symbol, side, quantity, tpPrice, tpOrderId, accountName) {
-    currentPositionData = { accountId, symbol, side, quantity, tpPrice, tpOrderId, accountName };
+function openEditTakeProfitModal(accountId, symbol, side, quantity, tpPrice, tpOrderId, accountName, entryPrice) {
+    currentPositionData = { accountId, symbol, side, quantity, tpPrice, tpOrderId, accountName, entryPrice };
 
     positionElements.tpSymbol.textContent = symbol;
     positionElements.tpSide.textContent = side;
@@ -627,7 +636,55 @@ function openEditTakeProfitModal(accountId, symbol, side, quantity, tpPrice, tpO
     positionElements.newTakeProfitPrice.value = '';
     positionElements.tpHint.textContent = side === 'LONG' ? 'Set above entry price' : 'Set below entry price';
 
+    // Reset potential profit display
+    calculateTakeProfitPotentialProfit();
+
     positionElements.editTakeProfitModal.classList.add('active');
+}
+
+// Calculate potential profit based on take profit price
+function calculateTakeProfitPotentialProfit() {
+    const tpPriceInput = positionElements.newTakeProfitPrice;
+    const profitSection = document.getElementById('tpPotentialProfitSection');
+    const profitDisplay = document.getElementById('tpPotentialProfit');
+
+    if (!tpPriceInput || !profitSection || !profitDisplay || !currentPositionData || !currentPositionData.entryPrice) {
+        if (profitSection) profitSection.style.display = 'none';
+        return;
+    }
+
+    const tpPrice = parseFloat(tpPriceInput.value);
+
+    if (!tpPrice || tpPrice <= 0) {
+        profitSection.style.display = 'none';
+        return;
+    }
+
+    const entryPrice = currentPositionData.entryPrice;
+    const quantity = currentPositionData.quantity;
+    const side = currentPositionData.side;
+
+    // Calculate profit: For LONG, profit = qty * (tp - entry), For SHORT, profit = qty * (entry - tp)
+    let profit;
+    if (side === 'LONG') {
+        profit = quantity * (tpPrice - entryPrice);
+    } else {
+        profit = quantity * (entryPrice - tpPrice);
+    }
+
+    // Only show if it's a valid TP (would result in a profit)
+    if (profit > 0) {
+        profitSection.style.display = 'block';
+        profitDisplay.textContent = `+$${profit.toFixed(2)}`;
+        profitDisplay.className = 'profit-amount positive';
+    } else if (profit < 0) {
+        // This would actually be a loss (invalid TP placement)
+        profitSection.style.display = 'block';
+        profitDisplay.textContent = `-$${Math.abs(profit).toFixed(2)}`;
+        profitDisplay.className = 'profit-amount negative';
+    } else {
+        profitSection.style.display = 'none';
+    }
 }
 
 // Close edit take profit modal

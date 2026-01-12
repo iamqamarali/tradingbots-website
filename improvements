@@ -1,0 +1,59 @@
+ Trading & Positions
+
+  | Feature                | Description                                            |
+  |------------------------|--------------------------------------------------------|
+  | Trailing Stop Loss     | Auto-adjust SL as price moves in your favor            |
+  | Break-even button      | One-click to move SL to entry price                    |
+  | Partial TP levels      | Set multiple TP targets (TP1: 50%, TP2: 30%, TP3: 20%) |
+  | Position alerts        | Browser/sound notifications when PnL hits threshold    |
+  | Copy trade to accounts | Open same position across multiple accounts            |
+  | Risk/Reward display    | Show R:R ratio on positions based on SL/TP             |
+
+  Dashboard & Analytics
+
+  | Feature               | Description                                           |
+  |-----------------------|-------------------------------------------------------|
+  | Daily PnL summary     | Show today's realized + unrealized PnL                |
+  | Win rate stats        | Display win/loss ratio, average win vs average loss   |
+  | Equity curve chart    | Graph account balance over time                       |
+  | Calendar heatmap      | Show profitable/losing days like GitHub contributions |
+  | Drawdown tracker      | Current and max drawdown from peak                    |
+  | Trading session stats | Performance by time of day (Asian/London/NY)          |
+
+  Quick Trade Improvements
+
+  | Feature          | Description                                  |
+  |------------------|----------------------------------------------|
+  | More indicators  | RSI, MACD, Bollinger Bands for entry signals |
+  | Backtest results | Show historical performance of the strategy  |
+  | Signal alerts    | Notify when EMA crossover happens            |
+  | Auto-trade mode  | Execute trades automatically on signal       |
+
+  Quality of Life
+
+  | Feature                 | Description                                             |
+  |-------------------------|---------------------------------------------------------|
+  | Dark/Light theme toggle | User preference for theme                               |
+  | Keyboard shortcuts      | Quick actions (R=refresh, N=new trade, Esc=close modal) |
+  | Price alerts            | Set alerts for specific price levels                    |
+  | Export trades to CSV    | Download trade history for analysis                     |
+  | Mobile PWA improvements | Better offline support, push notifications              |
+  | Multi-account overview  | Combined balance/PnL across all accounts                |
+
+  Journal & Review
+
+  | Feature                | Description                                             |
+  |------------------------|---------------------------------------------------------|
+  | Screenshot attachment  | Attach chart screenshots to trades                      |
+  | Trade replay           | Review past trades with price action                    |
+  | Weekly/Monthly reports | Auto-generated performance summaries                    |
+  | Setup tagging          | Link trades to specific setups, track setup performance |
+
+  Risk Management
+
+  | Feature                | Description                               |
+  |------------------------|-------------------------------------------|
+  | Daily loss limit       | Lock trading after hitting max daily loss |
+  | Position size warnings | Alert if size exceeds risk rules          |
+  | Correlation check      | Warn when opening correlated positions    |
+  | Margin usage display   | Show % of margin used across accounts     |

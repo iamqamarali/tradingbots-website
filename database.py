@@ -433,6 +433,12 @@ def init_db():
         except:
             pass
 
+        # Migration: Add notify_enabled column for push notifications
+        try:
+            cursor.execute('ALTER TABLE strategies ADD COLUMN notify_enabled INTEGER DEFAULT 0')
+        except:
+            pass
+
         conn.commit()
         conn.close()
 
@@ -2421,6 +2427,7 @@ def get_all_strategies():
                 'leverage': row['leverage'],
                 'timeframe': row['timeframe'],
                 'is_active': bool(row['is_active']),
+                'notify_enabled': bool(row['notify_enabled']) if row['notify_enabled'] is not None else False,
                 'crossover_direction': row['crossover_direction'],
                 'crossover_sl_long': row['crossover_sl_long'],
                 'crossover_sl_short': row['crossover_sl_short'],
@@ -2465,6 +2472,7 @@ def get_strategies_by_account(account_id):
                 'leverage': row['leverage'],
                 'timeframe': row['timeframe'],
                 'is_active': bool(row['is_active']),
+                'notify_enabled': bool(row['notify_enabled']) if row['notify_enabled'] is not None else False,
                 'crossover_direction': row['crossover_direction'],
                 'crossover_sl_long': row['crossover_sl_long'],
                 'crossover_sl_short': row['crossover_sl_short'],
@@ -2510,6 +2518,7 @@ def get_strategy(strategy_id):
                 'leverage': row['leverage'],
                 'timeframe': row['timeframe'],
                 'is_active': bool(row['is_active']),
+                'notify_enabled': bool(row['notify_enabled']) if row['notify_enabled'] is not None else False,
                 'crossover_direction': row['crossover_direction'],
                 'crossover_sl_long': row['crossover_sl_long'],
                 'crossover_sl_short': row['crossover_sl_short'],
@@ -2518,6 +2527,59 @@ def get_strategy(strategy_id):
                 'updated_at': row['updated_at']
             }
         return None
+
+
+def toggle_strategy_notifications(strategy_id, enabled):
+    """Toggle push notifications for a strategy."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'UPDATE strategies SET notify_enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+            (1 if enabled else 0, strategy_id)
+        )
+        conn.commit()
+        conn.close()
+        return True
+
+
+def get_strategies_with_notifications_enabled():
+    """Get all strategies that have notifications enabled."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT s.*, a.name as account_name, a.is_testnet, a.api_key, a.api_secret
+            FROM strategies s
+            JOIN accounts a ON s.account_id = a.id
+            WHERE s.notify_enabled = 1 AND s.is_active = 1
+        ''')
+        strategies = []
+        for row in cursor.fetchall():
+            strategies.append({
+                'id': row['id'],
+                'name': row['name'],
+                'account_id': row['account_id'],
+                'account_name': row['account_name'],
+                'is_testnet': bool(row['is_testnet']),
+                'api_key': row['api_key'],
+                'api_secret': row['api_secret'],
+                'symbol': row['symbol'],
+                'fast_ema': row['fast_ema'],
+                'slow_ema': row['slow_ema'],
+                'risk_percent': row['risk_percent'],
+                'sl_lookback': row['sl_lookback'],
+                'sl_min_percent': row['sl_min_percent'],
+                'sl_max_percent': row['sl_max_percent'],
+                'leverage': row['leverage'],
+                'timeframe': row['timeframe'],
+                'crossover_direction': row['crossover_direction'],
+                'crossover_sl_long': row['crossover_sl_long'],
+                'crossover_sl_short': row['crossover_sl_short'],
+                'crossover_time': row['crossover_time']
+            })
+        conn.close()
+        return strategies
 
 
 def update_strategy(strategy_id, name=None, account_id=None, symbol=None,

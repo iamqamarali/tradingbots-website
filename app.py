@@ -1529,6 +1529,26 @@ def api_delete_strategy(strategy_id):
     return jsonify({'error': 'Strategy not found'}), 404
 
 
+@app.route('/api/strategies/<int:strategy_id>/notifications', methods=['POST'])
+@login_required
+def api_toggle_strategy_notifications(strategy_id):
+    """Toggle push notifications for a strategy."""
+    strategy = db.get_strategy(strategy_id)
+    if not strategy:
+        return jsonify({'error': 'Strategy not found'}), 404
+
+    data = request.get_json()
+    enabled = data.get('enabled', False)
+
+    db.toggle_strategy_notifications(strategy_id, enabled)
+
+    return jsonify({
+        'success': True,
+        'strategy_id': strategy_id,
+        'notify_enabled': enabled
+    })
+
+
 @app.route('/api/strategies/<int:strategy_id>/data', methods=['GET'])
 @login_required
 def api_get_strategy_data(strategy_id):
@@ -4870,6 +4890,116 @@ def stop_notification_checker():
     """Stop the notification checking thread."""
     global notification_check_running
     notification_check_running = False
+
+
+# Store last known crossover state per strategy to detect changes
+last_crossover_states = {}
+
+
+def check_ema_signals():
+    """Background thread to check for EMA crossover signals."""
+    global notification_check_running, last_crossover_states
+
+    print("[SIGNALS] Starting EMA signal checker...")
+
+    while notification_check_running:
+        try:
+            if not BINANCE_AVAILABLE:
+                time.sleep(30)
+                continue
+
+            # Get strategies with notifications enabled
+            strategies = db.get_strategies_with_notifications_enabled()
+
+            for strategy in strategies:
+                try:
+                    strategy_id = strategy['id']
+                    symbol = strategy['symbol']
+                    timeframe = strategy['timeframe']
+                    fast_ema = strategy['fast_ema']
+                    slow_ema = strategy['slow_ema']
+
+                    # Create Binance client
+                    if strategy['is_testnet']:
+                        client = BinanceClient(
+                            api_key=strategy['api_key'],
+                            api_secret=strategy['api_secret'],
+                            testnet=True
+                        )
+                    else:
+                        client = BinanceClient(
+                            api_key=strategy['api_key'],
+                            api_secret=strategy['api_secret']
+                        )
+
+                    # Get klines for EMA calculation
+                    limit = max(fast_ema, slow_ema) + 10
+                    klines = client.futures_klines(symbol=symbol, interval=timeframe, limit=limit)
+
+                    if len(klines) < limit:
+                        continue
+
+                    # Extract closing prices
+                    closes = [float(k[4]) for k in klines]
+
+                    # Calculate EMAs
+                    def calc_ema(prices, period):
+                        ema = [sum(prices[:period]) / period]
+                        multiplier = 2 / (period + 1)
+                        for price in prices[period:]:
+                            ema.append((price - ema[-1]) * multiplier + ema[-1])
+                        return ema
+
+                    fast_ema_values = calc_ema(closes, fast_ema)
+                    slow_ema_values = calc_ema(closes, slow_ema)
+
+                    # Get current values (last completed candle)
+                    current_fast = fast_ema_values[-2] if len(fast_ema_values) >= 2 else fast_ema_values[-1]
+                    current_slow = slow_ema_values[-2] if len(slow_ema_values) >= 2 else slow_ema_values[-1]
+                    prev_fast = fast_ema_values[-3] if len(fast_ema_values) >= 3 else current_fast
+                    prev_slow = slow_ema_values[-3] if len(slow_ema_values) >= 3 else current_slow
+
+                    # Determine current crossover state
+                    current_state = 'bullish' if current_fast > current_slow else 'bearish'
+                    prev_state = 'bullish' if prev_fast > prev_slow else 'bearish'
+
+                    # Check if crossover just happened
+                    last_state = last_crossover_states.get(strategy_id)
+                    current_price = closes[-1]
+
+                    if last_state is not None and current_state != last_state:
+                        # Crossover detected!
+                        if current_state == 'bullish':
+                            title = f"LONG Signal: {symbol}"
+                            body = f"{strategy['name']}: EMA {fast_ema}/{slow_ema} bullish crossover @ ${current_price:.4f}"
+                            direction = 'LONG'
+                        else:
+                            title = f"SHORT Signal: {symbol}"
+                            body = f"{strategy['name']}: EMA {fast_ema}/{slow_ema} bearish crossover @ ${current_price:.4f}"
+                            direction = 'SHORT'
+
+                        print(f"[SIGNALS] {title} - {body}")
+                        send_push_notification(title, body, symbol, 'signal')
+
+                        # Update strategy crossover info in DB
+                        db.update_strategy_crossover(strategy_id, direction, current_price, current_price)
+
+                    # Update last known state
+                    last_crossover_states[strategy_id] = current_state
+
+                except Exception as e:
+                    print(f"[SIGNALS] Error checking strategy {strategy.get('name', strategy_id)}: {e}")
+
+        except Exception as e:
+            print(f"[SIGNALS] Signal check error: {e}")
+
+        # Check every 30 seconds
+        time.sleep(30)
+
+
+# Start signal checking thread
+signal_thread = Thread(target=check_ema_signals, daemon=True)
+signal_thread.start()
 
 
 # Start notification checking thread

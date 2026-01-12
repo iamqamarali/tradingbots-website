@@ -196,6 +196,28 @@
     color: #ef4444;
 }
 
+.strategy-actions .notify-btn {
+    padding: 0.375rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.strategy-actions .notify-btn:hover {
+    border-color: #fbbf24;
+    color: #fbbf24;
+}
+
+.strategy-actions .notify-btn.active {
+    background: rgba(251, 191, 36, 0.15);
+    border-color: #fbbf24;
+    color: #fbbf24;
+}
+
+.strategy-actions .notify-btn.active:hover {
+    background: rgba(251, 191, 36, 0.25);
+}
+
 /* Strategy Info */
 .strategy-info {
     display: grid;

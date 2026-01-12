@@ -33,28 +33,37 @@ self.addEventListener('push', (event) => {
         }
     }
 
+    // Determine URL based on event type
+    let notificationUrl = '/';
+    let notificationTag = 'price-alert-' + (data.symbol || 'general');
+    let actions = [
+        { action: 'view', title: 'View Dashboard' },
+        { action: 'dismiss', title: 'Dismiss' }
+    ];
+
+    if (data.event_type === 'signal') {
+        notificationUrl = '/quick-trade';
+        notificationTag = 'signal-' + (data.symbol || 'general');
+        actions = [
+            { action: 'trade', title: 'Open Quick Trade' },
+            { action: 'dismiss', title: 'Dismiss' }
+        ];
+    }
+
     const options = {
         body: data.body,
         icon: '/static/icon-192.png',
         badge: '/static/icon-192.png',
-        vibrate: [200, 100, 200],
-        tag: 'price-alert-' + (data.symbol || 'general'),
+        vibrate: [200, 100, 200, 100, 200],
+        tag: notificationTag,
         renotify: true,
         requireInteraction: true,
         data: {
-            url: '/',
-            symbol: data.symbol
+            url: notificationUrl,
+            symbol: data.symbol,
+            event_type: data.event_type
         },
-        actions: [
-            {
-                action: 'view',
-                title: 'View Dashboard'
-            },
-            {
-                action: 'dismiss',
-                title: 'Dismiss'
-            }
-        ]
+        actions: actions
     };
 
     event.waitUntil(
@@ -72,19 +81,28 @@ self.addEventListener('notificationclick', (event) => {
         return;
     }
 
+    // Determine URL based on action
+    let targetUrl = event.notification.data.url || '/';
+    if (event.action === 'trade') {
+        targetUrl = '/quick-trade';
+    } else if (event.action === 'view') {
+        targetUrl = '/';
+    }
+
     // Open the app when notification is clicked
     event.waitUntil(
         clients.matchAll({ type: 'window', includeUncontrolled: true })
             .then((clientList) => {
-                // If app is already open, focus it
+                // If app is already open, focus it and navigate
                 for (const client of clientList) {
                     if (client.url.includes(self.location.origin) && 'focus' in client) {
+                        client.navigate(targetUrl);
                         return client.focus();
                     }
                 }
                 // Otherwise open a new window
                 if (clients.openWindow) {
-                    return clients.openWindow(event.notification.data.url || '/');
+                    return clients.openWindow(targetUrl);
                 }
             })
     );

@@ -430,6 +430,11 @@ function initDetailPage() {
     setupAddToPositionModal();
     setupSectionTabs();
     setupTradesPagination();
+
+    // Auto-refresh positions every 3 seconds
+    setInterval(() => {
+        loadPositions();
+    }, 3000);
 }
 
 function setupDetailPageEventListeners() {
@@ -1903,8 +1908,56 @@ function openEditTakeProfitModal(posData) {
         hintEl.innerHTML = `<span class="hint-success">For SHORT position, take profit should be <strong>below</strong> entry price ($${currentTakeProfitPosition.entryPrice.toFixed(2)})</span>`;
     }
 
+    // Reset potential profit display
+    calculateTakeProfitPotentialProfit();
+
     // Show modal
     document.getElementById('editTakeProfitModal').classList.add('active');
+}
+
+// Calculate potential profit based on take profit price
+function calculateTakeProfitPotentialProfit() {
+    const tpPriceInput = document.getElementById('newTakeProfitPrice');
+    const profitSection = document.getElementById('tpPotentialProfitSection');
+    const profitDisplay = document.getElementById('tpPotentialProfit');
+
+    if (!tpPriceInput || !profitSection || !profitDisplay || !currentTakeProfitPosition || !currentTakeProfitPosition.entryPrice) {
+        if (profitSection) profitSection.style.display = 'none';
+        return;
+    }
+
+    const tpPrice = parseFloat(tpPriceInput.value);
+
+    if (!tpPrice || tpPrice <= 0) {
+        profitSection.style.display = 'none';
+        return;
+    }
+
+    const entryPrice = currentTakeProfitPosition.entryPrice;
+    const quantity = currentTakeProfitPosition.quantity;
+    const side = currentTakeProfitPosition.side;
+
+    // Calculate profit: For LONG, profit = qty * (tp - entry), For SHORT, profit = qty * (entry - tp)
+    let profit;
+    if (side === 'LONG') {
+        profit = quantity * (tpPrice - entryPrice);
+    } else {
+        profit = quantity * (entryPrice - tpPrice);
+    }
+
+    // Only show if it's a valid TP (would result in a profit)
+    if (profit > 0) {
+        profitSection.style.display = 'block';
+        profitDisplay.textContent = `+$${profit.toFixed(2)}`;
+        profitDisplay.className = 'profit-amount positive';
+    } else if (profit < 0) {
+        // This would actually be a loss (invalid TP placement)
+        profitSection.style.display = 'block';
+        profitDisplay.textContent = `-$${Math.abs(profit).toFixed(2)}`;
+        profitDisplay.className = 'profit-amount negative';
+    } else {
+        profitSection.style.display = 'none';
+    }
 }
 
 function setupEditTakeProfitModal() {
@@ -1947,6 +2000,12 @@ function setupEditTakeProfitModal() {
     // Remove button
     if (removeBtn) {
         removeBtn.addEventListener('click', removeTakeProfit);
+    }
+
+    // Calculate potential profit on input change
+    const tpPriceInput = document.getElementById('newTakeProfitPrice');
+    if (tpPriceInput) {
+        tpPriceInput.addEventListener('input', calculateTakeProfitPotentialProfit);
     }
 }
 
@@ -3388,10 +3447,10 @@ function startQuickTradeRefresh(qtId) {
     // Initial fetch
     fetchQuickTradeData(qtId);
 
-    // Set up 30-second interval
+    // Set up 3-second interval
     qtRefreshIntervals[qtId] = setInterval(() => {
         fetchQuickTradeData(qtId);
-    }, 30000);
+    }, 3000);
 }
 
 // Fetch real-time data for a quick trade

@@ -25,7 +25,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadAccounts();
     await loadStrategies();
     setupEventListeners();
+    registerServiceWorker();
 });
+
+// Register service worker for push notifications
+async function registerServiceWorker() {
+    if ('serviceWorker' in navigator) {
+        try {
+            const registration = await navigator.serviceWorker.register('/static/service-worker.js');
+            console.log('[SW] Service Worker registered:', registration.scope);
+        } catch (error) {
+            console.log('[SW] Service Worker registration failed:', error);
+        }
+    }
+}
 
 // Load accounts for dropdown
 async function loadAccounts() {
@@ -96,6 +109,15 @@ function createStrategyCard(strategy) {
                     <div class="strategy-header-line1">
                         <div class="strategy-name">${escapeHtml(strategy.name)}</div>
                         <div class="strategy-actions" onclick="event.stopPropagation()">
+                            <button class="notify-btn ${strategy.notify_enabled ? 'active' : ''}"
+                                    id="notifyBtn-${strategy.id}"
+                                    onclick="toggleNotifications(${strategy.id})"
+                                    title="${strategy.notify_enabled ? 'Disable' : 'Enable'} signal alerts">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                                    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                                </svg>
+                            </button>
                             <button class="edit-btn" onclick="editStrategy(${strategy.id})">Edit</button>
                             <button class="delete-btn" onclick="deleteStrategy(${strategy.id})">Delete</button>
                         </div>
@@ -177,10 +199,10 @@ function startStrategyRefresh(strategyId) {
     // Initial fetch
     fetchStrategyData(strategyId);
 
-    // Set up 30-second interval
+    // Set up 3-second interval
     refreshIntervals[strategyId] = setInterval(() => {
         fetchStrategyData(strategyId);
-    }, 30000);
+    }, 3000);
 }
 
 // Fetch real-time data for a strategy
@@ -783,6 +805,136 @@ async function deleteStrategy(strategyId) {
         console.error('Error deleting strategy:', error);
         showToast('Failed to delete strategy', 'error');
     }
+}
+
+// Toggle notifications for a strategy
+async function toggleNotifications(strategyId) {
+    const btn = document.getElementById(`notifyBtn-${strategyId}`);
+    const strategy = strategies.find(s => s.id === strategyId);
+    const newState = !strategy.notify_enabled;
+
+    // Check if push is supported and get permission
+    if (newState) {
+        const permissionGranted = await requestNotificationPermission();
+        if (!permissionGranted) {
+            showToast('Please enable notifications in your browser/device settings', 'error');
+            return;
+        }
+    }
+
+    try {
+        const response = await fetch(`/api/strategies/${strategyId}/notifications`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: newState })
+        });
+
+        if (response.ok) {
+            // Update local state
+            strategy.notify_enabled = newState;
+
+            // Update button appearance
+            if (newState) {
+                btn.classList.add('active');
+                btn.title = 'Disable signal alerts';
+                showToast('Signal alerts enabled', 'success');
+            } else {
+                btn.classList.remove('active');
+                btn.title = 'Enable signal alerts';
+                showToast('Signal alerts disabled', 'success');
+            }
+        } else {
+            const data = await response.json();
+            showToast(data.error || 'Failed to toggle notifications', 'error');
+        }
+    } catch (error) {
+        console.error('Error toggling notifications:', error);
+        showToast('Failed to toggle notifications', 'error');
+    }
+}
+
+// Request notification permission and subscribe to push
+async function requestNotificationPermission() {
+    // Check if notifications are supported
+    if (!('Notification' in window)) {
+        console.log('Notifications not supported');
+        return false;
+    }
+
+    // Check if service worker is supported
+    if (!('serviceWorker' in navigator)) {
+        console.log('Service Worker not supported');
+        return false;
+    }
+
+    // Request permission
+    let permission = Notification.permission;
+    if (permission === 'default') {
+        permission = await Notification.requestPermission();
+    }
+
+    if (permission !== 'granted') {
+        return false;
+    }
+
+    // Subscribe to push notifications
+    try {
+        const registration = await navigator.serviceWorker.ready;
+
+        // Get VAPID public key
+        const response = await fetch('/api/push/vapid-key');
+        const { publicKey } = await response.json();
+
+        if (!publicKey) {
+            console.log('VAPID public key not configured');
+            return true; // Permission granted but no push
+        }
+
+        // Check for existing subscription
+        let subscription = await registration.pushManager.getSubscription();
+
+        if (!subscription) {
+            // Subscribe to push
+            subscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(publicKey)
+            });
+
+            // Send subscription to server
+            await fetch('/api/push/subscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    endpoint: subscription.endpoint,
+                    keys: {
+                        p256dh: btoa(String.fromCharCode(...new Uint8Array(subscription.getKey('p256dh')))),
+                        auth: btoa(String.fromCharCode(...new Uint8Array(subscription.getKey('auth'))))
+                    }
+                })
+            });
+        }
+
+        return true;
+    } catch (error) {
+        console.error('Push subscription error:', error);
+        return true; // Permission was granted at least
+    }
+}
+
+// Convert base64 to Uint8Array for VAPID key
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+        .replace(/-/g, '+')
+        .replace(/_/g, '/');
+
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
 }
 
 // Setup event listeners
