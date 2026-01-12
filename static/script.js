@@ -76,9 +76,9 @@ document.addEventListener('DOMContentLoaded', () => {
     loadAllPositions();  // Uses cached data if < 15 min old
     setupPositionEventListeners();
 
-    // Auto-refresh positions every 10 seconds (silent refresh - no UI loader)
+    // Auto-refresh positions every 10 seconds (force refresh to get fresh data, silent - no UI loader)
     setInterval(() => {
-        loadAllPositions(false, true);  // forceRefresh=false, silent=true
+        loadAllPositions(true, true);  // forceRefresh=true, silent=true
     }, 10000);
 });
 
