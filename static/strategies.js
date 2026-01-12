@@ -239,10 +239,10 @@ function startStrategyRefresh(strategyId) {
     // Initial fetch
     fetchStrategyData(strategyId);
 
-    // Set up 3-second interval
+    // Set up 10-second interval
     refreshIntervals[strategyId] = setInterval(() => {
         fetchStrategyData(strategyId);
-    }, 3000);
+    }, 10000);
 }
 
 // Fetch real-time data for a strategy

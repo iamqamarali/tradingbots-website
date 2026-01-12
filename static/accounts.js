@@ -431,10 +431,10 @@ function initDetailPage() {
     setupSectionTabs();
     setupTradesPagination();
 
-    // Auto-refresh positions every 3 seconds
+    // Auto-refresh positions every 10 seconds (silent refresh - no UI loader)
     setInterval(() => {
-        loadPositions();
-    }, 3000);
+        loadPositions(true);  // silent=true
+    }, 10000);
 }
 
 function setupDetailPageEventListeners() {
@@ -630,7 +630,8 @@ async function loadBalance() {
     }
 }
 
-async function loadPositions() {
+// silent=true means don't show loader or hide positions (for auto-refresh)
+async function loadPositions(silent = false) {
     const refreshBtn = document.getElementById('refreshPositionsBtn');
     const loading = document.getElementById('positionsLoading');
     const table = document.getElementById('positionsTable');
@@ -638,10 +639,13 @@ async function loadPositions() {
     const tbody = document.getElementById('positionsBody');
     const countEl = document.getElementById('positionsCount');
 
-    if (refreshBtn) refreshBtn.classList.add('loading');
-    if (loading) loading.style.display = 'flex';
-    if (table) table.style.display = 'none';
-    if (empty) empty.style.display = 'none';
+    // Only show loading UI if not a silent refresh
+    if (!silent) {
+        if (refreshBtn) refreshBtn.classList.add('loading');
+        if (loading) loading.style.display = 'flex';
+        if (table) table.style.display = 'none';
+        if (empty) empty.style.display = 'none';
+    }
 
     try {
         const response = await fetch(`/api/accounts/${ACCOUNT_ID}/positions`);
@@ -671,6 +675,7 @@ async function loadPositions() {
 
         if (response.ok && positions.length > 0) {
             if (table) table.style.display = 'table';
+            if (empty) empty.style.display = 'none';
 
             tbody.innerHTML = positions.map(pos => {
                 // Calculate position size in $
@@ -769,14 +774,21 @@ async function loadPositions() {
                 btn.addEventListener('click', () => openEditTakeProfitModal(btn.dataset));
             });
         } else {
+            if (table) table.style.display = 'none';
             if (empty) empty.style.display = 'flex';
         }
     } catch (error) {
         console.error('Error loading positions:', error);
-        if (loading) loading.style.display = 'none';
-        if (empty) empty.style.display = 'flex';
+        // Only update UI on error if not a silent refresh
+        if (!silent) {
+            if (loading) loading.style.display = 'none';
+            if (table) table.style.display = 'none';
+            if (empty) empty.style.display = 'flex';
+        }
     } finally {
-        if (refreshBtn) refreshBtn.classList.remove('loading');
+        if (!silent) {
+            if (refreshBtn) refreshBtn.classList.remove('loading');
+        }
     }
 }
 
@@ -3447,10 +3459,10 @@ function startQuickTradeRefresh(qtId) {
     // Initial fetch
     fetchQuickTradeData(qtId);
 
-    // Set up 3-second interval
+    // Set up 10-second interval
     qtRefreshIntervals[qtId] = setInterval(() => {
         fetchQuickTradeData(qtId);
-    }, 3000);
+    }, 10000);
 }
 
 // Fetch real-time data for a quick trade

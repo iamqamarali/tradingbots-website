@@ -76,10 +76,10 @@ document.addEventListener('DOMContentLoaded', () => {
     loadAllPositions();  // Uses cached data if < 15 min old
     setupPositionEventListeners();
 
-    // Auto-refresh positions every 3 seconds
+    // Auto-refresh positions every 10 seconds (silent refresh - no UI loader)
     setInterval(() => {
-        loadAllPositions();
-    }, 3000);
+        loadAllPositions(false, true);  // forceRefresh=false, silent=true
+    }, 10000);
 });
 
 // Setup event listeners for positions
@@ -210,13 +210,17 @@ function setupPositionEventListeners() {
 }
 
 // Load all positions from all accounts
-async function loadAllPositions(forceRefresh = false) {
+// silent=true means don't show loader or hide positions (for auto-refresh)
+async function loadAllPositions(forceRefresh = false, silent = false) {
     if (!positionElements.positionsLoading) return;
 
-    positionElements.positionsLoading.style.display = 'flex';
-    positionElements.positionsTableWrapper.style.display = 'none';
-    positionElements.emptyPositions.style.display = 'none';
-    positionElements.refreshPositionsBtn.classList.add('loading');
+    // Only show loading UI if not a silent refresh
+    if (!silent) {
+        positionElements.positionsLoading.style.display = 'flex';
+        positionElements.positionsTableWrapper.style.display = 'none';
+        positionElements.emptyPositions.style.display = 'none';
+        positionElements.refreshPositionsBtn.classList.add('loading');
+    }
 
     try {
         const url = forceRefresh ? '/api/positions/all?force=true' : '/api/positions/all';
@@ -228,14 +232,21 @@ async function loadAllPositions(forceRefresh = false) {
             renderPositions();
         } else {
             console.error('Error loading positions:', data.error);
-            showToast(data.error || 'Failed to load positions', 'error');
+            if (!silent) {
+                showToast(data.error || 'Failed to load positions', 'error');
+            }
         }
     } catch (error) {
         console.error('Error loading positions:', error);
-        showToast('Failed to load positions', 'error');
+        if (!silent) {
+            showToast('Failed to load positions', 'error');
+        }
     } finally {
-        positionElements.positionsLoading.style.display = 'none';
-        positionElements.refreshPositionsBtn.classList.remove('loading');
+        // Only update loading UI if not a silent refresh
+        if (!silent) {
+            positionElements.positionsLoading.style.display = 'none';
+            positionElements.refreshPositionsBtn.classList.remove('loading');
+        }
     }
 }
 
