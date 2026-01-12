@@ -40,6 +40,46 @@ async function registerServiceWorker() {
     }
 }
 
+// Debug function - call from console: debugNotifications()
+window.debugNotifications = function() {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+    const hasNotificationAPI = 'Notification' in window;
+    const hasServiceWorker = 'serviceWorker' in navigator;
+    const hasPushManager = 'PushManager' in window;
+    const permission = hasNotificationAPI ? Notification.permission : 'N/A';
+
+    const info = {
+        'iOS Device': isIOS,
+        'Standalone (PWA) Mode': isStandalone,
+        'Notification API': hasNotificationAPI,
+        'Service Worker API': hasServiceWorker,
+        'Push Manager API': hasPushManager,
+        'Current Permission': permission,
+        'User Agent': navigator.userAgent
+    };
+
+    console.table(info);
+
+    let message = '📱 Notification Debug:\n\n';
+    for (const [key, value] of Object.entries(info)) {
+        message += `${key}: ${value}\n`;
+    }
+
+    if (isIOS && !isStandalone) {
+        message += '\n⚠️ ISSUE: You must add this app to Home Screen and open from there!';
+    } else if (permission === 'denied') {
+        message += '\n⚠️ ISSUE: Notifications were denied. Reset in Settings.';
+    } else if (permission === 'default') {
+        message += '\n✅ Ready to request permission.';
+    } else if (permission === 'granted') {
+        message += '\n✅ Permission already granted!';
+    }
+
+    alert(message);
+    return info;
+}
+
 // Load accounts for dropdown
 async function loadAccounts() {
     try {
@@ -817,7 +857,7 @@ async function toggleNotifications(strategyId) {
     if (newState) {
         const permissionGranted = await requestNotificationPermission();
         if (!permissionGranted) {
-            showToast('Please enable notifications in your browser/device settings', 'error');
+            // Error message already shown by requestNotificationPermission
             return;
         }
     }
@@ -857,51 +897,86 @@ async function toggleNotifications(strategyId) {
 async function requestNotificationPermission() {
     // Check if notifications are supported
     if (!('Notification' in window)) {
+        showToast('Notifications not supported in this browser', 'error');
         console.log('Notifications not supported');
         return false;
     }
 
     // Check if service worker is supported
     if (!('serviceWorker' in navigator)) {
+        showToast('Service Worker not supported', 'error');
         console.log('Service Worker not supported');
+        return false;
+    }
+
+    // Check if running as PWA (standalone mode) on iOS
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+
+    if (isIOS && !isStandalone) {
+        showToast('On iPhone: Add this app to Home Screen first, then open from there', 'error');
+        console.log('iOS requires PWA mode for notifications');
         return false;
     }
 
     // Request permission
     let permission = Notification.permission;
+    console.log('Current notification permission:', permission);
+
     if (permission === 'default') {
-        permission = await Notification.requestPermission();
+        try {
+            permission = await Notification.requestPermission();
+            console.log('Permission after request:', permission);
+        } catch (e) {
+            console.error('Permission request error:', e);
+            showToast('Failed to request permission: ' + e.message, 'error');
+            return false;
+        }
+    }
+
+    if (permission === 'denied') {
+        showToast('Notifications blocked. Please enable in browser settings.', 'error');
+        return false;
     }
 
     if (permission !== 'granted') {
+        showToast('Notification permission not granted', 'error');
         return false;
     }
 
     // Subscribe to push notifications
     try {
+        // Wait for service worker to be ready
+        console.log('Waiting for service worker...');
         const registration = await navigator.serviceWorker.ready;
+        console.log('Service worker ready:', registration);
 
         // Get VAPID public key
         const response = await fetch('/api/push/vapid-key');
         const { publicKey } = await response.json();
+        console.log('VAPID public key received:', publicKey ? 'Yes' : 'No');
 
         if (!publicKey) {
             console.log('VAPID public key not configured');
-            return true; // Permission granted but no push
+            showToast('Push notifications enabled (no VAPID key)', 'success');
+            return true;
         }
 
         // Check for existing subscription
         let subscription = await registration.pushManager.getSubscription();
+        console.log('Existing subscription:', subscription ? 'Yes' : 'No');
 
         if (!subscription) {
             // Subscribe to push
+            console.log('Creating new push subscription...');
             subscription = await registration.pushManager.subscribe({
                 userVisibleOnly: true,
                 applicationServerKey: urlBase64ToUint8Array(publicKey)
             });
+            console.log('Push subscription created');
 
             // Send subscription to server
-            await fetch('/api/push/subscribe', {
+            const subResponse = await fetch('/api/push/subscribe', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -912,11 +987,13 @@ async function requestNotificationPermission() {
                     }
                 })
             });
+            console.log('Subscription saved to server:', subResponse.ok);
         }
 
         return true;
     } catch (error) {
         console.error('Push subscription error:', error);
+        showToast('Push setup error: ' + error.message, 'error');
         return true; // Permission was granted at least
     }
 }
