@@ -3736,6 +3736,37 @@
     gap: 12px;
 }
 
+/* Save Defaults Button */
+.save-defaults-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    margin-top: 4px;
+    margin-bottom: 8px;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    border-radius: 6px;
+    color: #fbbf24;
+    font-size: 0.75rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.save-defaults-btn:hover {
+    background: rgba(245, 158, 11, 0.2);
+    border-color: rgba(245, 158, 11, 0.4);
+}
+
+.save-defaults-btn:active {
+    transform: scale(0.97);
+}
+
+.save-defaults-btn svg {
+    flex-shrink: 0;
+}
+
 /* Risk Calculations Display */
 .risk-calculations {
     background: #18181f;

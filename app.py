@@ -137,6 +137,64 @@ def cancel_algo_order(api_key, api_secret, algo_id, testnet=False):
         raise Exception(f"Failed to cancel algo order: {response.status_code} - {response.text}")
 
 
+def create_algo_order(api_key, api_secret, params, testnet=False):
+    """Create a conditional/algo order (STOP_MARKET, TAKE_PROFIT_MARKET, etc.)
+    using POST /fapi/v1/algoOrder.
+
+    After Dec 2024 migration, conditional orders must use the Algo Service endpoint.
+    The old /fapi/v1/order endpoint rejects STOP_MARKET with error -4120.
+
+    See: https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/New-Algo-Order
+
+    Args:
+        api_key: Binance API key
+        api_secret: Binance API secret
+        params: Dict with order parameters (symbol, side, type, triggerPrice, etc.)
+                Must include algoType='CONDITIONAL' for stop/TP orders.
+        testnet: Whether to use testnet endpoint
+
+    Returns:
+        dict: Binance API response with algoId
+    """
+    if testnet:
+        base_url = 'https://testnet.binancefuture.com'
+    else:
+        base_url = 'https://fapi.binance.com'
+
+    endpoint = '/fapi/v1/algoOrder'
+    timestamp = int(time.time() * 1000)
+    recv_window = 5000
+
+    # Build query string from params
+    query_parts = []
+    for key, value in params.items():
+        query_parts.append(f'{key}={value}')
+    query_parts.append(f'recvWindow={recv_window}')
+    query_parts.append(f'timestamp={timestamp}')
+    query_string = '&'.join(query_parts)
+
+    # Create signature
+    signature = hmac.new(
+        api_secret.encode('utf-8'),
+        query_string.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+
+    url = f'{base_url}{endpoint}?{query_string}&signature={signature}'
+    headers = {'X-MBX-APIKEY': api_key}
+
+    print(f"  Creating algo order via POST {base_url}{endpoint}")
+    print(f"  Params: {params}")
+
+    response = requests.post(url, headers=headers, timeout=10)
+    print(f"  Create algo order response: {response.status_code} - {response.text}")
+
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Algo order failed: {response.status_code} - {response.text}")
+
+
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 
@@ -2344,6 +2402,31 @@ def api_delete_account(account_id):
     return jsonify({'error': 'Account not found'}), 404
 
 
+@app.route('/api/accounts/<int:account_id>/autosize-settings', methods=['GET'])
+def api_get_autosize_settings(account_id):
+    """Get saved auto-size defaults (leverage & risk %) for an account."""
+    leverage = db.get_setting(f'autosize_leverage_{account_id}', '20')
+    risk_percent = db.get_setting(f'autosize_risk_percent_{account_id}', '5.0')
+    return jsonify({
+        'leverage': int(leverage),
+        'risk_percent': float(risk_percent)
+    })
+
+
+@app.route('/api/accounts/<int:account_id>/autosize-settings', methods=['POST'])
+def api_save_autosize_settings(account_id):
+    """Save auto-size defaults (leverage & risk %) for an account."""
+    data = request.get_json()
+    leverage = data.get('leverage', 20)
+    risk_percent = data.get('risk_percent', 5.0)
+    # Clamp values to reasonable ranges
+    leverage = max(1, min(125, int(leverage)))
+    risk_percent = max(0.1, min(100.0, float(risk_percent)))
+    db.set_setting(f'autosize_leverage_{account_id}', str(leverage))
+    db.set_setting(f'autosize_risk_percent_{account_id}', str(risk_percent))
+    return jsonify({'success': True, 'leverage': leverage, 'risk_percent': risk_percent})
+
+
 @app.route('/api/accounts/<int:account_id>/balance', methods=['GET'])
 def api_get_account_balance(account_id):
     """Get account balance from Binance and update database."""
@@ -4034,22 +4117,102 @@ def api_execute_trade(account_id):
             except Exception as e:
                 debug_log.append(f"TP creation failed: {str(e)}")
 
+        sl_warning = None
         if sl_price and float(sl_price) > 0:
-            try:
-                sl_side = 'SELL' if side == 'BUY' else 'BUY'
-                sl_order = client.futures_create_order(
-                    symbol=symbol,
-                    side=sl_side,
-                    type='STOP_MARKET',
-                    stopPrice=str(round(float(sl_price), price_precision)),
-                    closePosition='true',
-                    workingType='MARK_PRICE'
-                )
-                debug_log.append(f"SL order created: {sl_order.get('orderId') or sl_order.get('algoId')}")
-            except Exception as e:
-                debug_log.append(f"SL creation failed: {str(e)}")
+            sl_side = 'SELL' if side == 'BUY' else 'BUY'
+            sl_stop_price = str(round(float(sl_price), price_precision))
 
-        return jsonify({
+            if order_type == 'MARKET':
+                # MARKET order fills immediately — use closePosition to close entire position
+                # Wait briefly for position to settle on Binance side
+                time.sleep(0.3)
+
+                # Try algo endpoint first (required after Dec 2024 migration)
+                max_retries = 3
+                sl_created = False
+                for attempt in range(max_retries):
+                    try:
+                        sl_result = create_algo_order(
+                            account['api_key'], account['api_secret'],
+                            {
+                                'algoType': 'CONDITIONAL',
+                                'symbol': symbol,
+                                'side': sl_side,
+                                'type': 'STOP_MARKET',
+                                'triggerPrice': sl_stop_price,
+                                'closePosition': 'true',
+                                'workingType': 'MARK_PRICE',
+                                'priceProtect': 'TRUE'
+                            },
+                            testnet=account['is_testnet']
+                        )
+                        sl_algo_id = sl_result.get('algoId') or sl_result.get('orderId')
+                        debug_log.append(f"SL algo order created: {sl_algo_id}")
+                        sl_created = True
+                        break
+                    except Exception as e:
+                        debug_log.append(f"SL algo attempt {attempt + 1} failed: {str(e)}")
+                        if attempt < max_retries - 1:
+                            time.sleep(0.5)
+
+                # Fallback: try the library method (works on some versions/testnet)
+                if not sl_created:
+                    try:
+                        sl_order = client.futures_create_order(
+                            symbol=symbol,
+                            side=sl_side,
+                            type='STOP_MARKET',
+                            stopPrice=sl_stop_price,
+                            closePosition='true',
+                            workingType='MARK_PRICE'
+                        )
+                        debug_log.append(f"SL order created (fallback): {sl_order.get('orderId') or sl_order.get('algoId')}")
+                        sl_created = True
+                    except Exception as e:
+                        debug_log.append(f"SL fallback also failed: {str(e)}")
+
+                if not sl_created:
+                    sl_warning = 'Order placed but stop loss creation failed. Please set SL manually.'
+            else:
+                # LIMIT/BBO order — position may not exist yet
+                # Use specific quantity with reduceOnly so SL activates after fill
+                try:
+                    sl_result = create_algo_order(
+                        account['api_key'], account['api_secret'],
+                        {
+                            'algoType': 'CONDITIONAL',
+                            'symbol': symbol,
+                            'side': sl_side,
+                            'type': 'STOP_MARKET',
+                            'triggerPrice': sl_stop_price,
+                            'quantity': str(qty_in_contracts),
+                            'workingType': 'MARK_PRICE',
+                            'reduceOnly': 'true',
+                            'priceProtect': 'TRUE'
+                        },
+                        testnet=account['is_testnet']
+                    )
+                    sl_algo_id = sl_result.get('algoId') or sl_result.get('orderId')
+                    debug_log.append(f"SL algo order created (BBO): {sl_algo_id}")
+                except Exception as e:
+                    debug_log.append(f"SL algo creation failed (BBO): {str(e)}")
+                    # Fallback: try the library method
+                    try:
+                        sl_order = client.futures_create_order(
+                            symbol=symbol,
+                            side=sl_side,
+                            type='STOP_MARKET',
+                            stopPrice=sl_stop_price,
+                            quantity=qty_in_contracts,
+                            workingType='MARK_PRICE',
+                            reduceOnly='true'
+                        )
+                        debug_log.append(f"SL order created (BBO fallback): {sl_order.get('orderId') or sl_order.get('algoId')}")
+                    except Exception as e2:
+                        debug_log.append(f"SL BBO fallback also failed: {str(e2)}")
+                        sl_warning = 'BBO order placed but stop loss creation failed. Set SL manually after fill.'
+
+        result = {
             'success': True,
             'order': {
                 'orderId': order_id,
@@ -4061,7 +4224,10 @@ def api_execute_trade(account_id):
                 'status': order.get('status', 'NEW')
             },
             '_debug': debug_log
-        })
+        }
+        if sl_warning:
+            result['warning'] = sl_warning
+        return jsonify(result)
 
     except BinanceAPIException as e:
         print(f"BinanceAPIException: {e}")

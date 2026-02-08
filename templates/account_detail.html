@@ -696,7 +696,7 @@
             <!-- Trade Modal Tabs -->
             <div class="trade-modal-tabs">
                 <button class="trade-modal-tab active" data-tab="manual">Manual</button>
-                <button class="trade-modal-tab" data-tab="risk-calc">Risk Calculator</button>
+                <button class="trade-modal-tab" data-tab="risk-calc">Auto Size</button>
             </div>
             <div class="modal-body trade-modal-body">
                 <!-- Manual Trade Tab -->
@@ -891,7 +891,17 @@
                         <label>Order Type</label>
                         <div class="risk-order-toggle">
                             <button class="risk-order-btn active" data-type="MARKET" id="riskOrderMarket">Market</button>
-                            <button class="risk-order-btn" data-type="BBO" id="riskOrderBBO">BBO Limit</button>
+                            <button class="risk-order-btn" data-type="LIMIT" id="riskOrderLimit">Limit</button>
+                            <button class="risk-order-btn" data-type="BBO" id="riskOrderBBO">BBO</button>
+                        </div>
+                    </div>
+
+                    <!-- Limit Price Input (shown only for LIMIT orders) -->
+                    <div class="trade-input-group" id="riskLimitPriceGroup" style="display: none;">
+                        <label>Limit Price</label>
+                        <div class="trade-input-wrapper">
+                            <input type="number" id="riskLimitPrice" placeholder="0.00" step="any">
+                            <span class="input-suffix" id="riskLimitSuffix">USDC</span>
                         </div>
                     </div>
 
@@ -910,6 +920,15 @@
                             <span class="input-suffix">%</span>
                         </div>
                     </div>
+
+                    <button class="save-defaults-btn" id="saveAutoSizeDefaults" onclick="saveAutoSizeSettings()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                            <polyline points="17 21 17 13 7 13 7 21"/>
+                            <polyline points="7 3 7 8 15 8"/>
+                        </svg>
+                        Save Defaults
+                    </button>
 
                     <!-- Real-time Calculations Display -->
                     <div class="risk-calculations">

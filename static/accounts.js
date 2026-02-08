@@ -4115,14 +4115,53 @@ let riskCalcState = {
     symbol: 'BTCUSDC',
     marginType: 'ISOLATED',
     leverage: 20,
-    orderType: 'MARKET', // MARKET or BBO
+    orderType: 'MARKET', // MARKET, LIMIT, or BBO
     currentPrice: 0,
+    limitPrice: 0,
     slPrice: 0,
     riskPercent: 5.0,
     availableBalance: 0
 };
 
 let riskPriceInterval = null;
+
+async function loadAutoSizeSettings() {
+    try {
+        const response = await fetch(`/api/accounts/${ACCOUNT_ID}/autosize-settings`);
+        if (response.ok) {
+            const data = await response.json();
+            riskCalcState.leverage = data.leverage;
+            riskCalcState.riskPercent = data.risk_percent;
+            const leverageDisplay = document.getElementById('riskLeverageValue');
+            if (leverageDisplay) leverageDisplay.textContent = data.leverage;
+            const riskPercentInput = document.getElementById('riskPercent');
+            if (riskPercentInput) riskPercentInput.value = data.risk_percent;
+        }
+    } catch (err) {
+        console.error('[Auto Size] Failed to load settings:', err);
+    }
+}
+
+async function saveAutoSizeSettings() {
+    try {
+        const response = await fetch(`/api/accounts/${ACCOUNT_ID}/autosize-settings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                leverage: riskCalcState.leverage,
+                risk_percent: riskCalcState.riskPercent
+            })
+        });
+        if (response.ok) {
+            showToast('Auto Size defaults saved', 'success');
+        } else {
+            showToast('Failed to save defaults', 'error');
+        }
+    } catch (err) {
+        console.error('[Auto Size] Failed to save settings:', err);
+        showToast('Failed to save defaults', 'error');
+    }
+}
 
 function setupRiskCalculatorTab() {
     // Trade modal tab switching
@@ -4218,20 +4257,33 @@ function setupRiskCalculatorTab() {
 
     // Order type toggle
     const riskOrderMarket = document.getElementById('riskOrderMarket');
+    const riskOrderLimit = document.getElementById('riskOrderLimit');
     const riskOrderBBO = document.getElementById('riskOrderBBO');
+    const riskLimitPriceGroup = document.getElementById('riskLimitPriceGroup');
+    const orderBtns = [riskOrderMarket, riskOrderLimit, riskOrderBBO];
 
-    riskOrderMarket?.addEventListener('click', () => {
-        riskOrderMarket.classList.add('active');
-        riskOrderBBO?.classList.remove('active');
-        riskCalcState.orderType = 'MARKET';
-        console.log('[Risk Calc] Order type set to MARKET');
-    });
+    function setRiskOrderType(type) {
+        orderBtns.forEach(b => b?.classList.remove('active'));
+        if (type === 'MARKET') riskOrderMarket?.classList.add('active');
+        else if (type === 'LIMIT') riskOrderLimit?.classList.add('active');
+        else if (type === 'BBO') riskOrderBBO?.classList.add('active');
+        riskCalcState.orderType = type;
+        // Show/hide limit price input
+        if (riskLimitPriceGroup) {
+            riskLimitPriceGroup.style.display = type === 'LIMIT' ? '' : 'none';
+        }
+        updateRiskCalculations();
+    }
 
-    riskOrderBBO?.addEventListener('click', () => {
-        riskOrderBBO.classList.add('active');
-        riskOrderMarket?.classList.remove('active');
-        riskCalcState.orderType = 'BBO';
-        console.log('[Risk Calc] Order type set to BBO');
+    riskOrderMarket?.addEventListener('click', () => setRiskOrderType('MARKET'));
+    riskOrderLimit?.addEventListener('click', () => setRiskOrderType('LIMIT'));
+    riskOrderBBO?.addEventListener('click', () => setRiskOrderType('BBO'));
+
+    // Limit price input
+    const riskLimitPriceInput = document.getElementById('riskLimitPrice');
+    riskLimitPriceInput?.addEventListener('input', () => {
+        riskCalcState.limitPrice = parseFloat(riskLimitPriceInput.value) || 0;
+        updateRiskCalculations();
     });
 
     // Refresh price button
@@ -4292,6 +4344,9 @@ function setupRiskCalculatorTab() {
             riskPriceInterval = null;
         }
     });
+
+    // Load saved defaults for this account
+    loadAutoSizeSettings();
 }
 
 function updateRiskCurrencySuffix() {
@@ -4300,6 +4355,8 @@ function updateRiskCurrencySuffix() {
     const isUsdt = symbol.endsWith('USDT');
 
     document.getElementById('riskSlSuffix').textContent = currency;
+    const limitSuffix = document.getElementById('riskLimitSuffix');
+    if (limitSuffix) limitSuffix.textContent = currency;
 
     // Update available balance for the new currency
     riskCalcState.availableBalance = isUsdt ? (usdtBalance || 0) : (usdcBalance || 0);
@@ -4344,6 +4401,11 @@ function updateRiskCalculations() {
     const isUsdt = symbol.endsWith('USDT');
     const currency = isUsdt ? 'USDT' : 'USDC';
 
+    // For LIMIT orders, use the limit price as entry; otherwise use current market price
+    const entryPrice = (riskCalcState.orderType === 'LIMIT' && riskCalcState.limitPrice > 0)
+        ? riskCalcState.limitPrice
+        : currentPrice;
+
     // Get correct balance
     const balance = isUsdt ? (usdtBalance || 0) : (usdcBalance || 0);
     riskCalcState.availableBalance = balance;
@@ -4369,10 +4431,10 @@ function updateRiskCalculations() {
         riskAmountEl.textContent = `$${riskAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
 
-    // SL Distance % = |currentPrice - slPrice| / currentPrice * 100
+    // SL Distance % = |entryPrice - slPrice| / entryPrice * 100
     let slDistance = 0;
-    if (currentPrice > 0 && slPrice > 0) {
-        slDistance = Math.abs(currentPrice - slPrice) / currentPrice * 100;
+    if (entryPrice > 0 && slPrice > 0) {
+        slDistance = Math.abs(entryPrice - slPrice) / entryPrice * 100;
     }
     if (slDistanceEl) {
         slDistanceEl.textContent = `${slDistance.toFixed(2)}%`;
@@ -4393,10 +4455,10 @@ function updateRiskCalculations() {
         positionSizeEl.textContent = `$${positionSize.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
 
-    // Quantity = positionSize / currentPrice
+    // Quantity = positionSize / entryPrice
     let quantity = 0;
-    if (currentPrice > 0) {
-        quantity = positionSize / currentPrice;
+    if (entryPrice > 0) {
+        quantity = positionSize / entryPrice;
     }
     if (quantityEl) {
         quantityEl.textContent = quantity.toFixed(6);
@@ -4426,10 +4488,19 @@ async function executeRiskTrade(side) {
     const symbol = riskCalcState.symbol;
     const orderType = riskCalcState.orderType;
     const marginType = riskCalcState.marginType;
+    const limitPrice = riskCalcState.limitPrice;
+
+    // For LIMIT orders, use limit price as entry; otherwise current price
+    const entryPrice = (orderType === 'LIMIT' && limitPrice > 0) ? limitPrice : currentPrice;
 
     // Validation
     if (!currentPrice || currentPrice <= 0) {
         showToast('Unable to get current price', 'error');
+        return;
+    }
+
+    if (orderType === 'LIMIT' && (!limitPrice || limitPrice <= 0)) {
+        showToast('Please enter a limit price', 'error');
         return;
     }
 
@@ -4443,18 +4514,18 @@ async function executeRiskTrade(side) {
         return;
     }
 
-    // Validate SL direction
-    if (side === 'BUY' && slPrice >= currentPrice) {
-        showToast('For LONG, stop loss must be below current price', 'error');
+    // Validate SL direction (relative to entry price)
+    if (side === 'BUY' && slPrice >= entryPrice) {
+        showToast('For LONG, stop loss must be below entry price', 'error');
         return;
     }
-    if (side === 'SELL' && slPrice <= currentPrice) {
-        showToast('For SHORT, stop loss must be above current price', 'error');
+    if (side === 'SELL' && slPrice <= entryPrice) {
+        showToast('For SHORT, stop loss must be above entry price', 'error');
         return;
     }
 
-    // Calculate position size
-    const slDistance = Math.abs(currentPrice - slPrice) / currentPrice * 100;
+    // Calculate position size using entry price
+    const slDistance = Math.abs(entryPrice - slPrice) / entryPrice * 100;
     const balance = riskCalcState.availableBalance;
     const riskAmount = balance * (riskPercent / 100);
     const positionSize = riskAmount / (slDistance / 100);
@@ -4482,7 +4553,9 @@ async function executeRiskTrade(side) {
             symbol,
             side,
             orderType,
+            entryPrice,
             currentPrice,
+            limitPrice: orderType === 'LIMIT' ? limitPrice : 'N/A',
             slPrice,
             slDistance: slDistance.toFixed(2) + '%',
             positionSize: positionSize.toFixed(2),
@@ -4494,7 +4567,7 @@ async function executeRiskTrade(side) {
         const requestBody = {
             symbol,
             side,
-            order_type: orderType === 'BBO' ? 'LIMIT' : 'MARKET',
+            order_type: orderType === 'BBO' ? 'LIMIT' : (orderType === 'LIMIT' ? 'LIMIT' : 'MARKET'),
             quantity: positionSize, // USDC notional value
             leverage,
             margin_type: marginType,
@@ -4503,10 +4576,14 @@ async function executeRiskTrade(side) {
             time_in_force: 'GTC'
         };
 
+        // For LIMIT orders, send the limit price
+        if (orderType === 'LIMIT') {
+            requestBody.price = limitPrice;
+        }
+
         // For BBO orders, use priceMatch QUEUE to place as maker (sits in order book)
-        // OPPONENT = taker (executes immediately), QUEUE = maker (sits in book)
         if (orderType === 'BBO') {
-            requestBody.price_match = 'QUEUE'; // Places at best bid for BUY, best ask for SELL (maker)
+            requestBody.price_match = 'QUEUE';
         }
 
         console.log('%c[Risk Trade] Request body:', 'color: #f59e0b; font-weight: bold', requestBody);
@@ -4526,8 +4603,13 @@ async function executeRiskTrade(side) {
 
         if (response.ok) {
             console.log('%c[Risk Trade] SUCCESS', 'color: #22c55e; font-weight: bold');
-            const orderLabel = orderType === 'BBO' ? 'BBO Limit' : 'Market';
-            showToast(`${orderLabel} ${side} order placed with SL at $${slPrice}`, 'success');
+            const orderLabel = orderType === 'BBO' ? 'BBO' : (orderType === 'LIMIT' ? 'Limit' : 'Market');
+            if (data.warning) {
+                console.warn('%c[Risk Trade] WARNING:', 'color: #f59e0b; font-weight: bold', data.warning);
+                showToast(data.warning, 'error');
+            } else {
+                showToast(`${orderLabel} ${side} order placed with SL at $${slPrice}`, 'success');
+            }
             document.getElementById('newTradeModal').classList.remove('active');
 
             // Stop price refresh

@@ -11,7 +11,8 @@
       "Bash(git commit:*)",
       "Bash(dir \"C:\\trading bot\\tradingwebsite\" /s /b)",
       "Bash(cd:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "WebFetch(domain:0xhardman.xlog.app)"
     ]
   }
 }
