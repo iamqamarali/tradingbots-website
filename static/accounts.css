@@ -3739,7 +3739,30 @@
 .risk-row-split {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 10px;
+    gap: 8px;
+    min-width: 0;
+}
+
+.risk-row-split .trade-input-group {
+    gap: 4px;
+    min-width: 0;
+}
+
+.risk-row-split .trade-input-wrapper {
+    min-width: 0;
+}
+
+.risk-row-split .trade-input-wrapper input {
+    padding: 8px 8px;
+    font-size: 0.85rem;
+    min-width: 0;
+    width: 100%;
+}
+
+.risk-row-split .trade-input-wrapper .input-suffix {
+    padding-right: 8px;
+    font-size: 0.75rem;
+    flex-shrink: 0;
 }
 
 /* Save Defaults Button */
