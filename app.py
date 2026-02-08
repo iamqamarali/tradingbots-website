@@ -4104,16 +4104,22 @@ def api_execute_trade(account_id):
         debug_log.append(f"Order created: {order_id}")
         print(f"  Order created: {order_id}")
 
-        # Create TP/SL if specified
-        # TP uses LIMIT order with reduceOnly (sits in order book, executes at exact price)
+        # Create TP — LIMIT reduceOnly order (sits on order book, fills at exact price)
+        tp_warning = None
         if tp_price and float(tp_price) > 0:
+            tp_side = 'SELL' if side == 'BUY' else 'BUY'
+            tp_price_rounded = str(round(float(tp_price), price_precision))
+            debug_log.append(f"Creating TP: {tp_side} LIMIT reduceOnly @ {tp_price_rounded}, qty={qty_in_contracts}")
+
+            if order_type == 'MARKET':
+                time.sleep(0.5)
+
             try:
-                tp_side = 'SELL' if side == 'BUY' else 'BUY'
                 tp_order = client.futures_create_order(
                     symbol=symbol,
                     side=tp_side,
                     type='LIMIT',
-                    price=str(round(float(tp_price), price_precision)),
+                    price=tp_price_rounded,
                     quantity=qty_in_contracts,
                     reduceOnly='true',
                     timeInForce='GTC'
@@ -4121,6 +4127,7 @@ def api_execute_trade(account_id):
                 debug_log.append(f"TP LIMIT order created: {tp_order.get('orderId')}")
             except Exception as e:
                 debug_log.append(f"TP creation failed: {str(e)}")
+                tp_warning = 'Take profit order failed. Set TP manually.'
 
         sl_warning = None
         if sl_price and float(sl_price) > 0:
@@ -4230,8 +4237,9 @@ def api_execute_trade(account_id):
             },
             '_debug': debug_log
         }
-        if sl_warning:
-            result['warning'] = sl_warning
+        warnings = [w for w in [sl_warning, tp_warning] if w]
+        if warnings:
+            result['warning'] = ' '.join(warnings)
         return jsonify(result)
 
     except BinanceAPIException as e:

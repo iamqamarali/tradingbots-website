@@ -12,7 +12,10 @@
       "Bash(dir \"C:\\trading bot\\tradingwebsite\" /s /b)",
       "Bash(cd:*)",
       "Bash(pip install:*)",
-      "WebFetch(domain:0xhardman.xlog.app)"
+      "WebFetch(domain:0xhardman.xlog.app)",
+      "WebFetch(domain:www.binance.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:dev.binance.vision)"
     ]
   }
 }
