@@ -2404,27 +2404,32 @@ def api_delete_account(account_id):
 
 @app.route('/api/accounts/<int:account_id>/autosize-settings', methods=['GET'])
 def api_get_autosize_settings(account_id):
-    """Get saved auto-size defaults (leverage & risk %) for an account."""
+    """Get saved auto-size defaults (leverage, risk %, R:R) for an account."""
     leverage = db.get_setting(f'autosize_leverage_{account_id}', '20')
     risk_percent = db.get_setting(f'autosize_risk_percent_{account_id}', '5.0')
+    rr_ratio = db.get_setting(f'autosize_rr_ratio_{account_id}', '2.0')
     return jsonify({
         'leverage': int(leverage),
-        'risk_percent': float(risk_percent)
+        'risk_percent': float(risk_percent),
+        'rr_ratio': float(rr_ratio)
     })
 
 
 @app.route('/api/accounts/<int:account_id>/autosize-settings', methods=['POST'])
 def api_save_autosize_settings(account_id):
-    """Save auto-size defaults (leverage & risk %) for an account."""
+    """Save auto-size defaults (leverage, risk %, R:R) for an account."""
     data = request.get_json()
     leverage = data.get('leverage', 20)
     risk_percent = data.get('risk_percent', 5.0)
+    rr_ratio = data.get('rr_ratio', 2.0)
     # Clamp values to reasonable ranges
     leverage = max(1, min(125, int(leverage)))
     risk_percent = max(0.1, min(100.0, float(risk_percent)))
+    rr_ratio = max(0.1, min(50.0, float(rr_ratio)))
     db.set_setting(f'autosize_leverage_{account_id}', str(leverage))
     db.set_setting(f'autosize_risk_percent_{account_id}', str(risk_percent))
-    return jsonify({'success': True, 'leverage': leverage, 'risk_percent': risk_percent})
+    db.set_setting(f'autosize_rr_ratio_{account_id}', str(rr_ratio))
+    return jsonify({'success': True, 'leverage': leverage, 'risk_percent': risk_percent, 'rr_ratio': rr_ratio})
 
 
 @app.route('/api/accounts/<int:account_id>/balance', methods=['GET'])

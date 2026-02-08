@@ -913,11 +913,20 @@
                             <span class="input-suffix" id="riskSlSuffix">USDC</span>
                         </div>
                     </div>
-                    <div class="trade-input-group">
-                        <label>Risk %</label>
-                        <div class="trade-input-wrapper">
-                            <input type="number" id="riskPercent" placeholder="5.0" step="0.1" value="5.0">
-                            <span class="input-suffix">%</span>
+                    <div class="risk-row-split">
+                        <div class="trade-input-group">
+                            <label>Risk %</label>
+                            <div class="trade-input-wrapper">
+                                <input type="number" id="riskPercent" placeholder="5.0" step="0.1" value="5.0">
+                                <span class="input-suffix">%</span>
+                            </div>
+                        </div>
+                        <div class="trade-input-group">
+                            <label>R:R</label>
+                            <div class="trade-input-wrapper">
+                                <input type="number" id="riskRR" placeholder="2.0" step="0.1" value="2.0">
+                                <span class="input-suffix">R</span>
+                            </div>
                         </div>
                     </div>
 
@@ -944,6 +953,14 @@
                         <div class="calc-row">
                             <span class="calc-label">SL Distance:</span>
                             <span class="calc-value" id="riskSlDistance">0.00%</span>
+                        </div>
+                        <div class="calc-row">
+                            <span class="calc-label">TP (Long):</span>
+                            <span class="calc-value positive" id="riskTpLong">--</span>
+                        </div>
+                        <div class="calc-row">
+                            <span class="calc-label">TP (Short):</span>
+                            <span class="calc-value positive" id="riskTpShort">--</span>
                         </div>
                         <div class="calc-row">
                             <span class="calc-label">Position Size:</span>

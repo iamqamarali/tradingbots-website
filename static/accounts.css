@@ -3736,6 +3736,12 @@
     gap: 12px;
 }
 
+.risk-row-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
 /* Save Defaults Button */
 .save-defaults-btn {
     display: inline-flex;
