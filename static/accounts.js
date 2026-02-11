@@ -3998,7 +3998,6 @@ let riskCalcState = {
     slMode: 'price', // 'price' or 'percent'
     slPercent: 0,
     riskPercent: 5.0,
-    rrRatio: 2.0,
     availableBalance: 0
 };
 
@@ -4011,14 +4010,11 @@ async function loadAutoSizeSettings() {
             const data = await response.json();
             riskCalcState.leverage = data.leverage;
             riskCalcState.riskPercent = data.risk_percent;
-            riskCalcState.rrRatio = data.rr_ratio;
             riskCalcState.slMode = data.sl_mode || 'price';
             const leverageDisplay = document.getElementById('riskLeverageValue');
             if (leverageDisplay) leverageDisplay.textContent = data.leverage;
             const riskPercentInput = document.getElementById('riskPercent');
             if (riskPercentInput) riskPercentInput.value = data.risk_percent;
-            const rrInput = document.getElementById('riskRR');
-            if (rrInput) rrInput.value = data.rr_ratio;
             // Restore SL mode toggle
             const slModePriceBtn = document.getElementById('slModePrice');
             const slModePercentBtn = document.getElementById('slModePercent');
@@ -4049,7 +4045,6 @@ async function saveAutoSizeSettings() {
             body: JSON.stringify({
                 leverage: riskCalcState.leverage,
                 risk_percent: riskCalcState.riskPercent,
-                rr_ratio: riskCalcState.rrRatio,
                 sl_mode: riskCalcState.slMode
             })
         });
@@ -4240,13 +4235,6 @@ function setupRiskCalculatorTab() {
         updateRiskCalculations();
     });
 
-    // R:R ratio input
-    const riskRRInput = document.getElementById('riskRR');
-    riskRRInput?.addEventListener('input', () => {
-        riskCalcState.rrRatio = parseFloat(riskRRInput.value) || 0;
-        updateRiskCalculations();
-    });
-
     // Trade buttons
     const riskBuyBtn = document.getElementById('riskBuyBtn');
     const riskSellBtn = document.getElementById('riskSellBtn');
@@ -4402,23 +4390,6 @@ function updateRiskCalculations() {
         }
     }
 
-    // TP prices based on R:R ratio
-    const rrRatio = riskCalcState.rrRatio || 0;
-    const tpLongEl = document.getElementById('riskTpLong');
-    const tpShortEl = document.getElementById('riskTpShort');
-    const slAbsDistance = entryPrice > 0 && slPrice > 0 ? Math.abs(entryPrice - slPrice) : 0;
-
-    if (entryPrice > 0 && slAbsDistance > 0 && rrRatio > 0) {
-        const tpLong = entryPrice + (slAbsDistance * rrRatio);
-        const tpShort = entryPrice - (slAbsDistance * rrRatio);
-        const decimals = entryPrice < 1 ? 6 : 2;
-        if (tpLongEl) tpLongEl.textContent = `$${tpLong.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
-        if (tpShortEl) tpShortEl.textContent = `$${Math.max(0, tpShort).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
-    } else {
-        if (tpLongEl) tpLongEl.textContent = '--';
-        if (tpShortEl) tpShortEl.textContent = '--';
-    }
-
     // Position size = riskAmount / (slDistance / 100)
     // If SL distance is 0, position size would be infinite, so cap it
     let positionSize = 0;
@@ -4531,24 +4502,12 @@ async function executeRiskTrade(side) {
             currentPrice,
             limitPrice: orderType === 'LIMIT' ? limitPrice : 'N/A',
             slPrice,
-            rrRatio: riskCalcState.rrRatio,
             slDistance: slDistance.toFixed(2) + '%',
             positionSize: positionSize.toFixed(2),
             riskAmount: riskAmount.toFixed(2),
             leverage,
             marginType
         });
-
-        // Calculate TP price based on R:R ratio and trade side
-        const rrRatio = riskCalcState.rrRatio || 0;
-        const slAbsDistance = Math.abs(entryPrice - slPrice);
-        let tpPrice = 0;
-        if (rrRatio > 0 && slAbsDistance > 0) {
-            tpPrice = side === 'BUY'
-                ? entryPrice + (slAbsDistance * rrRatio)
-                : entryPrice - (slAbsDistance * rrRatio);
-            if (tpPrice <= 0) tpPrice = 0;
-        }
 
         const requestBody = {
             symbol,
@@ -4558,7 +4517,6 @@ async function executeRiskTrade(side) {
             leverage,
             margin_type: marginType,
             sl_price: slPrice,
-            tp_price: tpPrice > 0 ? tpPrice : undefined,
             reduce_only: false,
             time_in_force: 'GTC'
         };
