@@ -2154,6 +2154,77 @@ def api_execute_strategy_trade(strategy_id):
         return jsonify({'error': str(e)}), 500
 
 
+# ==================== AUTO TRADE API ====================
+
+@app.route('/api/accounts/<int:account_id>/auto-trades', methods=['GET'])
+def api_get_auto_trades(account_id):
+    """Get all auto trades for an account."""
+    auto_trades = db.get_auto_trades_by_account(account_id)
+    return jsonify(auto_trades)
+
+
+@app.route('/api/accounts/<int:account_id>/auto-trades', methods=['POST'])
+def api_create_auto_trade(account_id):
+    """Create a new auto trade."""
+    data = request.get_json()
+    if not data or not data.get('name'):
+        return jsonify({'error': 'Name is required'}), 400
+
+    auto_trade_id = db.create_auto_trade(
+        name=data['name'].strip(),
+        account_id=account_id,
+        symbol=data.get('symbol', 'BTCUSDC').strip().upper(),
+        risk_percent=float(data.get('risk_percent', 1.3)),
+        sl_percent=float(data.get('sl_percent', 0.5)),
+        leverage=int(data.get('leverage', 5)),
+        margin_type=data.get('margin_type', 'ISOLATED'),
+        order_type=data.get('order_type', 'MARKET')
+    )
+
+    auto_trade = db.get_auto_trade(auto_trade_id)
+    return jsonify(auto_trade)
+
+
+@app.route('/api/auto-trades/<int:auto_trade_id>', methods=['PUT'])
+def api_update_auto_trade(auto_trade_id):
+    """Update an auto trade."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    fields = {}
+    if 'name' in data:
+        fields['name'] = data['name'].strip()
+    if 'symbol' in data:
+        fields['symbol'] = data['symbol'].strip().upper()
+    if 'risk_percent' in data:
+        fields['risk_percent'] = float(data['risk_percent'])
+    if 'sl_percent' in data:
+        fields['sl_percent'] = float(data['sl_percent'])
+    if 'leverage' in data:
+        fields['leverage'] = int(data['leverage'])
+    if 'margin_type' in data:
+        fields['margin_type'] = data['margin_type']
+    if 'order_type' in data:
+        fields['order_type'] = data['order_type']
+
+    updated = db.update_auto_trade(auto_trade_id, **fields)
+    if not updated:
+        return jsonify({'error': 'Auto trade not found'}), 404
+
+    auto_trade = db.get_auto_trade(auto_trade_id)
+    return jsonify(auto_trade)
+
+
+@app.route('/api/auto-trades/<int:auto_trade_id>', methods=['DELETE'])
+def api_delete_auto_trade(auto_trade_id):
+    """Delete an auto trade."""
+    deleted = db.delete_auto_trade(auto_trade_id)
+    if not deleted:
+        return jsonify({'error': 'Auto trade not found'}), 404
+    return jsonify({'success': True})
+
+
 # ==================== RULE SECTIONS API ====================
 
 @app.route('/api/rule-sections', methods=['GET'])
@@ -2408,10 +2479,12 @@ def api_get_autosize_settings(account_id):
     leverage = db.get_setting(f'autosize_leverage_{account_id}', '20')
     risk_percent = db.get_setting(f'autosize_risk_percent_{account_id}', '5.0')
     rr_ratio = db.get_setting(f'autosize_rr_ratio_{account_id}', '2.0')
+    sl_mode = db.get_setting(f'autosize_sl_mode_{account_id}', 'price')
     return jsonify({
         'leverage': int(leverage),
         'risk_percent': float(risk_percent),
-        'rr_ratio': float(rr_ratio)
+        'rr_ratio': float(rr_ratio),
+        'sl_mode': sl_mode
     })
 
 
@@ -2422,14 +2495,18 @@ def api_save_autosize_settings(account_id):
     leverage = data.get('leverage', 20)
     risk_percent = data.get('risk_percent', 5.0)
     rr_ratio = data.get('rr_ratio', 2.0)
+    sl_mode = data.get('sl_mode', 'price')
     # Clamp values to reasonable ranges
     leverage = max(1, min(125, int(leverage)))
     risk_percent = max(0.1, min(100.0, float(risk_percent)))
     rr_ratio = max(0.1, min(50.0, float(rr_ratio)))
+    if sl_mode not in ('price', 'percent'):
+        sl_mode = 'price'
     db.set_setting(f'autosize_leverage_{account_id}', str(leverage))
     db.set_setting(f'autosize_risk_percent_{account_id}', str(risk_percent))
     db.set_setting(f'autosize_rr_ratio_{account_id}', str(rr_ratio))
-    return jsonify({'success': True, 'leverage': leverage, 'risk_percent': risk_percent, 'rr_ratio': rr_ratio})
+    db.set_setting(f'autosize_sl_mode_{account_id}', sl_mode)
+    return jsonify({'success': True, 'leverage': leverage, 'risk_percent': risk_percent, 'rr_ratio': rr_ratio, 'sl_mode': sl_mode})
 
 
 @app.route('/api/accounts/<int:account_id>/balance', methods=['GET'])
@@ -3664,8 +3741,10 @@ def api_update_take_profit(account_id):
     position_side = data.get('position_side')  # LONG or SHORT
     tp_price = float(data.get('tp_price', 0))
     old_order_id = data.get('old_order_id')  # Existing TP order to cancel
+    close_percent = float(data.get('close_percent', 100))
+    close_percent = max(1, min(100, close_percent))
 
-    print(f"  Symbol: {symbol}, Side: {position_side}, TP: {tp_price}")
+    print(f"  Symbol: {symbol}, Side: {position_side}, TP: {tp_price}, Close: {close_percent}%")
 
     if not symbol or not position_side or tp_price <= 0:
         return jsonify({'error': 'Invalid parameters'}), 400
@@ -3719,7 +3798,14 @@ def api_update_take_profit(account_id):
             return jsonify({'error': 'No open position found for this symbol'}), 400
 
         position_qty = round(position_qty, qty_precision)
-        debug_log.append(f"Position quantity: {position_qty}")
+        debug_log.append(f"Full position quantity: {position_qty}")
+
+        # Apply close percentage
+        if close_percent < 100:
+            position_qty = round(position_qty * (close_percent / 100), qty_precision)
+            debug_log.append(f"Close {close_percent}% = quantity: {position_qty}")
+            if position_qty <= 0:
+                return jsonify({'error': 'Calculated quantity too small for this close percentage'}), 400
 
         # Cancel ALL existing TP orders for this symbol
         # First try to cancel the specific order if provided

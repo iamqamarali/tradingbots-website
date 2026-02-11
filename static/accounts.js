@@ -719,6 +719,7 @@ async function loadPositions(silent = false) {
                                 data-quantity="${pos.quantity}"
                                 data-entry-price="${pos.entry_price}"
                                 data-mark-price="${pos.mark_price}"
+                                data-stop-price="${pos.stop_price || ''}"
                                 data-tp-price="${pos.tp_price || ''}"
                                 data-tp-order-id="${pos.tp_order_id || ''}">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
@@ -1883,6 +1884,7 @@ function openEditTakeProfitModal(posData) {
         quantity: parseFloat(posData.quantity),
         entryPrice: parseFloat(posData.entryPrice),
         markPrice: parseFloat(posData.markPrice),
+        stopPrice: posData.stopPrice ? parseFloat(posData.stopPrice) : null,
         tpPrice: posData.tpPrice ? parseFloat(posData.tpPrice) : null,
         tpOrderId: posData.tpOrderId ? parseInt(posData.tpOrderId) : null
     };
@@ -1920,11 +1922,84 @@ function openEditTakeProfitModal(posData) {
         hintEl.innerHTML = `<span class="hint-success">For SHORT position, take profit should be <strong>below</strong> entry price ($${currentTakeProfitPosition.entryPrice.toFixed(2)})</span>`;
     }
 
+    // Show/hide R:R section based on whether we have a stop loss
+    const rrSection = document.getElementById('tpRRSection');
+    if (rrSection) {
+        if (currentTakeProfitPosition.stopPrice && currentTakeProfitPosition.stopPrice > 0) {
+            rrSection.style.display = '';
+        } else {
+            rrSection.style.display = 'none';
+        }
+    }
+    // Reset R:R input and preview
+    const rrInput = document.getElementById('tpRRInput');
+    if (rrInput) rrInput.value = '';
+    const rrPreview = document.getElementById('tpRRPricePreview');
+    if (rrPreview) rrPreview.textContent = '';
+
+    // Reset close buttons to 100%
+    document.querySelectorAll('.tp-close-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.pct === '100');
+    });
+    updateTpCloseQtyDisplay();
+
     // Reset potential profit display
     calculateTakeProfitPotentialProfit();
 
     // Show modal
     document.getElementById('editTakeProfitModal').classList.add('active');
+}
+
+function calcTpPriceFromRR(rr) {
+    if (!currentTakeProfitPosition || !currentTakeProfitPosition.stopPrice) return null;
+    const entry = currentTakeProfitPosition.entryPrice;
+    const sl = currentTakeProfitPosition.stopPrice;
+    const slDistance = Math.abs(entry - sl);
+    let tpPrice;
+    if (currentTakeProfitPosition.side === 'LONG') {
+        tpPrice = entry + (slDistance * rr);
+    } else {
+        tpPrice = entry - (slDistance * rr);
+    }
+    if (tpPrice <= 0) tpPrice = 0.0001;
+    return tpPrice;
+}
+
+function formatTpPrice(price) {
+    if (price < 1) return price.toFixed(6);
+    if (price < 100) return price.toFixed(4);
+    return price.toFixed(2);
+}
+
+function applyTpRR(rr) {
+    const tpPrice = calcTpPriceFromRR(rr);
+    if (!tpPrice) return;
+    document.getElementById('newTakeProfitPrice').value = formatTpPrice(tpPrice);
+    calculateTakeProfitPotentialProfit();
+}
+
+function getActiveTpClosePct() {
+    const activeBtn = document.querySelector('.tp-close-btn.active');
+    return activeBtn ? parseInt(activeBtn.dataset.pct) : 100;
+}
+
+function updateTpCloseQtyDisplay() {
+    if (!currentTakeProfitPosition) return;
+    const pct = getActiveTpClosePct();
+    const totalQty = currentTakeProfitPosition.quantity;
+    const closeQty = totalQty * (pct / 100);
+    const display = document.getElementById('tpCloseQtyDisplay');
+    const closeQtyEl = document.getElementById('tpCloseQty');
+    const totalQtyEl = document.getElementById('tpTotalQty');
+    if (display && closeQtyEl && totalQtyEl) {
+        if (pct < 100) {
+            display.style.display = '';
+            closeQtyEl.textContent = closeQty.toFixed(6);
+            totalQtyEl.textContent = totalQty.toFixed(6);
+        } else {
+            display.style.display = 'none';
+        }
+    }
 }
 
 // Calculate potential profit based on take profit price
@@ -1946,7 +2021,9 @@ function calculateTakeProfitPotentialProfit() {
     }
 
     const entryPrice = currentTakeProfitPosition.entryPrice;
-    const quantity = currentTakeProfitPosition.quantity;
+    const totalQuantity = currentTakeProfitPosition.quantity;
+    const closePct = getActiveTpClosePct();
+    const quantity = totalQuantity * (closePct / 100);
     const side = currentTakeProfitPosition.side;
 
     // Calculate profit: For LONG, profit = qty * (tp - entry), For SHORT, profit = qty * (entry - tp)
@@ -2017,8 +2094,40 @@ function setupEditTakeProfitModal() {
     // Calculate potential profit on input change
     const tpPriceInput = document.getElementById('newTakeProfitPrice');
     if (tpPriceInput) {
-        tpPriceInput.addEventListener('input', calculateTakeProfitPotentialProfit);
+        tpPriceInput.addEventListener('input', () => {
+            // Clear R:R active state when manually typing
+            document.querySelectorAll('.tp-rr-btn').forEach(b => b.classList.remove('active'));
+            calculateTakeProfitPotentialProfit();
+        });
     }
+
+    // R:R input — live preview + auto-fill TP price
+    const rrInput = document.getElementById('tpRRInput');
+    const rrPreview = document.getElementById('tpRRPricePreview');
+    if (rrInput) {
+        rrInput.addEventListener('input', () => {
+            const rr = parseFloat(rrInput.value);
+            if (rr > 0) {
+                const price = calcTpPriceFromRR(rr);
+                if (price && rrPreview) {
+                    rrPreview.textContent = `TP Price: $${formatTpPrice(price)}`;
+                }
+                applyTpRR(rr);
+            } else {
+                if (rrPreview) rrPreview.textContent = '';
+            }
+        });
+    }
+
+    // Close amount buttons
+    document.querySelectorAll('.tp-close-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.tp-close-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            updateTpCloseQtyDisplay();
+            calculateTakeProfitPotentialProfit();
+        });
+    });
 }
 
 async function updateTakeProfit() {
@@ -2050,7 +2159,8 @@ async function updateTakeProfit() {
     confirmBtn.disabled = true;
 
     try {
-        console.log(`%c[Update TP] Updating take profit for ${currentTakeProfitPosition.symbol}`, 'color: #3b82f6; font-weight: bold');
+        const closePct = getActiveTpClosePct();
+        console.log(`%c[Update TP] Updating take profit for ${currentTakeProfitPosition.symbol} (close ${closePct}%)`, 'color: #3b82f6; font-weight: bold');
         console.log(`  Old order ID: ${currentTakeProfitPosition.tpOrderId || 'none'}, New price: ${newTPPrice}`);
         const response = await fetch(`/api/accounts/${ACCOUNT_ID}/update-take-profit`, {
             method: 'POST',
@@ -2059,7 +2169,8 @@ async function updateTakeProfit() {
                 symbol: currentTakeProfitPosition.symbol,
                 position_side: currentTakeProfitPosition.side,
                 tp_price: newTPPrice,
-                old_order_id: currentTakeProfitPosition.tpOrderId
+                old_order_id: currentTakeProfitPosition.tpOrderId,
+                close_percent: closePct
             })
         });
 
@@ -3317,534 +3428,372 @@ document.addEventListener('DOMContentLoaded', () => {
 window.openJournalModal = openJournalModal;
 
 
-// ==================== QUICK TRADE SECTION ====================
+// ==================== AUTO TRADE SECTION ====================
 
-let quickTrades = [];
-let qtRefreshIntervals = {};
-let qtOrderTypes = {};  // Track order type per quick trade (MARKET, LIMIT, or BBO)
-let editingQuickTradeId = null;
-let pendingQtTrade = null;
-let pendingQtLimitOrder = null;
+let autoTrades = [];
+let autoTradeState = {};    // per-card live state: { [atId]: { currentPrice, balance, ... } }
+let autoTradeIntervals = {}; // price refresh intervals per card
+let editingAutoTradeId = null;
+let autoTradeSaveTimers = {}; // debounce timers for saving card input changes
 
 // DOM Elements
-const quickTradeGrid = document.getElementById('quickTradeGrid');
-const quickTradeLoading = document.getElementById('quickTradeLoading');
-const emptyQuickTrades = document.getElementById('emptyQuickTrades');
+const autoTradeGrid = document.getElementById('autoTradeGrid');
+const autoTradeLoading = document.getElementById('autoTradeLoading');
+const emptyAutoTrades = document.getElementById('emptyAutoTrades');
 
-// Modals
-const quickTradeModal = document.getElementById('quickTradeModal');
-const qtTradeConfirmModal = document.getElementById('qtTradeConfirmModal');
-const qtLimitPriceModal = document.getElementById('qtLimitPriceModal');
+// Modal
+const autoTradeModal = document.getElementById('autoTradeModal');
 
-// Load quick trades for this account
-async function loadQuickTrades() {
-    if (!quickTradeGrid) return;
+// Load auto trades for this account
+async function loadAutoTrades() {
+    if (!autoTradeGrid) return;
 
-    quickTradeLoading.style.display = 'flex';
-    emptyQuickTrades.style.display = 'none';
-    quickTradeGrid.innerHTML = '';
+    autoTradeLoading.style.display = 'flex';
+    emptyAutoTrades.style.display = 'none';
+    autoTradeGrid.innerHTML = '';
 
     try {
-        const response = await fetch(`/api/accounts/${ACCOUNT_ID}/strategies`);
-        if (!response.ok) throw new Error('Failed to load quick trades');
-        quickTrades = await response.json();
-        renderQuickTrades();
+        const response = await fetch(`/api/accounts/${ACCOUNT_ID}/auto-trades`);
+        if (!response.ok) throw new Error('Failed to load auto trades');
+        autoTrades = await response.json();
+        renderAutoTrades();
 
-        // Start refresh intervals for each quick trade
-        quickTrades.forEach(qt => startQuickTradeRefresh(qt.id));
+        // Start refresh intervals for each auto trade
+        autoTrades.forEach(at => startAutoTradeRefresh(at.id));
     } catch (error) {
-        console.error('Error loading quick trades:', error);
-        showToast('Failed to load quick trades', 'error');
-        quickTradeLoading.style.display = 'none';
+        console.error('Error loading auto trades:', error);
+        showToast('Failed to load auto trades', 'error');
+        autoTradeLoading.style.display = 'none';
     }
 }
 
-// Render quick trades to the grid
-function renderQuickTrades() {
-    quickTradeLoading.style.display = 'none';
+// Render auto trades to the grid
+function renderAutoTrades() {
+    autoTradeLoading.style.display = 'none';
 
-    if (quickTrades.length === 0) {
-        quickTradeGrid.innerHTML = '';
-        emptyQuickTrades.style.display = 'flex';
+    if (autoTrades.length === 0) {
+        autoTradeGrid.innerHTML = '';
+        emptyAutoTrades.style.display = 'flex';
         return;
     }
 
-    emptyQuickTrades.style.display = 'none';
-    quickTradeGrid.innerHTML = quickTrades.map(createQuickTradeCard).join('');
+    emptyAutoTrades.style.display = 'none';
+    autoTradeGrid.innerHTML = autoTrades.map(renderAutoTradeCard).join('');
 }
 
-// Create quick trade card HTML
-function createQuickTradeCard(qt) {
+// Helper: Format price for auto trade cards
+function formatAtPrice(price) {
+    if (price >= 1000) return price.toFixed(2);
+    if (price >= 1) return price.toFixed(4);
+    return price.toFixed(6);
+}
+
+// Create auto trade card HTML
+function renderAutoTradeCard(at) {
+    const orderType = at.order_type || 'MARKET';
+    const showLimit = orderType === 'LIMIT';
     return `
-        <div class="quick-trade-card" data-qt-id="${qt.id}">
-            <div class="qt-collapsed-header" onclick="toggleQtCollapse(${qt.id})">
-                <div class="qt-header-content">
-                    <div class="qt-header-line1">
-                        <div class="qt-name">${escapeHtml(qt.name)}</div>
-                        <div class="card-actions" onclick="event.stopPropagation()">
-                            <button class="edit-btn" onclick="editQuickTrade(${qt.id})">Edit</button>
-                            <button class="delete-btn" onclick="deleteQuickTrade(${qt.id})">Delete</button>
-                        </div>
-                        <button class="qt-collapse-btn" onclick="event.stopPropagation(); toggleQtCollapse(${qt.id})">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <polyline points="6 9 12 15 18 9"></polyline>
-                            </svg>
-                        </button>
-                    </div>
-                    <div class="qt-header-line2">
-                        <span class="qt-sl-preview" id="qtSlPreview-${qt.id}">SL: --</span>
-                        <span class="qt-trend-badge" id="qtTrendBadge-${qt.id}">--</span>
-                    </div>
+        <div class="auto-trade-card" data-at-id="${at.id}">
+            <div class="at-card-header">
+                <div class="at-header-left">
+                    <span class="at-name">${escapeHtml(at.name)}</span>
+                    <span class="at-symbol">${at.symbol}</span>
+                    <span class="at-price" id="atPrice-${at.id}">--</span>
+                </div>
+                <div class="at-header-actions">
+                    <button class="edit-btn" onclick="openEditAutoTrade(${at.id})">Edit</button>
+                    <button class="delete-btn" onclick="deleteAutoTrade(${at.id})">Del</button>
                 </div>
             </div>
 
-            <div class="qt-always-visible">
-                <div class="order-type-toggle" id="qtOrderTypeToggle-${qt.id}">
-                    <button class="toggle-btn active" data-type="MARKET" onclick="setQtOrderType(${qt.id}, 'MARKET')">Market</button>
-                    <button class="toggle-btn" data-type="LIMIT" onclick="setQtOrderType(${qt.id}, 'LIMIT')">Limit</button>
-                    <button class="toggle-btn" data-type="BBO" onclick="setQtOrderType(${qt.id}, 'BBO')">BBO</button>
+            <div class="at-card-inputs">
+                <div class="at-input-row">
+                    <label>Risk %</label>
+                    <input type="number" class="at-input" id="atRisk-${at.id}" value="${at.risk_percent}" step="0.1" min="0.1" max="100"
+                           onchange="onAutoTradeInputChange(${at.id})" oninput="updateAutoTradeCalc(${at.id})">
                 </div>
-
-                <div class="trade-buttons">
-                    <button class="take-long-btn" id="qtLongBtn-${qt.id}"
-                            onclick="handleQtTradeClick(${qt.id}, 'LONG')" disabled>
-                        Market Long
-                    </button>
-                    <button class="take-short-btn" id="qtShortBtn-${qt.id}"
-                            onclick="handleQtTradeClick(${qt.id}, 'SHORT')" disabled>
-                        Market Short
-                    </button>
+                <div class="at-input-row">
+                    <label>SL %</label>
+                    <input type="number" class="at-input" id="atSl-${at.id}" value="${at.sl_percent}" step="0.01" min="0.01" max="50"
+                           onchange="onAutoTradeInputChange(${at.id})" oninput="updateAutoTradeCalc(${at.id})">
                 </div>
             </div>
 
-            <div class="qt-card-body" id="qtCardBody-${qt.id}">
-                <div class="card-info">
-                    <div class="info-row">
-                        <span class="label">Symbol:</span>
-                        <span class="value">${qt.symbol}</span>
-                    </div>
-                    <div class="info-row">
-                        <span class="label">EMA:</span>
-                        <span class="value">${qt.fast_ema}/${qt.slow_ema}</span>
-                    </div>
-                    <div class="info-row">
-                        <span class="label">Timeframe:</span>
-                        <span class="value">${qt.timeframe}</span>
-                    </div>
-                    <div class="info-row">
-                        <span class="label">Risk:</span>
-                        <span class="value">${qt.risk_percent}%</span>
-                    </div>
-                    <div class="info-row">
-                        <span class="label">Leverage:</span>
-                        <span class="value">${qt.leverage}x</span>
-                    </div>
-                </div>
+            <div class="at-order-type-toggle" id="atOrderType-${at.id}">
+                <button class="toggle-btn ${orderType === 'MARKET' ? 'active' : ''}" data-type="MARKET" onclick="setAtOrderType(${at.id}, 'MARKET')">Market</button>
+                <button class="toggle-btn ${orderType === 'LIMIT' ? 'active' : ''}" data-type="LIMIT" onclick="setAtOrderType(${at.id}, 'LIMIT')">Limit</button>
+                <button class="toggle-btn ${orderType === 'BBO' ? 'active' : ''}" data-type="BBO" onclick="setAtOrderType(${at.id}, 'BBO')">BBO</button>
+            </div>
 
-                <div class="card-data" id="qtData-${qt.id}">
-                    <div class="data-loading">Loading market data...</div>
-                </div>
+            <div class="at-limit-row ${showLimit ? '' : 'hidden'}" id="atLimitRow-${at.id}">
+                <label>Limit Price</label>
+                <input type="number" class="at-input" id="atLimitPrice-${at.id}" step="any" placeholder="Enter price"
+                       oninput="updateAutoTradeCalc(${at.id})">
+            </div>
+
+            <div class="at-calc-grid" id="atCalc-${at.id}">
+                <div class="at-calc-row"><span class="label">Balance</span><span class="value" id="atCalcBalance-${at.id}">--</span></div>
+                <div class="at-calc-row"><span class="label">Risk Amount</span><span class="value" id="atCalcRisk-${at.id}">--</span></div>
+                <div class="at-calc-row"><span class="label">SL (Long)</span><span class="value" id="atCalcSlLong-${at.id}">--</span></div>
+                <div class="at-calc-row"><span class="label">SL (Short)</span><span class="value" id="atCalcSlShort-${at.id}">--</span></div>
+                <div class="at-calc-row"><span class="label">Position Size</span><span class="value" id="atCalcSize-${at.id}">--</span></div>
+                <div class="at-calc-row"><span class="label">Quantity</span><span class="value" id="atCalcQty-${at.id}">--</span></div>
+                <div class="at-calc-row"><span class="label">Margin Req.</span><span class="value" id="atCalcMargin-${at.id}">--</span></div>
+            </div>
+
+            <div class="at-trade-buttons">
+                <button class="take-long-btn" id="atLongBtn-${at.id}" onclick="executeAutoTrade(${at.id}, 'BUY')" disabled>
+                    Buy / Long
+                </button>
+                <button class="take-short-btn" id="atShortBtn-${at.id}" onclick="executeAutoTrade(${at.id}, 'SELL')" disabled>
+                    Sell / Short
+                </button>
             </div>
         </div>
     `;
 }
 
-// Start auto-refresh for a quick trade
-function startQuickTradeRefresh(qtId) {
-    // Clear existing interval if any
-    if (qtRefreshIntervals[qtId]) {
-        clearInterval(qtRefreshIntervals[qtId]);
+// Start price refresh for an auto trade card
+function startAutoTradeRefresh(atId) {
+    if (autoTradeIntervals[atId]) {
+        clearInterval(autoTradeIntervals[atId]);
     }
 
     // Initial fetch
-    fetchQuickTradeData(qtId);
+    fetchAutoTradePrice(atId);
 
-    // Set up 10-second interval
-    qtRefreshIntervals[qtId] = setInterval(() => {
-        fetchQuickTradeData(qtId);
-    }, 10000);
+    // Refresh every 5 seconds
+    autoTradeIntervals[atId] = setInterval(() => {
+        fetchAutoTradePrice(atId);
+    }, 5000);
 }
 
-// Fetch real-time data for a quick trade
-async function fetchQuickTradeData(qtId) {
-    const dataContainer = document.getElementById(`qtData-${qtId}`);
-    if (!dataContainer) return;
+// Fetch price for an auto trade card
+async function fetchAutoTradePrice(atId) {
+    const at = autoTrades.find(a => a.id === atId);
+    if (!at) return;
 
     try {
-        const response = await fetch(`/api/strategies/${qtId}/data`);
-        const data = await response.json();
+        const response = await fetch(`/api/ticker/${at.symbol}`);
+        if (response.ok) {
+            const data = await response.json();
+            const price = parseFloat(data.price);
 
-        if (!response.ok) {
-            dataContainer.innerHTML = `<div class="data-error">${data.error || 'Failed to load data'}</div>`;
-            disableQtTradeButtons(qtId);
-            return;
+            if (!autoTradeState[atId]) autoTradeState[atId] = {};
+            autoTradeState[atId].currentPrice = price;
+
+            // Update price display
+            const priceEl = document.getElementById(`atPrice-${atId}`);
+            if (priceEl) {
+                priceEl.textContent = `$${formatAtPrice(price)}`;
+            }
+
+            // Get balance
+            const isUsdt = at.symbol.endsWith('USDT');
+            autoTradeState[atId].balance = isUsdt ? (usdtBalance || 0) : (usdcBalance || 0);
+
+            // Update calculations
+            updateAutoTradeCalc(atId);
+
+            // Enable trade buttons
+            const longBtn = document.getElementById(`atLongBtn-${atId}`);
+            const shortBtn = document.getElementById(`atShortBtn-${atId}`);
+            if (longBtn) longBtn.disabled = false;
+            if (shortBtn) shortBtn.disabled = false;
         }
-
-        // Store data for trade confirmation
-        dataContainer.dataset.qtData = JSON.stringify(data);
-
-        const qt = quickTrades.find(q => q.id === qtId);
-        const trendClass = data.trend === 'BULLISH' ? 'trend-bullish' : 'trend-bearish';
-        const crossoverIndicator = data.crossover_just_happened ? '<span class="crossover-new">NEW</span>' : '';
-        // Crossover time is now shown per direction (long/short)
-
-        dataContainer.innerHTML = `
-            <div class="data-row">
-                <span class="label">Price:</span>
-                <span class="value price">$${formatQtPrice(data.current_price)}</span>
-            </div>
-            <div class="data-row">
-                <span class="label">Fast EMA (${qt.fast_ema}):</span>
-                <span class="value">${formatQtPrice(data.fast_ema)}</span>
-            </div>
-            <div class="data-row">
-                <span class="label">Slow EMA (${qt.slow_ema}):</span>
-                <span class="value">${formatQtPrice(data.slow_ema)}</span>
-            </div>
-            <div class="data-row">
-                <span class="label">Trend:</span>
-                <span class="value ${trendClass}">${data.trend} ${crossoverIndicator}</span>
-            </div>
-            <div class="data-row">
-                <span class="label">Balance:</span>
-                <span class="value">$${data.balance.toFixed(2)}</span>
-            </div>
-            <div class="data-row">
-                <span class="label">Risk Amount:</span>
-                <span class="value">$${data.risk_amount.toFixed(2)}</span>
-            </div>
-
-            <div class="direction-section">
-                <div class="direction-header long">LONG</div>
-                ${data.long.crossover_time ? `<div class="crossover-time-small">Crossover: ${formatQtCrossoverTime(data.long.crossover_time)}</div>` : ''}
-                <div class="data-row">
-                    <span class="label">SL:</span>
-                    <span class="value">$${formatQtPrice(data.long.sl_price)} (${data.long.sl_percent.toFixed(2)}%)</span>
-                </div>
-                <div class="data-row">
-                    <span class="label">Size:</span>
-                    <span class="value ${data.long.is_valid ? 'valid' : 'invalid'}">$${data.long.position_size.toFixed(2)}</span>
-                </div>
-                ${!data.long.is_valid ? `<div class="invalid-warning">${data.long.invalid_reason}</div>` : ''}
-            </div>
-
-            <div class="direction-section">
-                <div class="direction-header short">SHORT</div>
-                ${data.short.crossover_time ? `<div class="crossover-time-small">Crossover: ${formatQtCrossoverTime(data.short.crossover_time)}</div>` : ''}
-                <div class="data-row">
-                    <span class="label">SL:</span>
-                    <span class="value">$${formatQtPrice(data.short.sl_price)} (${data.short.sl_percent.toFixed(2)}%)</span>
-                </div>
-                <div class="data-row">
-                    <span class="label">Size:</span>
-                    <span class="value ${data.short.is_valid ? 'valid' : 'invalid'}">$${data.short.position_size.toFixed(2)}</span>
-                </div>
-                ${!data.short.is_valid ? `<div class="invalid-warning">${data.short.invalid_reason}</div>` : ''}
-            </div>
-        `;
-
-        // Enable/disable trade buttons based on validity
-        const longBtn = document.getElementById(`qtLongBtn-${qtId}`);
-        const shortBtn = document.getElementById(`qtShortBtn-${qtId}`);
-
-        if (longBtn) longBtn.disabled = !data.long.is_valid;
-        if (shortBtn) shortBtn.disabled = !data.short.is_valid;
-
-        // Update collapsed header with trend and SL
-        const trendBadge = document.getElementById(`qtTrendBadge-${qtId}`);
-        const slPreview = document.getElementById(`qtSlPreview-${qtId}`);
-
-        if (trendBadge) {
-            trendBadge.textContent = data.trend;
-            trendBadge.className = `qt-trend-badge ${data.trend === 'BULLISH' ? 'trend-bullish' : 'trend-bearish'}`;
-        }
-
-        if (slPreview) {
-            // Show SL based on trend: SHORT SL when BEARISH, LONG SL when BULLISH
-            const slData = data.trend === 'BEARISH' ? data.short : data.long;
-            slPreview.textContent = `SL: $${formatQtPrice(slData.sl_price)}`;
-        }
-
     } catch (error) {
-        console.error(`Error fetching data for quick trade ${qtId}:`, error);
-        dataContainer.innerHTML = `<div class="data-error">Failed to load market data</div>`;
-        disableQtTradeButtons(qtId);
+        console.error(`Error fetching price for auto trade ${atId}:`, error);
     }
 }
 
-// Disable trade buttons
-function disableQtTradeButtons(qtId) {
-    const longBtn = document.getElementById(`qtLongBtn-${qtId}`);
-    const shortBtn = document.getElementById(`qtShortBtn-${qtId}`);
-    if (longBtn) longBtn.disabled = true;
-    if (shortBtn) shortBtn.disabled = true;
+// Update calculations for an auto trade card
+function updateAutoTradeCalc(atId) {
+    const at = autoTrades.find(a => a.id === atId);
+    if (!at) return;
+
+    const state = autoTradeState[atId] || {};
+    const currentPrice = state.currentPrice || 0;
+
+    // Read current input values (may differ from saved DB values)
+    const riskInput = document.getElementById(`atRisk-${atId}`);
+    const slInput = document.getElementById(`atSl-${atId}`);
+    const limitInput = document.getElementById(`atLimitPrice-${atId}`);
+
+    const riskPercent = riskInput ? parseFloat(riskInput.value) || 0 : at.risk_percent;
+    const slPercent = slInput ? parseFloat(slInput.value) || 0 : at.sl_percent;
+
+    // Determine order type from toggle
+    const orderType = getAtOrderType(atId);
+    const limitPrice = (orderType === 'LIMIT' && limitInput) ? parseFloat(limitInput.value) || 0 : 0;
+    const entryPrice = (orderType === 'LIMIT' && limitPrice > 0) ? limitPrice : currentPrice;
+
+    const isUsdt = at.symbol.endsWith('USDT');
+    const balance = isUsdt ? (usdtBalance || 0) : (usdcBalance || 0);
+
+    // Risk amount
+    const riskAmount = balance * (riskPercent / 100);
+
+    // SL prices
+    const slLong = entryPrice > 0 ? entryPrice * (1 - slPercent / 100) : 0;
+    const slShort = entryPrice > 0 ? entryPrice * (1 + slPercent / 100) : 0;
+
+    // Position size = riskAmount / (slPercent / 100)
+    const positionSize = slPercent > 0 ? riskAmount / (slPercent / 100) : 0;
+
+    // Quantity = positionSize / entryPrice
+    const quantity = entryPrice > 0 ? positionSize / entryPrice : 0;
+
+    // Margin required = positionSize / leverage
+    const marginRequired = positionSize / at.leverage;
+
+    // Store for trade execution
+    if (!autoTradeState[atId]) autoTradeState[atId] = {};
+    Object.assign(autoTradeState[atId], {
+        currentPrice, entryPrice, riskPercent, slPercent, riskAmount,
+        slLong, slShort, positionSize, quantity, marginRequired, balance, orderType, limitPrice
+    });
+
+    // Update display
+    const fmt = (v) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const decimals = entryPrice < 1 ? 6 : 2;
+
+    const balEl = document.getElementById(`atCalcBalance-${atId}`);
+    const riskEl = document.getElementById(`atCalcRisk-${atId}`);
+    const slLongEl = document.getElementById(`atCalcSlLong-${atId}`);
+    const slShortEl = document.getElementById(`atCalcSlShort-${atId}`);
+    const sizeEl = document.getElementById(`atCalcSize-${atId}`);
+    const qtyEl = document.getElementById(`atCalcQty-${atId}`);
+    const marginEl = document.getElementById(`atCalcMargin-${atId}`);
+
+    if (balEl) balEl.textContent = fmt(balance);
+    if (riskEl) riskEl.textContent = fmt(riskAmount);
+    if (slLongEl) slLongEl.textContent = slLong > 0 ? `$${slLong.toFixed(decimals)}` : '--';
+    if (slShortEl) slShortEl.textContent = slShort > 0 ? `$${slShort.toFixed(decimals)}` : '--';
+    if (sizeEl) sizeEl.textContent = fmt(positionSize);
+    if (qtyEl) qtyEl.textContent = quantity.toFixed(6);
+    if (marginEl) marginEl.textContent = fmt(marginRequired);
 }
 
-// Set order type for a quick trade (Market/Limit toggle)
-function setQtOrderType(qtId, type) {
-    qtOrderTypes[qtId] = type;
+// Get order type for an auto trade card
+function getAtOrderType(atId) {
+    const toggle = document.getElementById(`atOrderType-${atId}`);
+    if (toggle) {
+        const activeBtn = toggle.querySelector('.toggle-btn.active');
+        if (activeBtn) return activeBtn.dataset.type;
+    }
+    const at = autoTrades.find(a => a.id === atId);
+    return at ? at.order_type : 'MARKET';
+}
 
-    const toggleContainer = document.getElementById(`qtOrderTypeToggle-${qtId}`);
-    if (toggleContainer) {
-        toggleContainer.querySelectorAll('.toggle-btn').forEach(btn => {
+// Set order type for an auto trade card
+function setAtOrderType(atId, type) {
+    const toggle = document.getElementById(`atOrderType-${atId}`);
+    if (toggle) {
+        toggle.querySelectorAll('.toggle-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.type === type);
         });
     }
 
-    // Update button text
-    updateQtButtonText(qtId);
-}
-
-// Get order type for a quick trade
-function getQtOrderType(qtId) {
-    return qtOrderTypes[qtId] || 'MARKET';
-}
-
-// Toggle collapse state for a quick trade card
-function toggleQtCollapse(qtId) {
-    const card = document.querySelector(`.quick-trade-card[data-qt-id="${qtId}"]`);
-    if (card) {
-        card.classList.toggle('expanded');
-    }
-}
-
-// Update trade button text based on order type
-function updateQtButtonText(qtId) {
-    const longBtn = document.getElementById(`qtLongBtn-${qtId}`);
-    const shortBtn = document.getElementById(`qtShortBtn-${qtId}`);
-    const orderType = getQtOrderType(qtId);
-
-    let longText, shortText;
-
-    if (orderType === 'BBO') {
-        longText = 'BBO Long';
-        shortText = 'BBO Short';
-    } else if (orderType === 'LIMIT') {
-        longText = 'Limit Long';
-        shortText = 'Limit Short';
-    } else {
-        longText = 'Market Long';
-        shortText = 'Market Short';
+    // Show/hide limit price row
+    const limitRow = document.getElementById(`atLimitRow-${atId}`);
+    if (limitRow) {
+        limitRow.classList.toggle('hidden', type !== 'LIMIT');
     }
 
-    if (longBtn) longBtn.textContent = longText;
-    if (shortBtn) shortBtn.textContent = shortText;
+    // Save order type to server
+    fetch(`/api/auto-trades/${atId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_type: type })
+    }).catch(err => console.error('Failed to save order type:', err));
+
+    // Update calc
+    updateAutoTradeCalc(atId);
 }
 
-// Handle trade button click
-function handleQtTradeClick(qtId, direction) {
-    const orderType = getQtOrderType(qtId);
+// On input change (risk %, SL %) — debounce save to server
+function onAutoTradeInputChange(atId) {
+    if (autoTradeSaveTimers[atId]) clearTimeout(autoTradeSaveTimers[atId]);
 
-    if (orderType === 'BBO') {
-        // BBO queue order - backend will fetch best bid/ask and place LIMIT order
-        openQtTradeConfirm(qtId, direction, 'BBO', null);
-    } else if (orderType === 'LIMIT') {
-        openQtLimitPriceModal(qtId, direction);
-    } else {
-        openQtTradeConfirm(qtId, direction, 'MARKET', null);
-    }
+    autoTradeSaveTimers[atId] = setTimeout(() => {
+        const riskInput = document.getElementById(`atRisk-${atId}`);
+        const slInput = document.getElementById(`atSl-${atId}`);
+
+        const fields = {};
+        if (riskInput) fields.risk_percent = parseFloat(riskInput.value);
+        if (slInput) fields.sl_percent = parseFloat(slInput.value);
+
+        fetch(`/api/auto-trades/${atId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(fields)
+        }).catch(err => console.error('Failed to save auto trade inputs:', err));
+    }, 500);
 }
 
-// Open limit price modal
-function openQtLimitPriceModal(qtId, direction) {
-    const dataContainer = document.getElementById(`qtData-${qtId}`);
-    if (!dataContainer || !dataContainer.dataset.qtData) {
-        showToast('Market data not loaded', 'error');
+// Execute trade from auto trade card
+async function executeAutoTrade(atId, side) {
+    const at = autoTrades.find(a => a.id === atId);
+    const state = autoTradeState[atId];
+    if (!at || !state || !state.currentPrice) {
+        showToast('Price not loaded yet', 'error');
         return;
     }
 
-    const qtData = JSON.parse(dataContainer.dataset.qtData);
-    const qt = quickTrades.find(q => q.id === qtId);
-
-    pendingQtLimitOrder = { qtId, direction, qtData, qt };
-
-    document.getElementById('qtLimitPriceModalTitle').textContent = `Enter Limit Price for ${direction}`;
-    document.getElementById('qtLimitModalCurrentPrice').textContent = `$${formatQtPrice(qtData.current_price)}`;
-    document.getElementById('qtLimitPriceInput').value = '';
-    document.getElementById('qtLimitCalcPreview').innerHTML = '';
-
-    qtLimitPriceModal.classList.add('active');
-    document.getElementById('qtLimitPriceInput').focus();
-}
-
-// Update limit price preview
-function updateQtLimitPreview() {
-    if (!pendingQtLimitOrder) return;
-
-    const limitPriceInput = document.getElementById('qtLimitPriceInput');
-    const limitPrice = parseFloat(limitPriceInput.value);
-    const preview = document.getElementById('qtLimitCalcPreview');
-
-    if (!limitPrice || limitPrice <= 0) {
-        preview.innerHTML = '';
+    if (!state.slPercent || state.slPercent <= 0) {
+        showToast('Please set a valid SL %', 'error');
         return;
     }
 
-    const { direction, qtData, qt } = pendingQtLimitOrder;
-    const directionData = direction === 'LONG' ? qtData.long : qtData.short;
-
-    const slPrice = directionData.sl_price;
-    const newSlPercent = Math.abs(limitPrice - slPrice) / limitPrice * 100;
-    const riskAmount = qtData.risk_amount;
-    const newPositionSize = riskAmount / (newSlPercent / 100);
-
-    const isValid = newSlPercent >= qt.sl_min_percent && newSlPercent <= qt.sl_max_percent;
-    const validClass = isValid ? 'valid' : 'invalid';
-
-    // Calculate potential loss (risk amount is fixed based on account balance * risk%)
-    const potentialLoss = riskAmount;
-
-    preview.innerHTML = `
-        <div class="preview-row">
-            <span class="label">Entry Price:</span>
-            <span class="value">$${formatQtPrice(limitPrice)}</span>
-        </div>
-        <div class="preview-row">
-            <span class="label">Stop Loss:</span>
-            <span class="value">$${formatQtPrice(slPrice)}</span>
-        </div>
-        <div class="preview-row">
-            <span class="label">SL Distance:</span>
-            <span class="value ${validClass}">${newSlPercent.toFixed(2)}%</span>
-        </div>
-        <div class="preview-row">
-            <span class="label">Position Size:</span>
-            <span class="value highlight">$${newPositionSize.toFixed(2)}</span>
-        </div>
-        <div class="preview-row">
-            <span class="label">Risk Amount:</span>
-            <span class="value risk">$${potentialLoss.toFixed(2)}</span>
-        </div>
-        ${!isValid ? `<div class="preview-warning">SL outside valid range (${qt.sl_min_percent}% - ${qt.sl_max_percent}%)</div>` : ''}
-    `;
-
-    document.getElementById('confirmQtLimitPriceBtn').disabled = !isValid;
-}
-
-// Confirm limit price and proceed to trade confirmation
-function confirmQtLimitPrice() {
-    if (!pendingQtLimitOrder) return;
-
-    const limitPrice = parseFloat(document.getElementById('qtLimitPriceInput').value);
-    if (!limitPrice || limitPrice <= 0) {
-        showToast('Please enter a valid limit price', 'error');
+    if (!state.riskPercent || state.riskPercent <= 0) {
+        showToast('Please set a valid Risk %', 'error');
         return;
     }
 
-    const { qtId, direction, qtData, qt } = pendingQtLimitOrder;
-    const directionData = direction === 'LONG' ? qtData.long : qtData.short;
-
-    const slPrice = directionData.sl_price;
-    const newSlPercent = Math.abs(limitPrice - slPrice) / limitPrice * 100;
-
-    if (newSlPercent < qt.sl_min_percent || newSlPercent > qt.sl_max_percent) {
-        showToast('SL outside valid range', 'error');
+    // Check margin
+    if (state.marginRequired > state.balance) {
+        showToast(`Insufficient margin. Need $${state.marginRequired.toFixed(2)}, have $${state.balance.toFixed(2)}`, 'error');
         return;
     }
 
-    qtLimitPriceModal.classList.remove('active');
-    openQtTradeConfirm(qtId, direction, 'LIMIT', limitPrice);
-}
+    const orderType = state.orderType || 'MARKET';
 
-// Close limit price modal
-function closeQtLimitPriceModal() {
-    qtLimitPriceModal.classList.remove('active');
-    pendingQtLimitOrder = null;
-}
-
-// Open trade confirmation modal
-function openQtTradeConfirm(qtId, direction, orderType = 'MARKET', limitPrice = null) {
-    const dataContainer = document.getElementById(`qtData-${qtId}`);
-    if (!dataContainer || !dataContainer.dataset.qtData) {
-        showToast('Market data not loaded', 'error');
+    if (orderType === 'LIMIT' && (!state.limitPrice || state.limitPrice <= 0)) {
+        showToast('Please enter a limit price', 'error');
         return;
     }
 
-    const qtData = JSON.parse(dataContainer.dataset.qtData);
-    const qt = quickTrades.find(q => q.id === qtId);
-    const directionData = direction === 'LONG' ? qtData.long : qtData.short;
+    // Calculate SL price for this side
+    const entryPrice = state.entryPrice;
+    const slPrice = side === 'BUY' ? state.slLong : state.slShort;
 
-    // For MARKET and BBO orders, check validity
-    if ((orderType === 'MARKET' || orderType === 'BBO') && !directionData.is_valid) {
-        showToast('Trade conditions not met', 'error');
-        return;
-    }
-
-    let entryPrice, slPercent, positionSize;
-
-    if (orderType === 'LIMIT' && limitPrice) {
-        entryPrice = limitPrice;
-        slPercent = Math.abs(limitPrice - directionData.sl_price) / limitPrice * 100;
-        positionSize = qtData.risk_amount / (slPercent / 100);
-    } else {
-        entryPrice = qtData.current_price;
-        slPercent = directionData.sl_percent;
-        positionSize = directionData.position_size;
-    }
-
-    pendingQtTrade = {
-        qtId,
-        direction,
-        data: qtData,
-        qt,
-        orderType,
-        limitPrice,
-        entryPrice,
-        slPercent,
-        positionSize
-    };
-
-    document.getElementById('qtTradeConfirmTitle').textContent = `Confirm ${direction} Trade`;
-
-    const orderTypeBadge = document.getElementById('qtConfirmOrderType');
-    orderTypeBadge.textContent = orderType;
-    orderTypeBadge.className = `order-type-badge ${orderType.toLowerCase()}`;
-
-    const directionBadge = document.getElementById('qtConfirmDirection');
-    directionBadge.textContent = direction;
-    directionBadge.className = `direction-badge ${direction.toLowerCase()}`;
-
-    document.getElementById('qtConfirmSymbol').textContent = qt.symbol;
-    document.getElementById('qtConfirmEntry').textContent = `$${formatQtPrice(entryPrice)}`;
-    document.getElementById('qtConfirmSL').textContent = `$${formatQtPrice(directionData.sl_price)}`;
-    document.getElementById('qtConfirmSLPercent').textContent = `${slPercent.toFixed(2)}%`;
-    document.getElementById('qtConfirmSize').textContent = `$${positionSize.toFixed(2)}`;
-    document.getElementById('qtConfirmRisk').textContent = `$${qtData.risk_amount.toFixed(2)}`;
-
-    const executeBtn = document.getElementById('executeQtTradeBtn');
-    executeBtn.style.background = direction === 'LONG'
-        ? 'linear-gradient(135deg, #22c55e, #16a34a)'
-        : 'linear-gradient(135deg, #ef4444, #dc2626)';
-
-    qtTradeConfirmModal.classList.add('active');
-}
-
-// Execute trade
-async function executeQtTrade() {
-    if (!pendingQtTrade) return;
-
-    const btn = document.getElementById('executeQtTradeBtn');
+    const btn = document.getElementById(side === 'BUY' ? `atLongBtn-${atId}` : `atShortBtn-${atId}`);
     const originalText = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Executing...';
 
     try {
         const requestBody = {
-            direction: pendingQtTrade.direction
+            symbol: at.symbol,
+            side,
+            order_type: orderType === 'BBO' ? 'LIMIT' : (orderType === 'LIMIT' ? 'LIMIT' : 'MARKET'),
+            quantity: state.positionSize, // USDC notional value
+            leverage: at.leverage,
+            margin_type: at.margin_type,
+            sl_price: slPrice,
+            reduce_only: false,
+            time_in_force: 'GTC'
         };
 
-        if (pendingQtTrade.orderType === 'BBO') {
-            // BBO order - send as LIMIT with priceMatch
-            requestBody.order_type = 'LIMIT';
-            requestBody.price_match = 'QUEUE';  // Queue at best bid/ask
-        } else if (pendingQtTrade.orderType === 'LIMIT' && pendingQtTrade.limitPrice) {
-            requestBody.order_type = 'LIMIT';
-            requestBody.limit_price = pendingQtTrade.limitPrice;
-        } else {
-            requestBody.order_type = 'MARKET';
+        if (orderType === 'LIMIT') {
+            requestBody.price = state.limitPrice;
         }
 
-        const response = await fetch(`/api/strategies/${pendingQtTrade.qtId}/trade`, {
+        if (orderType === 'BBO') {
+            requestBody.price_match = 'QUEUE';
+        }
+
+        const response = await fetch(`/api/accounts/${ACCOUNT_ID}/trade`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestBody)
@@ -3852,261 +3801,188 @@ async function executeQtTrade() {
 
         const data = await response.json();
 
-        if (response.ok && data.success) {
-            const orderTypeLabel = pendingQtTrade.orderType === 'BBO' ? 'BBO' : (pendingQtTrade.orderType === 'LIMIT' ? 'Limit' : 'Market');
+        if (response.ok) {
+            const label = orderType === 'BBO' ? 'BBO' : (orderType === 'LIMIT' ? 'Limit' : 'Market');
             if (data.warning) {
-                showToast(`${orderTypeLabel} ${pendingQtTrade.direction} position opened, but SL failed! Set SL manually.`, 'warning');
+                showToast(data.warning, 'error');
             } else {
-                showToast(`${orderTypeLabel} ${pendingQtTrade.direction} trade executed successfully!`, 'success');
+                showToast(`${label} ${side} order placed with SL at $${formatAtPrice(slPrice)}`, 'success');
             }
-            closeQtTradeConfirmModal();
-            fetchQuickTradeData(pendingQtTrade.qtId);
-            // Also refresh positions
+            // Refresh positions
             if (typeof loadPositions === 'function') loadPositions();
         } else {
             showToast(data.error || 'Trade execution failed', 'error');
         }
     } catch (error) {
-        console.error('Error executing trade:', error);
+        console.error('Error executing auto trade:', error);
         showToast('Failed to execute trade', 'error');
     } finally {
         btn.disabled = false;
         btn.textContent = originalText;
-        pendingQtTrade = null;
     }
 }
 
-// Close trade confirmation modal
-function closeQtTradeConfirmModal() {
-    qtTradeConfirmModal.classList.remove('active');
-    pendingQtTrade = null;
+// Open add auto trade modal
+function openAddAutoTradeModal() {
+    editingAutoTradeId = null;
+    document.getElementById('autoTradeModalTitle').textContent = 'Add Auto Trade';
+    clearAutoTradeForm();
+    autoTradeModal.classList.add('active');
 }
 
-// Open add quick trade modal
-function openAddQuickTradeModal() {
-    editingQuickTradeId = null;
-    document.getElementById('quickTradeModalTitle').textContent = 'Add Quick Trade';
-    clearQuickTradeForm();
-    quickTradeModal.classList.add('active');
+// Open edit auto trade modal
+function openEditAutoTrade(atId) {
+    const at = autoTrades.find(a => a.id === atId);
+    if (!at) return;
+
+    editingAutoTradeId = atId;
+    document.getElementById('autoTradeModalTitle').textContent = 'Edit Auto Trade';
+
+    document.getElementById('atName').value = at.name;
+    document.getElementById('atSymbol').value = at.symbol;
+    document.getElementById('atLeverage').value = at.leverage;
+    document.getElementById('atMarginType').value = at.margin_type;
+    document.getElementById('atRiskPercent').value = at.risk_percent;
+    document.getElementById('atSlPercent').value = at.sl_percent;
+
+    autoTradeModal.classList.add('active');
 }
 
-// Edit quick trade
-function editQuickTrade(qtId) {
-    const qt = quickTrades.find(q => q.id === qtId);
-    if (!qt) return;
-
-    editingQuickTradeId = qtId;
-    document.getElementById('quickTradeModalTitle').textContent = 'Edit Quick Trade';
-
-    document.getElementById('qtName').value = qt.name;
-    document.getElementById('qtSymbol').value = qt.symbol;
-    document.getElementById('qtFastEma').value = qt.fast_ema;
-    document.getElementById('qtSlowEma').value = qt.slow_ema;
-    document.getElementById('qtRiskPercent').value = qt.risk_percent;
-    document.getElementById('qtLeverage').value = qt.leverage;
-    document.getElementById('qtSlLookback').value = qt.sl_lookback;
-    document.getElementById('qtTimeframe').value = qt.timeframe;
-    document.getElementById('qtSlMinPercent').value = qt.sl_min_percent;
-    document.getElementById('qtSlMaxPercent').value = qt.sl_max_percent;
-
-    quickTradeModal.classList.add('active');
+// Clear auto trade form
+function clearAutoTradeForm() {
+    document.getElementById('atName').value = '';
+    document.getElementById('atSymbol').value = 'BTCUSDC';
+    document.getElementById('atLeverage').value = '5';
+    document.getElementById('atMarginType').value = 'ISOLATED';
+    document.getElementById('atRiskPercent').value = '1.3';
+    document.getElementById('atSlPercent').value = '0.5';
 }
 
-// Clear quick trade form
-function clearQuickTradeForm() {
-    document.getElementById('qtName').value = '';
-    document.getElementById('qtSymbol').value = 'BTCUSDC';
-    document.getElementById('qtFastEma').value = '7';
-    document.getElementById('qtSlowEma').value = '19';
-    document.getElementById('qtRiskPercent').value = '1.3';
-    document.getElementById('qtLeverage').value = '5';
-    document.getElementById('qtSlLookback').value = '4';
-    document.getElementById('qtTimeframe').value = '30m';
-    document.getElementById('qtSlMinPercent').value = '0.25';
-    document.getElementById('qtSlMaxPercent').value = '1.81';
+// Close auto trade modal
+function closeAutoTradeModal() {
+    autoTradeModal.classList.remove('active');
+    editingAutoTradeId = null;
 }
 
-// Close quick trade modal
-function closeQuickTradeModal() {
-    quickTradeModal.classList.remove('active');
-    editingQuickTradeId = null;
-}
-
-// Save quick trade
-async function saveQuickTrade() {
-    const name = document.getElementById('qtName').value.trim();
-
+// Save auto trade (create or update)
+async function saveAutoTrade() {
+    const name = document.getElementById('atName').value.trim();
     if (!name) {
         showToast('Please enter a name', 'error');
         return;
     }
 
-    const qtData = {
+    const atData = {
         name,
-        account_id: ACCOUNT_ID,
-        symbol: document.getElementById('qtSymbol').value.trim().toUpperCase(),
-        fast_ema: parseInt(document.getElementById('qtFastEma').value),
-        slow_ema: parseInt(document.getElementById('qtSlowEma').value),
-        risk_percent: parseFloat(document.getElementById('qtRiskPercent').value),
-        leverage: parseInt(document.getElementById('qtLeverage').value),
-        sl_lookback: parseInt(document.getElementById('qtSlLookback').value),
-        timeframe: document.getElementById('qtTimeframe').value,
-        sl_min_percent: parseFloat(document.getElementById('qtSlMinPercent').value),
-        sl_max_percent: parseFloat(document.getElementById('qtSlMaxPercent').value)
+        symbol: document.getElementById('atSymbol').value.trim().toUpperCase(),
+        leverage: parseInt(document.getElementById('atLeverage').value),
+        margin_type: document.getElementById('atMarginType').value,
+        risk_percent: parseFloat(document.getElementById('atRiskPercent').value),
+        sl_percent: parseFloat(document.getElementById('atSlPercent').value)
     };
 
-    const btn = document.getElementById('saveQuickTradeBtn');
+    const btn = document.getElementById('saveAutoTradeBtn');
     btn.disabled = true;
     btn.textContent = 'Saving...';
 
     try {
-        const url = editingQuickTradeId
-            ? `/api/strategies/${editingQuickTradeId}`
-            : '/api/strategies';
-        const method = editingQuickTradeId ? 'PUT' : 'POST';
+        const url = editingAutoTradeId
+            ? `/api/auto-trades/${editingAutoTradeId}`
+            : `/api/accounts/${ACCOUNT_ID}/auto-trades`;
+        const method = editingAutoTradeId ? 'PUT' : 'POST';
 
         const response = await fetch(url, {
             method,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(qtData)
+            body: JSON.stringify(atData)
         });
 
         const data = await response.json();
 
         if (response.ok) {
-            showToast(editingQuickTradeId ? 'Quick trade updated!' : 'Quick trade created!', 'success');
-            closeQuickTradeModal();
+            showToast(editingAutoTradeId ? 'Auto trade updated!' : 'Auto trade created!', 'success');
+            closeAutoTradeModal();
 
-            if (editingQuickTradeId && qtRefreshIntervals[editingQuickTradeId]) {
-                clearInterval(qtRefreshIntervals[editingQuickTradeId]);
+            if (editingAutoTradeId && autoTradeIntervals[editingAutoTradeId]) {
+                clearInterval(autoTradeIntervals[editingAutoTradeId]);
             }
 
-            await loadQuickTrades();
+            await loadAutoTrades();
         } else {
-            showToast(data.error || 'Failed to save quick trade', 'error');
+            showToast(data.error || 'Failed to save auto trade', 'error');
         }
     } catch (error) {
-        console.error('Error saving quick trade:', error);
-        showToast('Failed to save quick trade', 'error');
+        console.error('Error saving auto trade:', error);
+        showToast('Failed to save auto trade', 'error');
     } finally {
         btn.disabled = false;
         btn.textContent = 'Save';
     }
 }
 
-// Delete quick trade
-async function deleteQuickTrade(qtId) {
-    const qt = quickTrades.find(q => q.id === qtId);
-    if (!confirm(`Delete quick trade "${qt?.name || qtId}"?`)) return;
+// Delete auto trade
+async function deleteAutoTrade(atId) {
+    const at = autoTrades.find(a => a.id === atId);
+    if (!confirm(`Delete auto trade "${at?.name || atId}"?`)) return;
 
     try {
-        const response = await fetch(`/api/strategies/${qtId}`, {
-            method: 'DELETE'
-        });
+        const response = await fetch(`/api/auto-trades/${atId}`, { method: 'DELETE' });
 
         if (response.ok) {
-            showToast('Quick trade deleted', 'success');
+            showToast('Auto trade deleted', 'success');
 
-            if (qtRefreshIntervals[qtId]) {
-                clearInterval(qtRefreshIntervals[qtId]);
-                delete qtRefreshIntervals[qtId];
+            if (autoTradeIntervals[atId]) {
+                clearInterval(autoTradeIntervals[atId]);
+                delete autoTradeIntervals[atId];
             }
+            delete autoTradeState[atId];
 
-            quickTrades = quickTrades.filter(q => q.id !== qtId);
-            renderQuickTrades();
+            autoTrades = autoTrades.filter(a => a.id !== atId);
+            renderAutoTrades();
         } else {
             const data = await response.json();
-            showToast(data.error || 'Failed to delete quick trade', 'error');
+            showToast(data.error || 'Failed to delete auto trade', 'error');
         }
     } catch (error) {
-        console.error('Error deleting quick trade:', error);
-        showToast('Failed to delete quick trade', 'error');
+        console.error('Error deleting auto trade:', error);
+        showToast('Failed to delete auto trade', 'error');
     }
 }
 
-// Helper: Format price
-function formatQtPrice(price) {
-    if (price >= 1000) return price.toFixed(2);
-    if (price >= 1) return price.toFixed(4);
-    return price.toFixed(6);
-}
+// Setup Auto Trade event listeners
+function setupAutoTradeListeners() {
+    document.getElementById('addAutoTradeBtn')?.addEventListener('click', openAddAutoTradeModal);
+    document.getElementById('addFirstAutoTradeBtn')?.addEventListener('click', openAddAutoTradeModal);
 
-// Helper: Format crossover time
-function formatQtCrossoverTime(timeStr) {
-    if (!timeStr || timeStr === 'Just now') return 'Just now';
-    try {
-        const date = new Date(timeStr);
-        const now = new Date();
-        const diffMs = now - date;
-        const diffMins = Math.floor(diffMs / 60000);
-        const diffHours = Math.floor(diffMins / 60);
-        const diffDays = Math.floor(diffHours / 24);
+    document.getElementById('closeAutoTradeModal')?.addEventListener('click', closeAutoTradeModal);
+    document.getElementById('cancelAutoTradeBtn')?.addEventListener('click', closeAutoTradeModal);
+    document.getElementById('saveAutoTradeBtn')?.addEventListener('click', saveAutoTrade);
 
-        if (diffMins < 1) return 'Just now';
-        if (diffMins < 60) return `${diffMins}m ago`;
-        if (diffHours < 24) return `${diffHours}h ${diffMins % 60}m ago`;
-        if (diffDays < 7) return `${diffDays}d ago`;
-        return date.toLocaleDateString();
-    } catch {
-        return timeStr;
-    }
-}
-
-// Setup Quick Trade event listeners
-function setupQuickTradeListeners() {
-    // Add button
-    document.getElementById('addQuickTradeBtn')?.addEventListener('click', openAddQuickTradeModal);
-    document.getElementById('refreshQuickTradesBtn')?.addEventListener('click', () => {
-        quickTrades.forEach(qt => fetchQuickTradeData(qt.id));
-        showToast('Refreshing quick trades...', 'info');
-    });
-
-    // Quick trade modal
-    document.getElementById('closeQuickTradeModal')?.addEventListener('click', closeQuickTradeModal);
-    document.getElementById('cancelQuickTradeBtn')?.addEventListener('click', closeQuickTradeModal);
-    document.getElementById('saveQuickTradeBtn')?.addEventListener('click', saveQuickTrade);
-
-    // Trade confirm modal
-    document.getElementById('closeQtTradeConfirmModal')?.addEventListener('click', closeQtTradeConfirmModal);
-    document.getElementById('cancelQtTradeBtn')?.addEventListener('click', closeQtTradeConfirmModal);
-    document.getElementById('executeQtTradeBtn')?.addEventListener('click', executeQtTrade);
-
-    // Limit price modal
-    document.getElementById('closeQtLimitPriceModal')?.addEventListener('click', closeQtLimitPriceModal);
-    document.getElementById('cancelQtLimitPriceBtn')?.addEventListener('click', closeQtLimitPriceModal);
-    document.getElementById('confirmQtLimitPriceBtn')?.addEventListener('click', confirmQtLimitPrice);
-    document.getElementById('qtLimitPriceInput')?.addEventListener('input', updateQtLimitPreview);
-
-    // Close modals on overlay click
-    quickTradeModal?.addEventListener('click', (e) => {
-        if (e.target === quickTradeModal) closeQuickTradeModal();
-    });
-    qtTradeConfirmModal?.addEventListener('click', (e) => {
-        if (e.target === qtTradeConfirmModal) closeQtTradeConfirmModal();
-    });
-    qtLimitPriceModal?.addEventListener('click', (e) => {
-        if (e.target === qtLimitPriceModal) closeQtLimitPriceModal();
+    autoTradeModal?.addEventListener('click', (e) => {
+        if (e.target === autoTradeModal) closeAutoTradeModal();
     });
 }
 
-// Initialize Quick Trade section
+// Initialize Auto Trade section
 document.addEventListener('DOMContentLoaded', () => {
-    if (document.getElementById('quickTradeGrid')) {
-        setupQuickTradeListeners();
-        loadQuickTrades();
+    if (document.getElementById('autoTradeGrid')) {
+        setupAutoTradeListeners();
+        loadAutoTrades();
     }
 });
 
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {
-    Object.values(qtRefreshIntervals).forEach(clearInterval);
+    Object.values(autoTradeIntervals).forEach(clearInterval);
 });
 
 // Expose functions to global scope
-window.editQuickTrade = editQuickTrade;
-window.deleteQuickTrade = deleteQuickTrade;
-window.setQtOrderType = setQtOrderType;
-window.handleQtTradeClick = handleQtTradeClick;
+window.openEditAutoTrade = openEditAutoTrade;
+window.deleteAutoTrade = deleteAutoTrade;
+window.setAtOrderType = setAtOrderType;
+window.executeAutoTrade = executeAutoTrade;
+window.onAutoTradeInputChange = onAutoTradeInputChange;
+window.updateAutoTradeCalc = updateAutoTradeCalc;
 
 
 // ==================== RISK CALCULATOR TAB ====================
@@ -4119,6 +3995,8 @@ let riskCalcState = {
     currentPrice: 0,
     limitPrice: 0,
     slPrice: 0,
+    slMode: 'price', // 'price' or 'percent'
+    slPercent: 0,
     riskPercent: 5.0,
     rrRatio: 2.0,
     availableBalance: 0
@@ -4134,12 +4012,29 @@ async function loadAutoSizeSettings() {
             riskCalcState.leverage = data.leverage;
             riskCalcState.riskPercent = data.risk_percent;
             riskCalcState.rrRatio = data.rr_ratio;
+            riskCalcState.slMode = data.sl_mode || 'price';
             const leverageDisplay = document.getElementById('riskLeverageValue');
             if (leverageDisplay) leverageDisplay.textContent = data.leverage;
             const riskPercentInput = document.getElementById('riskPercent');
             if (riskPercentInput) riskPercentInput.value = data.risk_percent;
             const rrInput = document.getElementById('riskRR');
             if (rrInput) rrInput.value = data.rr_ratio;
+            // Restore SL mode toggle
+            const slModePriceBtn = document.getElementById('slModePrice');
+            const slModePercentBtn = document.getElementById('slModePercent');
+            const slPriceWrapper = document.getElementById('slPriceWrapper');
+            const slPercentWrapper = document.getElementById('slPercentWrapper');
+            if (riskCalcState.slMode === 'percent') {
+                slModePriceBtn?.classList.remove('active');
+                slModePercentBtn?.classList.add('active');
+                if (slPriceWrapper) slPriceWrapper.style.display = 'none';
+                if (slPercentWrapper) slPercentWrapper.style.display = '';
+            } else {
+                slModePriceBtn?.classList.add('active');
+                slModePercentBtn?.classList.remove('active');
+                if (slPriceWrapper) slPriceWrapper.style.display = '';
+                if (slPercentWrapper) slPercentWrapper.style.display = 'none';
+            }
         }
     } catch (err) {
         console.error('[Auto Size] Failed to load settings:', err);
@@ -4154,7 +4049,8 @@ async function saveAutoSizeSettings() {
             body: JSON.stringify({
                 leverage: riskCalcState.leverage,
                 risk_percent: riskCalcState.riskPercent,
-                rr_ratio: riskCalcState.rrRatio
+                rr_ratio: riskCalcState.rrRatio,
+                sl_mode: riskCalcState.slMode
             })
         });
         if (response.ok) {
@@ -4288,6 +4184,7 @@ function setupRiskCalculatorTab() {
     const riskLimitPriceInput = document.getElementById('riskLimitPrice');
     riskLimitPriceInput?.addEventListener('input', () => {
         riskCalcState.limitPrice = parseFloat(riskLimitPriceInput.value) || 0;
+        recalcSlFromPercent();
         updateRiskCalculations();
     });
 
@@ -4303,6 +4200,38 @@ function setupRiskCalculatorTab() {
 
     riskSlPriceInput?.addEventListener('input', () => {
         riskCalcState.slPrice = parseFloat(riskSlPriceInput.value) || 0;
+        updateRiskCalculations();
+    });
+
+    // SL mode toggle (Price vs %)
+    const slModePriceBtn = document.getElementById('slModePrice');
+    const slModePercentBtn = document.getElementById('slModePercent');
+    const slPriceWrapper = document.getElementById('slPriceWrapper');
+    const slPercentWrapper = document.getElementById('slPercentWrapper');
+    const riskSlPercentInput = document.getElementById('riskSlPercent');
+
+    slModePriceBtn?.addEventListener('click', () => {
+        riskCalcState.slMode = 'price';
+        slModePriceBtn.classList.add('active');
+        slModePercentBtn.classList.remove('active');
+        slPriceWrapper.style.display = '';
+        slPercentWrapper.style.display = 'none';
+        updateRiskCalculations();
+    });
+
+    slModePercentBtn?.addEventListener('click', () => {
+        riskCalcState.slMode = 'percent';
+        slModePercentBtn.classList.add('active');
+        slModePriceBtn.classList.remove('active');
+        slPriceWrapper.style.display = 'none';
+        slPercentWrapper.style.display = '';
+        recalcSlFromPercent();
+        updateRiskCalculations();
+    });
+
+    riskSlPercentInput?.addEventListener('input', () => {
+        riskCalcState.slPercent = parseFloat(riskSlPercentInput.value) || 0;
+        recalcSlFromPercent();
         updateRiskCalculations();
     });
 
@@ -4393,6 +4322,8 @@ async function fetchRiskCurrentPrice() {
                 })}`;
             }
 
+            // Recalc SL if in percent mode (price changed)
+            recalcSlFromPercent();
             // Update calculations with new price
             updateRiskCalculations();
         }
@@ -4401,6 +4332,21 @@ async function fetchRiskCurrentPrice() {
         if (priceDisplay) priceDisplay.textContent = 'Error';
     } finally {
         if (refreshBtn) refreshBtn.classList.remove('loading');
+    }
+}
+
+function recalcSlFromPercent() {
+    if (riskCalcState.slMode !== 'percent') return;
+    const pct = riskCalcState.slPercent;
+    const entryPrice = (riskCalcState.orderType === 'LIMIT' && riskCalcState.limitPrice > 0)
+        ? riskCalcState.limitPrice
+        : riskCalcState.currentPrice;
+    if (entryPrice > 0 && pct > 0) {
+        // SL price = entry * (1 - pct/100) — user picks direction with Buy/Sell button
+        // We store the absolute distance; the SL price shown in calculator will reflect this
+        riskCalcState.slPrice = entryPrice * (1 - pct / 100);
+    } else {
+        riskCalcState.slPrice = 0;
     }
 }
 

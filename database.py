@@ -439,6 +439,25 @@ def init_db():
         except:
             pass
 
+        # Auto Trades table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS auto_trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                account_id INTEGER NOT NULL,
+                symbol TEXT NOT NULL DEFAULT 'BTCUSDC',
+                risk_percent REAL NOT NULL DEFAULT 1.3,
+                sl_percent REAL NOT NULL DEFAULT 0.5,
+                leverage INTEGER NOT NULL DEFAULT 5,
+                margin_type TEXT NOT NULL DEFAULT 'ISOLATED',
+                order_type TEXT NOT NULL DEFAULT 'MARKET',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_auto_trades_account_id ON auto_trades(account_id)')
+
         conn.commit()
         conn.close()
 
@@ -2671,6 +2690,131 @@ def update_strategy_crossover(strategy_id, direction, sl_long, sl_short):
         conn.commit()
         conn.close()
         return True
+
+
+# ==================== AUTO TRADE OPERATIONS ====================
+
+def create_auto_trade(name, account_id, symbol='BTCUSDC', risk_percent=1.3,
+                      sl_percent=0.5, leverage=5, margin_type='ISOLATED', order_type='MARKET'):
+    """Create a new auto trade preset. Returns auto trade id."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            INSERT INTO auto_trades (name, account_id, symbol, risk_percent, sl_percent,
+                                     leverage, margin_type, order_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (name, account_id, symbol, risk_percent, sl_percent, leverage, margin_type, order_type))
+
+        auto_trade_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return auto_trade_id
+
+
+def get_auto_trades_by_account(account_id):
+    """Get all auto trades for a specific account."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT * FROM auto_trades
+            WHERE account_id = ?
+            ORDER BY created_at DESC
+        ''', (account_id,))
+
+        auto_trades = []
+        for row in cursor.fetchall():
+            auto_trades.append({
+                'id': row['id'],
+                'name': row['name'],
+                'account_id': row['account_id'],
+                'symbol': row['symbol'],
+                'risk_percent': row['risk_percent'],
+                'sl_percent': row['sl_percent'],
+                'leverage': row['leverage'],
+                'margin_type': row['margin_type'],
+                'order_type': row['order_type'],
+                'created_at': row['created_at'],
+                'updated_at': row['updated_at']
+            })
+
+        conn.close()
+        return auto_trades
+
+
+def get_auto_trade(auto_trade_id):
+    """Get a single auto trade by ID."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT * FROM auto_trades WHERE id = ?', (auto_trade_id,))
+        row = cursor.fetchone()
+
+        if not row:
+            conn.close()
+            return None
+
+        auto_trade = {
+            'id': row['id'],
+            'name': row['name'],
+            'account_id': row['account_id'],
+            'symbol': row['symbol'],
+            'risk_percent': row['risk_percent'],
+            'sl_percent': row['sl_percent'],
+            'leverage': row['leverage'],
+            'margin_type': row['margin_type'],
+            'order_type': row['order_type'],
+            'created_at': row['created_at'],
+            'updated_at': row['updated_at']
+        }
+
+        conn.close()
+        return auto_trade
+
+
+def update_auto_trade(auto_trade_id, **fields):
+    """Update an auto trade. Pass fields as keyword arguments."""
+    allowed = {'name', 'symbol', 'risk_percent', 'sl_percent', 'leverage', 'margin_type', 'order_type'}
+    updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+
+    if not updates:
+        return False
+
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        set_clause = ', '.join(f'{k} = ?' for k in updates)
+        values = list(updates.values())
+        values.append(auto_trade_id)
+
+        cursor.execute(f'''
+            UPDATE auto_trades
+            SET {set_clause}, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', values)
+
+        updated = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return updated
+
+
+def delete_auto_trade(auto_trade_id):
+    """Delete an auto trade."""
+    with db_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM auto_trades WHERE id = ?', (auto_trade_id,))
+        deleted = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return deleted
 
 
 # ==================== RULE SECTIONS OPERATIONS ====================
